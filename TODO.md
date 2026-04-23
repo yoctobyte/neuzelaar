@@ -31,7 +31,7 @@ Expected:
 
 | Area | Status | Notes |
 |---|---|---|
-| M1 headless skeleton | Almost done | Code complete; needs final docs/smoke verification. |
+| M1 headless skeleton | Done | Final docs/smoke verification complete. |
 | Package/test setup | Done | `pyproject.toml`, `.venv` workflow, pytest suite. |
 | Core contracts | Done | commands/events/frame/surface, bus, resource/request types. |
 | URL/origin policy base | Done | `core/origin.py`, strict 1p/3p decisions. |
@@ -41,13 +41,15 @@ Expected:
 | Headless pipeline | Done | reusable `PageLoader`, `HeadlessShell`, thin CLI. |
 | Active content hooks | Done | JS/WASM interfaces and no-op blocked engines. |
 | Guardrails | Done | pytest invokes `tools/check_guardrails.sh`. |
-| M1 docs verification | Open | Gemini Flash lane. |
+| M1 docs verification | Done | See `workdone-gemini-flash.md`. |
 
 ## Active Backlog
 
 ### P0: Final M1 Docs And Smoke Verification
 
 Owner: Gemini Flash
+
+Status: DONE
 
 Files:
 
@@ -64,14 +66,16 @@ Tasks:
 
 Acceptance:
 
-- pytest passes.
-- guardrails pass.
-- CLI smoke commands match documented expectations.
-- No core code edited.
+- [x] pytest passes.
+- [x] guardrails pass.
+- [x] CLI smoke commands match documented expectations.
+- [x] No core code edited.
 
 ### P1: M1 Completion Tag/Note
 
 Owner: Codex
+
+Status: DONE
 
 Tasks:
 
@@ -81,8 +85,8 @@ Tasks:
 
 Acceptance:
 
-- M1 criteria below are all checked.
-- No hidden uncommitted changes.
+- [x] M1 criteria below are all checked.
+- [x] No hidden uncommitted changes.
 
 ### P1: Claude Review Of Pipeline Shape
 
@@ -114,7 +118,7 @@ M1 is complete when all are checked:
 - [x] `python -m neuzelaar tests/fixtures/sites/third_party_script.html` reports the script blocked before fetch.
 - [x] Browser pipeline is reusable outside `__main__.py`.
 - [x] No GUI, CSS cascade, JS execution, image decode, forms, cookies, or history are required.
-- [ ] Final docs/smoke verification report exists.
+- [x] Final docs/smoke verification report exists.
 
 ## Completed M1 Work
 
