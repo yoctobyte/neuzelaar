@@ -428,7 +428,61 @@ From concept doc §28, plus operational guardrails:
 - **Scope drift** → every PR names the milestone it belongs to. Out-of-milestone work needs a note in this doc first.
 - **"Fix by disabling"** → if a test or policy check blocks progress, don't bypass; update this plan and the concept doc instead.
 
-## 12. First week
+## 12. Test strategy
+
+Tests are part of the architecture, not an afterthought. M1 should bias toward
+small unit tests for contracts and a few offline integration tests for the full
+headless path.
+
+### 12.1 Unit tests
+
+Unit tests live under `tests/unit/` and should not perform network access.
+They cover:
+
+- `core/origin.py`: URL normalization, relative resolution, origins, opaque origins, 1p/3p classification.
+- `core/bus.py`: subscription and synchronous event delivery.
+- `core/mime/`: claimed MIME handling, conservative sniffing, extension fallback, safe text-vs-HTML behavior.
+- `core/policy/`: top-level allow, strict third-party script/iframe block, tracker host block, first-party passive resource allow.
+- `document/dom.py`: parent/child ownership and tree walking.
+- `document/subresources.py`: planned resource extraction without fetching.
+- `render/text_only.py`: headings, links, images, lists, and script/style suppression.
+
+### 12.2 Integration tests
+
+Integration tests live under `tests/integration/` and use only offline fixtures
+or local fixture servers. No test may depend on live website markup or network
+availability.
+
+M1 integration tests cover:
+
+- local fixture fetch into `Resource`
+- fetch -> classify -> handler -> internal document -> text renderer
+- third-party script discovered as a planned subresource and blocked before fetch
+- CLI smoke path via `python -m neuzelaar <fixture>`
+
+### 12.3 Guardrail tests
+
+Guardrail tests verify architectural boundaries:
+
+- no GUI toolkit imports in `core`, `document`, or `render`
+- no html5lib/tinycss2/Pillow imports leaking into `core`, `document`, or `shell_api`
+- no generated files are tracked
+
+The shell script lives at `tools/check_guardrails.sh`; pytest should invoke it
+so local test runs catch boundary regressions early.
+
+### 12.4 Test naming
+
+Use names that explain behavior, not implementation mechanics:
+
+- `test_mime_text_plain_html_stays_text`
+- `test_third_party_script_is_blocked_before_fetch`
+- `test_cli_reports_blocked_subresource`
+
+Avoid one giant "M1 works" test. The integration suite should prove the pipeline
+while unit tests explain exactly which contract broke.
+
+## 13. First week
 
 If §2 resolves this week, concrete first commits:
 
@@ -442,14 +496,14 @@ If §2 resolves this week, concrete first commits:
 
 That's enough scaffolding to start filling in §8 the week after.
 
-## 13. Multi-agent workload plan
+## 14. Multi-agent workload plan
 
 Multiple agents should work in parallel, but with explicit ownership. The goal is
 speed plus cross-checking: each agent should know what the others changed, avoid
 file collisions, and review at least one other agent's important work before it
 is treated as stable.
 
-### 13.1 Coordination rules
+### 14.1 Coordination rules
 
 - Every agent starts by reading `PLAN.md`, `concept_pub_talk.md`, `git status --short`, and the latest commits.
 - Every agent works on a named branch or worktree when possible: `agent/<name>-<task>`.
@@ -461,7 +515,7 @@ is treated as stable.
 - Cross-review is required before merging to `main`: at least one other agent reviews architectural changes; trivial docs/test fixture changes may be self-reviewed.
 - CI and guardrail checks are the merge authority. If CI contradicts an agent's assumption, update the plan or code instead of bypassing the check.
 
-### 13.2 Initial parallel assignments
+### 14.2 Initial parallel assignments
 
 | Agent | Ownership | First deliverable | Review partner |
 |---|---|---|---|
@@ -470,7 +524,7 @@ is treated as stable.
 | **Antigravity** | Fetch/policy integration: `core/fetch/client.py`, `core/policy/`, `core/mime/`, handler registry | Top-level fetch with byte/redirect/time caps; MIME decision object; policy blocks planned third-party script before fetch | Codex or Claude |
 | **Gemini** | Trivial/scaffolding work: package skeleton, `README.md`, fixtures, smoke-test docs, grep guardrail script | `pyproject.toml`, empty modules with contract docstrings, initial offline fixtures, README run instructions | Any hard-task agent |
 
-### 13.3 M1 merge order
+### 14.3 M1 merge order
 
 1. Gemini lands project skeleton, `pyproject.toml`, README, and fixtures.
 2. Codex lands shared contracts: commands/events/frame/surface, bus, origin, resource dataclasses.
@@ -479,7 +533,7 @@ is treated as stable.
 5. Codex or Claude wires `__main__.py` and `shells/headless/shell.py`.
 6. A different agent from the integrator runs and reviews the full M1 fixture suite before merge to `main`.
 
-### 13.4 Review checklist
+### 14.4 Review checklist
 
 - Core does not import GUI toolkit modules.
 - Core/document/shell API do not expose `PIL.Image`, html5lib nodes, tinycss2 tokens, or other third-party objects.
