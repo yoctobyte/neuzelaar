@@ -3,13 +3,21 @@ import pytest
 from neuzelaar.core.bus import Bus
 from neuzelaar.core.fetch.client import FetchError
 from neuzelaar.core.page import PageLoader
-from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked, ScriptBlocked
+from neuzelaar.core.policy.capability import Capability
+from neuzelaar.shell_api.events import (
+    PageFailed,
+    PageLoadFinished,
+    PageLoadStarted,
+    PermissionRequested,
+    ResourceBlocked,
+    ScriptBlocked,
+)
 
 
 def test_page_loader_emits_load_and_blocked_resource_events() -> None:
     bus = Bus()
     events: list[object] = []
-    for event_type in (PageLoadStarted, PageLoadFinished, ResourceBlocked, ScriptBlocked):
+    for event_type in (PageLoadStarted, PageLoadFinished, ResourceBlocked, ScriptBlocked, PermissionRequested):
         bus.subscribe(event_type, events.append)
 
     PageLoader(bus=bus).load("tests/fixtures/sites/third_party_script.html")
@@ -22,6 +30,10 @@ def test_page_loader_emits_load_and_blocked_resource_events() -> None:
     script_blocked = [event for event in events if isinstance(event, ScriptBlocked)]
     assert len(script_blocked) == 1
     assert script_blocked[0].origin == "https://cdn.third-party.test/app.js"
+    permission_requests = [event for event in events if isinstance(event, PermissionRequested)]
+    assert len(permission_requests) == 1
+    assert permission_requests[0].capability == Capability.EXEC_THIRDPARTY_JS
+    assert permission_requests[0].origin.host == "cdn.third-party.test"
 
 
 def test_page_loader_emits_failure_event() -> None:
@@ -34,3 +46,27 @@ def test_page_loader_emits_failure_event() -> None:
 
     assert len(failures) == 1
     assert "File not found" in failures[0].reason
+
+
+def test_page_loader_emits_inline_script_permission_request() -> None:
+    bus = Bus()
+    permissions: list[PermissionRequested] = []
+    bus.subscribe(PermissionRequested, permissions.append)
+
+    PageLoader(bus=bus).load("tests/fixtures/sites/inline_script.html")
+
+    assert len(permissions) == 1
+    assert permissions[0].capability == Capability.EXEC_INLINE_JS
+    assert permissions[0].origin.scheme == "file"
+
+
+def test_page_loader_emits_same_origin_script_permission_request() -> None:
+    bus = Bus()
+    permissions: list[PermissionRequested] = []
+    bus.subscribe(PermissionRequested, permissions.append)
+
+    PageLoader(bus=bus).load("tests/fixtures/sites/same_origin_script.html")
+
+    assert len(permissions) == 1
+    assert permissions[0].capability == Capability.EXEC_SAMEORIGIN_JS
+    assert permissions[0].origin.scheme == "file"

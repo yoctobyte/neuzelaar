@@ -56,6 +56,9 @@ def test_page_loader_evaluates_planned_subresources() -> None:
     assert planned.normalized_url == "https://cdn.third-party.test/app.js"
     assert planned.decision.action == PolicyAction.BLOCK
     assert len(result.scripts) == 1
+    script = next(iter(result.scripts.values()))
+    assert script.url == "https://cdn.third-party.test/app.js"
+    assert script.result.requested_capabilities[0].name == "EXEC_THIRDPARTY_JS"
 
 
 def test_page_loader_plans_inline_scripts_through_js_engine() -> None:
@@ -63,8 +66,20 @@ def test_page_loader_plans_inline_scripts_through_js_engine() -> None:
 
     assert len(result.scripts) == 1
     execution = next(iter(result.scripts.values()))
-    assert execution.status.value == "blocked"
-    assert execution.reason == "JavaScript execution is disabled"
+    assert execution.inline is True
+    assert execution.result.status.value == "blocked"
+    assert execution.result.reason == "JavaScript execution is disabled"
+
+
+def test_page_loader_plans_same_origin_external_scripts_through_js_engine() -> None:
+    result = PageLoader().load(Path("tests/fixtures/sites/same_origin_script.html").resolve().as_uri())
+
+    assert len(result.scripts) == 1
+    execution = next(iter(result.scripts.values()))
+    assert execution.inline is False
+    assert execution.url is not None
+    assert execution.url.endswith("/tests/fixtures/sites/app.js")
+    assert execution.result.requested_capabilities[0].name == "EXEC_SAMEORIGIN_JS"
 
 
 def test_page_loader_blocks_third_party_images_in_strict_mode() -> None:

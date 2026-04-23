@@ -11,7 +11,8 @@ from neuzelaar.core.fetch.cookies import SessionCookieJar
 from neuzelaar.core.fetch.resource import FetchReason, Request, Resource
 from neuzelaar.core.handlers.registry import HandlerResult, default_registry
 from neuzelaar.core.mime.classifier import MimeDecision, classify_resource
-from neuzelaar.core.origin import parse_url, resolve_url
+from neuzelaar.core.origin import Origin, parse_url, resolve_url
+from neuzelaar.core.policy.capability import Capability
 from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
 from neuzelaar.document.forms import DocumentForm, extract_forms
 from neuzelaar.document.links import DocumentLink, extract_links
@@ -29,7 +30,21 @@ from neuzelaar.engines.js.interface import (
 )
 from neuzelaar.engines.js.noop import NoopJavaScriptEngine
 from neuzelaar.render.text_only import render_text
-from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked, ScriptBlocked
+from neuzelaar.shell_api.events import (
+    PageFailed,
+    PageLoadFinished,
+    PageLoadStarted,
+    PermissionRequested,
+    ResourceBlocked,
+    ScriptBlocked,
+)
+
+
+_SCRIPT_CAPABILITIES = {
+    Capability.EXEC_INLINE_JS,
+    Capability.EXEC_SAMEORIGIN_JS,
+    Capability.EXEC_THIRDPARTY_JS,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +58,15 @@ class PlannedSubresourceDecision:
 class ImageAsset:
     url: str
     bitmap: DecodedImageBitmap
+
+
+@dataclass(frozen=True, slots=True)
+class ScriptExecutionRecord:
+    url: str | None
+    origin: Origin
+    inline: bool
+    source: str
+    result: ScriptExecutionResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +89,7 @@ class PageLoadResult:
     stylesheet_urls: tuple[str, ...]
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
     images: dict[NodeId, ImageAsset]
-    scripts: dict[NodeId, ScriptExecutionResult]
+    scripts: dict[NodeId, ScriptExecutionRecord]
 
 
 class PageLoader:
@@ -298,18 +322,20 @@ class PageLoader:
             result[planned.node_id] = ImageAsset(url=image_resource.final_url, bitmap=bitmap)
         return result
 
-    def _plan_scripts(self, resource: Resource, handler_result: HandlerResult) -> dict[NodeId, ScriptExecutionResult]:
+    def _plan_scripts(self, resource: Resource, handler_result: HandlerResult) -> dict[NodeId, ScriptExecutionRecord]:
         if handler_result.kind != "document":
             return {}
 
-        result: dict[NodeId, ScriptExecutionResult] = {}
+        result: dict[NodeId, ScriptExecutionRecord] = {}
         for request in extract_scripts(handler_result.value):
             same_origin = None
             normalized_url = None
+            origin = resource.request.context_origin
             if request.url is not None:
                 script_record = resolve_url(resource.final_url, request.url)
                 normalized_url = script_record.normalized
                 same_origin = script_record.origin == resource.request.context_origin
+                origin = script_record.origin
             execution = self.js_engine.execute(
                 ScriptExecutionRequest(
                     source=request.source,
@@ -319,10 +345,32 @@ class PageLoader:
                     node_id=request.node_id,
                 )
             )
-            result[request.node_id] = execution
+            record = ScriptExecutionRecord(
+                url=normalized_url,
+                origin=origin,
+                inline=request.inline,
+                source=request.source,
+                result=execution,
+            )
+            result[request.node_id] = record
+            self._publish_script_permissions(record)
             if execution.status == ScriptExecutionStatus.BLOCKED:
                 self._publish(ScriptBlocked(normalized_url or resource.final_url, execution.reason))
         return result
+
+    def _publish_script_permissions(self, script: ScriptExecutionRecord) -> None:
+        if script.result.status != ScriptExecutionStatus.BLOCKED:
+            return
+        for capability in script.result.requested_capabilities:
+            if capability not in _SCRIPT_CAPABILITIES:
+                continue
+            self._publish(
+                PermissionRequested(
+                    capability=capability,
+                    origin=script.origin,
+                    resolver=None,
+                )
+            )
 
     def _publish(self, event: object) -> None:
         if self.bus is not None:

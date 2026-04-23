@@ -212,6 +212,7 @@ Status:
 Scope:
 
 - explicit inline/external script execution requests
+- blocked script permission events with capability/origin metadata
 - permission events/prompts
 - restricted JS execution
 - capability bridge
