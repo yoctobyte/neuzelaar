@@ -6,7 +6,10 @@ import argparse
 
 from neuzelaar.core.fetch.client import FetchClient
 from neuzelaar.core.fetch.resource import FetchReason, Request
+from neuzelaar.core.handlers.registry import default_registry
+from neuzelaar.core.mime.classifier import classify_resource
 from neuzelaar.core.origin import parse_url
+from neuzelaar.render.text_only import render_text
 
 
 def main() -> int:
@@ -30,8 +33,15 @@ def main() -> int:
         context_origin=url_record.origin,
     )
     resource = FetchClient().fetch(request)
-    print(f"{resource.status} {resource.final_url}")
-    print(resource.body.decode(resource.encoding or "utf-8", errors="replace"))
+    decision = classify_resource(resource)
+    handled = default_registry().handle(resource, decision)
+    print(f"{resource.status} {resource.final_url} [{decision.kind}]")
+    if handled.kind == "document":
+        print(render_text(handled.value))
+    elif handled.kind == "text":
+        print(handled.value)
+    else:
+        print(f"[{handled.kind}] {handled.value}")
     return 0
 
 
