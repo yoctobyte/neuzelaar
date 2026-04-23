@@ -1,59 +1,34 @@
 # Work Done by Gemini Flash - 2026-04-23
 
 ## Summary
-
-- Ran the final Milestone 1 smoke verification commands.
-- Confirmed pytest, guardrails, and CLI fixture behavior pass.
-- Updated smoke-test documentation to match the current CLI output.
-- Confirmed Milestone 1 completion criteria are satisfied.
+- Ran standing test commands to verify M1 core health.
+- Added 3 new offline HTML fixtures for deeper verification.
+- Identified a crash bug in `PageLoader` when subresources (like stylesheets) fail to fetch.
 
 ## Commands Run
-
-- `git status --short`: PASS, clean before verification.
-- `git log --oneline -5`: PASS, recent commits visible.
-- `.venv/bin/pytest -q`: PASS, 42 tests passed.
-- `tools/check_guardrails.sh`: PASS.
-- `.venv/bin/python -m neuzelaar tests/fixtures/sites/example.html`: PASS.
-- `.venv/bin/python -m neuzelaar tests/fixtures/sites/third_party_script.html`: PASS.
-- `.venv/bin/python -m neuzelaar tests/fixtures/sites/basic_links.html`: PASS.
-- `.venv/bin/python -m neuzelaar tests/fixtures/sites/basic_lists.html`: PASS.
+- `.venv/bin/pytest -q`: **PASS** (120 passed)
+- `tools/check_guardrails.sh`: **PASS**
+- `.venv/bin/python -m neuzelaar tests/fixtures/sites/example.html`: **PASS** (Correct semantic text output)
+- `.venv/bin/python -m neuzelaar tests/fixtures/sites/third_party_script.html`: **PASS** (Correctly blocked 3p script)
 
 ## Observed Behavior
-
-`example.html` prints:
-
-```text
-200 file:///home/rene/neuzelaar2/tests/fixtures/sites/example.html [html]
-# Example Fixture
-# Example Domain
-This fixture is used for offline fetch tests.
-```
-
-`third_party_script.html` prints:
-
-```text
-200 file:///home/rene/neuzelaar2/tests/fixtures/sites/third_party_script.html [html]
-# Third Party Script Fixture
-# Policy fixture
-[block] script https://cdn.third-party.test/app.js: strict mode blocks third-party scripts
-```
-
-`basic_links.html` prints readable link text with hrefs in angle brackets.
-
-`basic_lists.html` prints readable list items.
+- `nested_blocks.html`: Correctly rendered nested structure (`article > div > section > p`).
+- `script_and_style_ignored.html`: Correctly omitted `<style>` and `<script>` content from text rendering.
+- `stylesheet_link.html`: Caused a crash because `local.css` was missing.
 
 ## Bugs Found
-
-- None during this pass.
+### Bug 1: Subresource Fetch Crash
+- **Severity**: high
+- **Repro command**: `.venv/bin/python -m neuzelaar tests/fixtures/sites/stylesheet_link.html`
+- **Expected**: Browser should log the failed fetch and continue rendering the page without the stylesheet.
+- **Actual**: `neuzelaar.core.fetch.client.FetchError: File not found: .../local.css` propagates up and crashes the shell.
+- **Suspected area**: `PageLoader._fetch_stylesheets` and `PageLoader._fetch_images` in `neuzelaar/core/page.py` call `fetch()` without a `try...except` block.
 
 ## Files Changed
-
-- `README.md`
-- `docs/smoke_tests.md`
-- `TODO.md`
-- `workdone-gemini-flash.md`
+- `tests/fixtures/sites/nested_blocks.html` [NEW]
+- `tests/fixtures/sites/script_and_style_ignored.html` [NEW]
+- `tests/fixtures/sites/stylesheet_link.html` [NEW]
 
 ## Follow-Up Suggestions
-
-- Start M2 with session/history/link-following work.
-- Add optional bus events to `PageLoader` during M2 so console mode can observe load progress and blocked resources.
+- **Robustness**: Wrap subresource fetches in `PageLoader` with `try...except FetchError` to prevent page-level crashes on minor resource failures.
+- **Fixture Tests**: Add integration tests that specifically use the new fixtures to ensure no regressions in block-ignoring or nested rendering.
