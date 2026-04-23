@@ -27,3 +27,13 @@ def test_opaque_origins_are_never_same_origin() -> None:
     right = parse_url("data:text/plain,hello")
 
     assert not same_origin(left.origin, right.origin)
+
+
+def test_resolve_url_with_absolute_path() -> None:
+    resolved = resolve_url("https://example.com/a/b", "/c")
+    assert resolved.normalized == "https://example.com/c"
+
+
+def test_resolve_url_with_full_url() -> None:
+    resolved = resolve_url("https://example.com/", "https://other.com/")
+    assert resolved.normalized == "https://other.com/"

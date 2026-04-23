@@ -76,6 +76,12 @@ Expected today:
    - Check window opens, text is visible, scrolling works, no overlap in basic fixtures.
    - Take notes in `workdone-gemini-flash.md`; screenshots are useful if available.
 
+12. Unit Test Expansion: [DONE]
+   - Expand `tests/unit/` to cover new fixtures and edge cases.
+   - Verify `text_only` rendering of nested blocks and hidden tags.
+   - Verify `subresources` extraction from real fixtures.
+   - Add URL resolution edge cases to `test_origin`.
+
 ## Report Format
 
 Use this exact shape in `workdone-gemini-flash.md`:

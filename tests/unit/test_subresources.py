@@ -37,3 +37,35 @@ def test_ignores_non_stylesheet_links_and_missing_urls() -> None:
     append_child(document, Element(id=NodeId("img"), tag="img"))
 
     assert extract_subresources(document) == []
+
+
+def test_extract_subresources_from_fixture() -> None:
+    from pathlib import Path
+
+    from neuzelaar.core.fetch.client import FetchClient
+    from neuzelaar.core.fetch.resource import FetchReason, Request
+    from neuzelaar.core.handlers.registry import default_registry
+    from neuzelaar.core.mime.classifier import classify_resource
+    from neuzelaar.core.origin import parse_url
+
+    record = parse_url(Path("tests/fixtures/sites/stylesheet_link.html").resolve().as_uri())
+    request = Request(
+        url=record.normalized,
+        method="GET",
+        headers={},
+        body=None,
+        reason=FetchReason.TOP_LEVEL,
+        initiator=None,
+        origin=record.origin,
+        context_origin=record.origin,
+    )
+    resource = FetchClient().fetch(request)
+    handled = default_registry().handle(resource, classify_resource(resource))
+
+    requests = extract_subresources(handled.value)
+
+    assert len(requests) == 2
+    assert requests[0].reason == FetchReason.STYLESHEET
+    assert requests[0].url == "https://cdn.example.test/style.css"
+    assert requests[1].reason == FetchReason.STYLESHEET
+    assert requests[1].url.endswith("local.css")

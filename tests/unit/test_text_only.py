@@ -44,3 +44,22 @@ def test_text_renderer_renders_images_as_placeholders() -> None:
 
     assert "[image: Local Placeholder]" in rendered
     assert "[image: External Image]" in rendered
+
+
+def test_text_renderer_ignores_hidden_tags() -> None:
+    rendered = render_fixture("script_and_style_ignored.html")
+
+    assert "# Visible Title" in rendered
+    assert "Visible paragraph." in rendered
+    assert "console.log" not in rendered
+    assert "background: red" not in rendered
+    assert "document.write" not in rendered
+
+
+def test_text_renderer_renders_nested_blocks() -> None:
+    rendered = render_fixture("nested_blocks.html")
+
+    assert "# Main Article" in rendered
+    assert "## Section Title" in rendered
+    assert "Paragraph inside a div inside a section inside an article." in rendered
+    assert "This is a blockquote." in rendered

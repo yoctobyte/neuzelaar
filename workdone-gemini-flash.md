@@ -3,10 +3,11 @@
 ## Summary
 - Ran standing test commands to verify M1 core health.
 - Added 3 new offline HTML fixtures for deeper verification.
+- Expanded unit test suite (added 5 new tests) to cover nested rendering, script/style ignoring, subresource extraction from fixtures, and URL resolution edge cases.
 - Identified a crash bug in `PageLoader` when subresources (like stylesheets) fail to fetch.
 
 ## Commands Run
-- `.venv/bin/pytest -q`: **PASS** (120 passed)
+- `.venv/bin/pytest -q`: **PASS** (125 passed)
 - `tools/check_guardrails.sh`: **PASS**
 - `.venv/bin/python -m neuzelaar tests/fixtures/sites/example.html`: **PASS** (Correct semantic text output)
 - `.venv/bin/python -m neuzelaar tests/fixtures/sites/third_party_script.html`: **PASS** (Correctly blocked 3p script)
