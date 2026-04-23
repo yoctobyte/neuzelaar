@@ -1,3 +1,5 @@
+import base64
+
 from neuzelaar.core.fetch.resource import FetchReason, Request, Resource
 from neuzelaar.core.handlers.download_handler import DownloadInfo
 from neuzelaar.core.handlers.image_handler import ImagePlaceholder
@@ -34,15 +36,30 @@ def decision(kind: str) -> MimeDecision:
 
 
 def test_image_handler_returns_placeholder_metadata() -> None:
+    png_body = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
     result = default_registry().handle(
-        make_resource(b"\x89PNG\r\n\x1a\n", url="https://example.com/logo.png"),
+        make_resource(png_body, url="https://example.com/logo.png"),
         decision("image"),
     )
 
     assert result.kind == "image"
     assert isinstance(result.value, ImagePlaceholder)
     assert result.value.url == "https://example.com/logo.png"
-    assert result.value.size == 8
+    assert result.value.width == 1
+    assert result.value.height == 1
+
+
+def test_image_handler_degrades_when_decode_fails() -> None:
+    result = default_registry().handle(
+        make_resource(b"not an image", url="https://example.com/logo.png"),
+        decision("image"),
+    )
+
+    assert result.kind == "image"
+    assert isinstance(result.value, ImagePlaceholder)
+    assert result.value.decode_error == "Unsupported or invalid image data"
 
 
 def test_download_handler_returns_download_info() -> None:

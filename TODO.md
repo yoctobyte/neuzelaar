@@ -175,7 +175,7 @@ Work:
 - [x] software frame generation and neutral `Frame` presentation
 - [x] display list types
 - [x] basic block/inline/text layout
-- decoded images via Pillow adapter
+- [x] decoded images via Pillow adapter
 - scroll support
 - [x] tiny CSS slice: inline styles, `<style>`, limited properties
 
