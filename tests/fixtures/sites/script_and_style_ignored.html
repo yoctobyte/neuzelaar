@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Script and Style Ignored</title>
+    <style>
+        body { background: red; }
+        .invisible { display: none; }
+    </style>
+    <script>
+        console.log("I should not be rendered");
+    </script>
+</head>
+<body>
+    <h1>Visible Title</h1>
+    <p>Visible paragraph.</p>
+    <script>
+        document.write("I should also not be rendered");
+    </script>
+    <style>
+        p { color: blue; }
+    </style>
+</body>
+</html>
