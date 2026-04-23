@@ -48,6 +48,7 @@ Expected:
 | M3 rendering foundation | In progress | Display list, software rasterizer, and Tk shell frame path implemented; GUI smoke pending. |
 | M4a forms | Done | Form extraction, GET/POST submission, and fixture-server flow implemented. |
 | MVP code path | Done | Headless/console/Tk frame path, forms, cookies, policy, basic CSS, and tests implemented. |
+| P8 browser state hardening | Done | Persistent cookies, multi-tab model, and per-tab history isolation implemented. |
 
 ## Active Backlog
 
@@ -143,6 +144,7 @@ Acceptance:
 - P4 Traditional Web Workflows: MVP baseline done
 - P5 Tiny Styling Layer: MVP baseline done
 - P6 Active Content Boundary: MVP baseline done
+- P8 Post-MVP Browser State: done for current package scope
 
 ## M1 Completion Criteria
 

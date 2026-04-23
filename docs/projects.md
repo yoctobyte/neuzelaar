@@ -160,13 +160,19 @@ Goal:
 
 Status:
 
-- not started
+- complete for current package scope
 
-Scope:
+Delivered:
 
-- persistent cookies
+- persistent cookie jar
 - multi-tab model
 - per-tab history isolation
+- console shell tab commands
+
+Still deferred:
+
+- multi-tab visual UI
+- persistent history
 
 ## P9. Post-MVP Styling And Compatibility
 

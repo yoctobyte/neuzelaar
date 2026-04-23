@@ -47,3 +47,15 @@ def test_console_reports_command_errors() -> None:
     assert shell.run_command("back") == "error: No previous history entry"
     assert shell.run_command("follow nope") == "usage: follow <link-number>"
     assert shell.run_command("wat") == "unknown command: wat"
+
+
+def test_console_supports_tab_commands() -> None:
+    shell = ConsoleShell()
+
+    created = shell.run_command("newtab tests/fixtures/sites/example.html")
+    tabs = shell.run_command("tabs")
+    switched = shell.run_command("switch 1")
+
+    assert "Example Domain" in created
+    assert "1:" in tabs
+    assert "Example Domain" in switched or "tab 1 active" in switched
