@@ -1,7 +1,9 @@
 # Neuzelaar 2 TODO
 
 Day-to-day execution tracker. `PLAN.md` is the architecture reference;
-`*_TASKS.md` files define agent roles; `chat/` is async agent messaging.
+`docs/projects.md` is the work-package view; `docs/deferred_details.md`
+captures later details; `*_TASKS.md` files define agent roles; `chat/` is
+async agent messaging.
 
 ## Start Here
 
@@ -49,48 +51,69 @@ Expected:
 
 ## Active Backlog
 
-### P0: Final M1 Docs And Smoke Verification
+Work from complete packages. Keep details that do not affect the current
+boundary in `docs/deferred_details.md`.
+
+### P0: MVP GUI Verification
 
 Owner: Gemini Flash
 
-Status: DONE
+Status: Open
 
 Files:
 
-- `README.md`
-- `docs/smoke_tests.md`
-- `workdone-gemini-flash.md` or `workdone.md`
+- `neuzelaar/shells/tk/shell.py`
+- `docs/mvp_status.md`
+- `docs/projects.md`
+- `workdone-gemini-flash.md`
 
 Tasks:
 
-- Run the standing test commands from `GEMINI_FLASH_TASKS.md`.
-- Confirm README commands match current reality.
-- Confirm smoke docs reflect current CLI output.
-- Report exact commands and pass/fail results.
+- run the Tk shell on a machine with a working display
+- verify page visibility, scrolling, and no obvious overlap on simple fixtures
+- record exact results
 
 Acceptance:
 
-- [x] pytest passes.
-- [x] guardrails pass.
-- [x] CLI smoke commands match documented expectations.
-- [x] No core code edited.
+- a real display smoke report exists
+- MVP docs can say visual shell behavior was manually checked
 
-### P1: M1 Completion Tag/Note
+### P1: MVP Release Note
 
 Owner: Codex
 
-Status: DONE
+Status: Open
+
+Files:
+
+- `docs/mvp_status.md`
+- optionally `docs/releases/mvp.md` later
 
 Tasks:
 
-- Review Gemini Flash verification report.
-- If clean, mark M1 complete in this file and optionally add a short `docs/milestone_1.md`.
-- Commit the milestone note.
+- once GUI smoke is done, write one concise MVP checkpoint note
+- keep it factual: what works, what is deferred, how to verify
 
 Acceptance:
 
-- [x] M1 criteria below are all checked.
-- [x] No hidden uncommitted changes.
+- one stable document to hand someone who wants the current state quickly
+
+### P1: Next Package Selection
+
+Owner: Codex + user
+
+Status: Open
+
+Choices:
+
+- P8 browser state hardening
+- P9 styling and compatibility
+- P10 active content
+
+Acceptance:
+
+- next package is chosen explicitly
+- `TODO.md` backlog reflects that choice
 
 ### P1: Claude Review Of Pipeline Shape
 
@@ -111,6 +134,15 @@ Tasks:
 Acceptance:
 
 - Either "looks good for M1" note, or a small patch with tests.
+
+## Completed Packages
+
+- P1 Headless Core: done
+- P2 Minimal Browser State: done
+- P3 Visual Foundation: MVP baseline done, GUI smoke pending
+- P4 Traditional Web Workflows: MVP baseline done
+- P5 Tiny Styling Layer: MVP baseline done
+- P6 Active Content Boundary: MVP baseline done
 
 ## M1 Completion Criteria
 
@@ -148,64 +180,6 @@ M1 is complete when all are checked:
 - [x] M1-focused test suite
 - [x] JS/WASM no-op active-content engines
 
-## M2 Path: Minimal Document Browser
-
-Theme: make headless/console browsing feel like a small browser, not a one-shot parser.
-
-Work:
-
-- [x] in-memory session and single-tab page state
-- [x] navigation history
-- [x] link following by URL or link index in console mode
-- [x] session-only cookie jar
-- [x] console shell commands: `open`, `back`, `forward`, `links`, `resources`, `quit`
-- [x] page summary: title, URL, links, blocked resources
-- [x] optional bus events from `PageLoader`: load started/finished/failed/resource blocked
-
-Acceptance:
-
-- User can open a fixture page, list links, follow one, go back, and inspect blocked resources.
-- No GUI yet.
-
-## M3 Path: Basic Visual Browser
-
-Theme: first actual viewport.
-
-Work:
-
-- [x] lock Tk as first shell unless explicitly changed
-- [x] software frame generation and neutral `Frame` presentation
-- [x] display list types
-- [x] basic block/inline/text layout
-- [x] decoded images via Pillow adapter
-- [x] scroll support
-- [x] tiny CSS slice: inline styles, `<style>`, limited properties
-
-Acceptance:
-
-- A blog/docs fixture renders readably in a window.
-- [x] Shell remains thin and imports no core internals beyond shell API.
-- Rendering can still be tested headlessly.
-- Gemini Flash verifies GUI behavior with screenshots/notes when available.
-
-## M4a Path: Forms
-
-Theme: traditional web workflows.
-
-Work:
-
-- [x] form model extraction
-- [x] GET submission
-- [x] POST submission
-- [x] input/textarea/select/button state
-- focus and text entry
-- [x] session cookies sufficient for fixture login/comment flow
-- [x] local fixture server for tests
-
-Acceptance:
-
-- [x] Fixture login/comment flow works without JS.
-
 ## MVP Status
 
 MVP code path is complete enough for internal testing:
@@ -226,55 +200,6 @@ MVP code path is complete enough for internal testing:
 - [x] Tk visual frame path
 - [x] software rasterization
 - [ ] manual GUI smoke verification on a machine with a display
-
-## M4b Path: Persistence And Tabs
-
-Theme: browser state.
-
-Work:
-
-- persistent cookie jar
-- multi-tab model
-- per-tab history
-- tab/session isolation tests
-
-Acceptance:
-
-- Two tabs can hold independent state and history.
-
-## M5 Path: Styling And Policy Maturity
-
-Theme: safe browsing with usable rendering.
-
-Work:
-
-- CSS subset from `PLAN.md`
-- external stylesheet fetch/apply under policy
-- strict/balanced/compat profile switch
-- external blocklist file
-- resource budgets
-- blocked-resource UI/panel for console and visual shell
-
-Acceptance:
-
-- HN/docs/blog fixtures are readable with basic styling.
-- Policy decisions are inspectable.
-
-## M6 Path: Active Content Framework
-
-Theme: permissions before execution.
-
-Work:
-
-- JS engine integration point
-- capability bridge
-- permission events/prompts
-- no-op/stub engine that logs blocked or requested capabilities
-- inline script planning alongside `<script src>` planning
-
-Acceptance:
-
-- JS-heavy fixture produces a useful capability/block report without executing JS.
 
 ## Coordination Rules
 
