@@ -30,3 +30,13 @@ def test_tk_shell_uses_page_styles_for_frame_path() -> None:
 
     assert result.root_style.color == "red"
     assert frame.width == 640
+
+
+def test_tk_shell_uses_linked_styles_in_frame_path() -> None:
+    shell = TkShell(width=640, height=480)
+
+    result, frame = shell.render_url_to_frame(Path("tests/fixtures/sites/linked_styles.html").resolve().as_uri())
+
+    assert result.root_style.color == "blue"
+    assert result.root_style.background_color == "#dddddd"
+    assert frame.width == 640

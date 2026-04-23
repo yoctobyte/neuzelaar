@@ -49,6 +49,7 @@ Expected:
 | M4a forms | Done | Form extraction, GET/POST submission, and fixture-server flow implemented. |
 | MVP code path | Done | Headless/console/Tk frame path, forms, cookies, policy, basic CSS, and tests implemented. |
 | P8 browser state hardening | Done | Persistent cookies, multi-tab model, and per-tab history isolation implemented. |
+| P9 styling and compatibility | In progress | Same-origin external stylesheet fetch/apply is being integrated. |
 
 ## Active Backlog
 

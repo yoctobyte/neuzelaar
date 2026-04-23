@@ -182,11 +182,14 @@ Goal:
 
 Status:
 
-- not started
+- in progress
 
-Scope:
+Delivered:
 
-- external stylesheets under policy
+- same-origin external stylesheet fetch/apply under policy
+
+Remaining:
+
 - broader CSS subset
 - better image rendering
 - richer resource budget controls

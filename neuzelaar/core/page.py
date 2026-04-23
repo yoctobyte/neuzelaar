@@ -39,6 +39,7 @@ class PageLoadResult:
     forms: tuple[DocumentForm, ...]
     styles: dict
     root_style: ComputedStyle
+    stylesheet_urls: tuple[str, ...]
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
 
 
@@ -102,7 +103,7 @@ class PageLoader:
         rendered_text = self._render(handler_result)
         links = self._extract_links(handler_result)
         forms = self._extract_forms(handler_result)
-        styles = self._compute_styles(handler_result)
+        stylesheet_urls, styles = self._compute_styles(resource, handler_result)
         page_root_style = self._root_style(handler_result, styles)
         planned = self._evaluate_planned_subresources(resource, handler_result)
         self._publish(PageLoadFinished(resource.final_url, resource.status))
@@ -115,6 +116,7 @@ class PageLoader:
             forms=forms,
             styles=styles,
             root_style=page_root_style,
+            stylesheet_urls=stylesheet_urls,
             planned_subresources=tuple(planned),
         )
 
@@ -135,18 +137,54 @@ class PageLoader:
             return ()
         return extract_forms(handler_result.value)
 
-    def _compute_styles(self, handler_result: HandlerResult) -> dict:
+    def _compute_styles(self, resource: Resource, handler_result: HandlerResult) -> tuple[tuple[str, ...], dict]:
         if handler_result.kind != "document":
-            return {}
+            return (), {}
         rules = []
+        stylesheet_urls: list[str] = []
         for block in style_text_blocks(handler_result.value):
             rules.extend(parse_stylesheet(block))
-        return compute_styles(handler_result.value, tuple(rules))
+        for stylesheet_url, css_text in self._fetch_stylesheets(resource, handler_result):
+            stylesheet_urls.append(stylesheet_url)
+            rules.extend(parse_stylesheet(css_text))
+        return tuple(stylesheet_urls), compute_styles(handler_result.value, tuple(rules))
 
     def _root_style(self, handler_result: HandlerResult, styles: dict) -> ComputedStyle:
         if handler_result.kind != "document":
             return ComputedStyle()
         return root_style(handler_result.value, styles)
+
+    def _fetch_stylesheets(self, resource: Resource, handler_result: HandlerResult) -> list[tuple[str, str]]:
+        if handler_result.kind != "document":
+            return []
+        results: list[tuple[str, str]] = []
+        for planned in extract_subresources(handler_result.value):
+            if planned.reason != FetchReason.STYLESHEET:
+                continue
+            stylesheet_record = resolve_url(resource.final_url, planned.url)
+            stylesheet_request = Request(
+                url=stylesheet_record.normalized,
+                method="GET",
+                headers=self._subresource_headers(stylesheet_record.normalized),
+                body=None,
+                reason=FetchReason.STYLESHEET,
+                initiator=resource.id,
+                origin=stylesheet_record.origin,
+                context_origin=resource.request.context_origin,
+            )
+            decision = self.policy_engine.evaluate_fetch(stylesheet_request)
+            if not decision.allowed:
+                self._publish(ResourceBlocked(stylesheet_record.normalized, decision.reason))
+                continue
+            stylesheet_resource = self.fetch_client.fetch(stylesheet_request)
+            if self.cookie_jar is not None:
+                self.cookie_jar.store_from_resource(stylesheet_resource)
+            css_text = stylesheet_resource.body.decode(
+                stylesheet_resource.encoding or "utf-8",
+                errors="replace",
+            )
+            results.append((stylesheet_resource.final_url, css_text))
+        return results
 
     def _evaluate_planned_subresources(
         self,
@@ -162,7 +200,7 @@ class PageLoader:
             subresource_request = Request(
                 url=subresource_record.normalized,
                 method="GET",
-                headers={},
+                headers=self._subresource_headers(subresource_record.normalized),
                 body=None,
                 reason=planned.reason,
                 initiator=resource.id,
@@ -184,3 +222,9 @@ class PageLoader:
     def _publish(self, event: object) -> None:
         if self.bus is not None:
             self.bus.publish(event)
+
+    def _subresource_headers(self, url: str) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        if self.cookie_jar is not None:
+            self.cookie_jar.add_cookie_header(url, headers)
+        return headers

@@ -29,6 +29,15 @@ def test_page_loader_computes_styles_from_style_blocks_and_inline_styles() -> No
     assert result.root_style.background_color == "#eeeeee"
 
 
+def test_page_loader_fetches_same_origin_stylesheets() -> None:
+    result = PageLoader().load(Path("tests/fixtures/sites/linked_styles.html").resolve().as_uri())
+
+    assert len(result.stylesheet_urls) == 1
+    assert result.stylesheet_urls[0].endswith("/tests/fixtures/sites/linked_styles.css")
+    assert result.root_style.color == "blue"
+    assert result.root_style.background_color == "#dddddd"
+
+
 def test_page_loader_evaluates_planned_subresources() -> None:
     result = PageLoader().load(Path("tests/fixtures/sites/third_party_script.html").resolve().as_uri())
 
