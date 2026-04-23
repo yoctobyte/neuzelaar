@@ -1,9 +1,12 @@
 import pytest
+from datetime import UTC, datetime
 
 from neuzelaar.core.bus import Bus
 from neuzelaar.core.fetch.client import FetchError
 from neuzelaar.core.page import PageLoader
 from neuzelaar.core.policy.capability import Capability
+from neuzelaar.core.policy.capability import Permission, PermissionScope
+from neuzelaar.core.policy.permissions import PermissionStore
 from neuzelaar.shell_api.events import (
     PageFailed,
     PageLoadFinished,
@@ -70,3 +73,22 @@ def test_page_loader_emits_same_origin_script_permission_request() -> None:
     assert len(permissions) == 1
     assert permissions[0].capability == Capability.EXEC_SAMEORIGIN_JS
     assert permissions[0].origin.scheme == "file"
+
+
+def test_page_loader_skips_permission_event_when_grant_exists() -> None:
+    bus = Bus()
+    permissions: list[PermissionRequested] = []
+    bus.subscribe(PermissionRequested, permissions.append)
+    store = PermissionStore()
+    store.grant(
+        Permission(
+            capability=Capability.EXEC_INLINE_JS,
+            scope=PermissionScope.SESSION,
+            origin=None,
+            granted_at=datetime.now(UTC),
+        )
+    )
+
+    PageLoader(bus=bus, permission_store=store).load("tests/fixtures/sites/inline_script.html")
+
+    assert permissions == []

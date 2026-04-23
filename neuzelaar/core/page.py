@@ -13,6 +13,7 @@ from neuzelaar.core.handlers.registry import HandlerResult, default_registry
 from neuzelaar.core.mime.classifier import MimeDecision, classify_resource
 from neuzelaar.core.origin import Origin, parse_url, resolve_url
 from neuzelaar.core.policy.capability import Capability
+from neuzelaar.core.policy.permissions import PermissionStore
 from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
 from neuzelaar.document.forms import DocumentForm, extract_forms
 from neuzelaar.document.links import DocumentLink, extract_links
@@ -102,6 +103,7 @@ class PageLoader:
         bus: Bus | None = None,
         passive_budget: PassiveResourceBudget | None = None,
         js_engine: JavaScriptEngine | None = None,
+        permission_store: PermissionStore | None = None,
     ) -> None:
         self.fetch_client = fetch_client or FetchClient()
         self.policy_engine = policy_engine or PolicyEngine()
@@ -109,6 +111,7 @@ class PageLoader:
         self.bus = bus
         self.passive_budget = passive_budget or PassiveResourceBudget()
         self.js_engine = js_engine or NoopJavaScriptEngine()
+        self.permission_store = permission_store or PermissionStore()
 
     def load(
         self,
@@ -363,6 +366,8 @@ class PageLoader:
             return
         for capability in script.result.requested_capabilities:
             if capability not in _SCRIPT_CAPABILITIES:
+                continue
+            if self.permission_store.is_granted(capability, script.origin):
                 continue
             self._publish(
                 PermissionRequested(
