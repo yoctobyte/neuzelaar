@@ -43,7 +43,7 @@ Expected:
 | Guardrails | Done | pytest invokes `tools/check_guardrails.sh`. |
 | M1 docs verification | Done | See `workdone-gemini-flash.md`. |
 | M2 minimal document browser | Done | Session/history/link listing/console commands/cookies/events implemented. |
-| M3 rendering foundation | In progress | Display list and software rasterizer implemented; Tk shell/layout polish pending. |
+| M3 rendering foundation | In progress | Display list, software rasterizer, and Tk shell frame path implemented; GUI smoke pending. |
 
 ## Active Backlog
 
@@ -171,7 +171,7 @@ Theme: first actual viewport.
 
 Work:
 
-- lock Tk as first shell unless explicitly changed
+- [x] lock Tk as first shell unless explicitly changed
 - [x] software frame generation and neutral `Frame` presentation
 - [x] display list types
 - [x] basic block/inline/text layout
@@ -182,7 +182,7 @@ Work:
 Acceptance:
 
 - A blog/docs fixture renders readably in a window.
-- Shell remains thin and imports no core internals beyond shell API.
+- [x] Shell remains thin and imports no core internals beyond shell API.
 - Rendering can still be tested headlessly.
 - Gemini Flash verifies GUI behavior with screenshots/notes when available.
 
