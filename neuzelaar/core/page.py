@@ -159,10 +159,11 @@ class PageLoader:
         rendered_text = self._render(handler_result)
         links = self._extract_links(handler_result)
         forms = self._extract_forms(handler_result)
-        stylesheet_urls, styles = self._compute_styles(resource, handler_result)
+        plan = self._build_subresource_plan(handler_result)
+        stylesheet_urls, styles = self._compute_styles(resource, handler_result, plan)
         page_root_style = self._root_style(handler_result, styles)
-        planned = self._evaluate_planned_subresources(resource, handler_result)
-        images = self._fetch_images(resource, handler_result)
+        planned = self._evaluate_planned_subresources(resource, handler_result, plan)
+        images = self._fetch_images(resource, handler_result, plan)
         scripts = self._plan_scripts(resource, handler_result)
         self._publish(PageLoadFinished(resource.final_url, resource.status))
         return PageLoadResult(
@@ -197,14 +198,26 @@ class PageLoader:
             return ()
         return extract_forms(handler_result.value)
 
-    def _compute_styles(self, resource: Resource, handler_result: HandlerResult) -> tuple[tuple[str, ...], dict]:
+    def _build_subresource_plan(
+        self, handler_result: HandlerResult
+    ) -> tuple[SubresourceRequest, ...]:
+        if handler_result.kind != "document":
+            return ()
+        return tuple(extract_subresources(handler_result.value))
+
+    def _compute_styles(
+        self,
+        resource: Resource,
+        handler_result: HandlerResult,
+        plan: tuple[SubresourceRequest, ...],
+    ) -> tuple[tuple[str, ...], dict]:
         if handler_result.kind != "document":
             return (), {}
         rules = []
         stylesheet_urls: list[str] = []
         for block in style_text_blocks(handler_result.value):
             rules.extend(parse_stylesheet(block))
-        for stylesheet_url, css_text in self._fetch_stylesheets(resource, handler_result):
+        for stylesheet_url, css_text in self._fetch_stylesheets(resource, plan):
             stylesheet_urls.append(stylesheet_url)
             rules.extend(parse_stylesheet(css_text))
         return tuple(stylesheet_urls), compute_styles(handler_result.value, tuple(rules))
@@ -214,12 +227,14 @@ class PageLoader:
             return ComputedStyle()
         return root_style(handler_result.value, styles)
 
-    def _fetch_stylesheets(self, resource: Resource, handler_result: HandlerResult) -> list[tuple[str, str]]:
-        if handler_result.kind != "document":
-            return []
+    def _fetch_stylesheets(
+        self,
+        resource: Resource,
+        plan: tuple[SubresourceRequest, ...],
+    ) -> list[tuple[str, str]]:
         results: list[tuple[str, str]] = []
         used_bytes = 0
-        for planned in extract_subresources(handler_result.value):
+        for planned in plan:
             if planned.reason != FetchReason.STYLESHEET:
                 continue
             if len(results) >= self.passive_budget.max_stylesheets:
@@ -258,12 +273,13 @@ class PageLoader:
         self,
         resource: Resource,
         handler_result: HandlerResult,
+        plan: tuple[SubresourceRequest, ...],
     ) -> list[PlannedSubresourceDecision]:
         if handler_result.kind != "document":
             return []
 
         result: list[PlannedSubresourceDecision] = []
-        for planned in extract_subresources(handler_result.value):
+        for planned in plan:
             subresource_record = resolve_url(resource.final_url, planned.url)
             subresource_request = Request(
                 url=subresource_record.normalized,
@@ -287,13 +303,18 @@ class PageLoader:
             )
         return result
 
-    def _fetch_images(self, resource: Resource, handler_result: HandlerResult) -> dict[NodeId, ImageAsset]:
+    def _fetch_images(
+        self,
+        resource: Resource,
+        handler_result: HandlerResult,
+        plan: tuple[SubresourceRequest, ...],
+    ) -> dict[NodeId, ImageAsset]:
         if handler_result.kind != "document":
             return {}
 
         result: dict[NodeId, ImageAsset] = {}
         used_bytes = 0
-        for planned in extract_subresources(handler_result.value):
+        for planned in plan:
             if planned.reason != FetchReason.IMAGE:
                 continue
             if len(result) >= self.passive_budget.max_images:
