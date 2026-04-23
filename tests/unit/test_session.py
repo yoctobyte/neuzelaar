@@ -59,3 +59,13 @@ def test_session_raises_for_invalid_link() -> None:
         assert "No link at index" in str(exc)
     else:
         raise AssertionError("expected SessionError")
+
+
+def test_session_submits_get_form_with_overrides() -> None:
+    session = BrowserSession()
+    session.open_url(fixture_url("basic_form.html"))
+
+    result = session.submit_form(1, {"q": "changed"})
+
+    assert result.resource.final_url.endswith("form_result.html?q=changed&note=hello&kind=b")
+    assert "Form Result" in result.rendered_text

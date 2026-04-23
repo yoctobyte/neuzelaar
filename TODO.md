@@ -192,9 +192,10 @@ Theme: traditional web workflows.
 
 Work:
 
-- form model extraction
-- GET and POST submission
-- input/textarea/select/button state
+- [x] form model extraction
+- [x] GET submission
+- POST submission
+- [x] input/textarea/select/button state
 - focus and text entry
 - session cookies sufficient for fixture login/comment flow
 - local fixture server for tests

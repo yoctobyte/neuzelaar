@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 from neuzelaar.core.bus import Bus
 from neuzelaar.core.fetch.client import FetchClient
@@ -13,6 +14,7 @@ from neuzelaar.core.mime.classifier import MimeDecision, classify_resource
 from neuzelaar.core.origin import parse_url, resolve_url
 from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
 from neuzelaar.document.links import DocumentLink, extract_links
+from neuzelaar.document.forms import DocumentForm, extract_forms
 from neuzelaar.document.subresources import SubresourceRequest, extract_subresources
 from neuzelaar.render.text_only import render_text
 from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked
@@ -32,6 +34,7 @@ class PageLoadResult:
     handler_result: HandlerResult
     rendered_text: str
     links: tuple[DocumentLink, ...]
+    forms: tuple[DocumentForm, ...]
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
 
 
@@ -49,17 +52,35 @@ class PageLoader:
         self.cookie_jar = cookie_jar
         self.bus = bus
 
-    def load(self, url: str) -> PageLoadResult:
+    def load(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        form_data: dict[str, str] | None = None,
+        reason: FetchReason = FetchReason.TOP_LEVEL,
+    ) -> PageLoadResult:
         url_record = parse_url(url)
+        body = None
+        final_url = url_record.normalized
+        request_method = method.upper()
+        if form_data and request_method == "GET":
+            separator = "&" if "?" in final_url else "?"
+            final_url = f"{final_url}{separator}{urlencode(form_data)}"
+            url_record = parse_url(final_url)
+        elif form_data and request_method == "POST":
+            body = urlencode(form_data).encode("utf-8")
         headers: dict[str, str] = {}
+        if body is not None:
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
         if self.cookie_jar is not None:
             self.cookie_jar.add_cookie_header(url_record.normalized, headers)
         top_level_request = Request(
             url=url_record.normalized,
-            method="GET",
+            method=request_method,
             headers=headers,
-            body=None,
-            reason=FetchReason.TOP_LEVEL,
+            body=body,
+            reason=reason,
             initiator=None,
             origin=url_record.origin,
             context_origin=url_record.origin,
@@ -76,6 +97,7 @@ class PageLoader:
         handler_result = default_registry().handle(resource, mime_decision)
         rendered_text = self._render(handler_result)
         links = self._extract_links(handler_result)
+        forms = self._extract_forms(handler_result)
         planned = self._evaluate_planned_subresources(resource, handler_result)
         self._publish(PageLoadFinished(resource.final_url, resource.status))
         return PageLoadResult(
@@ -84,6 +106,7 @@ class PageLoader:
             handler_result=handler_result,
             rendered_text=rendered_text,
             links=links,
+            forms=forms,
             planned_subresources=tuple(planned),
         )
 
@@ -98,6 +121,11 @@ class PageLoader:
         if handler_result.kind != "document":
             return ()
         return extract_links(handler_result.value)
+
+    def _extract_forms(self, handler_result: HandlerResult) -> tuple[DocumentForm, ...]:
+        if handler_result.kind != "document":
+            return ()
+        return extract_forms(handler_result.value)
 
     def _evaluate_planned_subresources(
         self,

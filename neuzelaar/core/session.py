@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from neuzelaar.core.fetch.resource import FetchReason
 from neuzelaar.core.fetch.cookies import SessionCookieJar
 from neuzelaar.core.page import PageLoader, PageLoadResult
 
@@ -47,6 +48,24 @@ class BrowserSession:
         except IndexError as exc:
             raise SessionError(f"No link at index {index}") from exc
         return self.open_url(link.resolved_url)
+
+    def submit_form(self, index: int, values: dict[str, str] | None = None) -> PageLoadResult:
+        current = self.current
+        if current is None:
+            raise SessionError("No current page")
+        try:
+            form = current.forms[index - 1]
+        except IndexError as exc:
+            raise SessionError(f"No form at index {index}") from exc
+        data = {control.name: control.value for control in form.controls}
+        if values:
+            data.update(values)
+        return self.loader.load(
+            form.resolved_action,
+            method=form.method.upper(),
+            form_data=data,
+            reason=FetchReason.FORM_SUBMIT,
+        )
 
     def back(self) -> PageLoadResult:
         if self.current_index <= 0:

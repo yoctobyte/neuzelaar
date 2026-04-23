@@ -12,6 +12,14 @@ def test_page_loader_returns_structured_document_result() -> None:
     assert result.handler_result.kind == "document"
     assert "# Example Fixture" in result.rendered_text
     assert result.planned_subresources == ()
+    assert result.forms == ()
+
+
+def test_page_loader_returns_forms() -> None:
+    result = PageLoader().load(Path("tests/fixtures/sites/basic_form.html").resolve().as_uri())
+
+    assert len(result.forms) == 1
+    assert result.forms[0].controls[0].name == "q"
 
 
 def test_page_loader_evaluates_planned_subresources() -> None:
