@@ -194,7 +194,7 @@ Work:
 
 - [x] form model extraction
 - [x] GET submission
-- POST submission
+- [x] POST submission
 - [x] input/textarea/select/button state
 - focus and text entry
 - session cookies sufficient for fixture login/comment flow

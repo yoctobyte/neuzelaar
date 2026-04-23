@@ -54,7 +54,8 @@ class FetchClient:
         parts = urlsplit(request.url)
         if parts.scheme == "file":
             return self._fetch_file(request)
-        if request.method.upper() != "GET":
+        method = request.method.upper()
+        if method not in {"GET", "POST"}:
             raise FetchError(
                 "unsupported_method",
                 f"Unsupported method in M1 fetch client: {request.method}",
@@ -62,8 +63,9 @@ class FetchClient:
             )
         urllib_request = UrlLibRequest(
             request.url,
+            data=request.body if method == "POST" else None,
             headers=request.headers,
-            method=request.method.upper(),
+            method=method,
         )
         try:
             with urlopen(urllib_request, timeout=self.timeout) as response:
@@ -101,6 +103,12 @@ class FetchClient:
         return self.limits.max_redirects
 
     def _fetch_file(self, request: Request) -> Resource:
+        if request.method.upper() != "GET":
+            raise FetchError(
+                "unsupported_method",
+                f"Unsupported method for file URL: {request.method}",
+                url=request.url,
+            )
         parts = urlsplit(request.url)
         path = Path(unquote(parts.path))
         try:
