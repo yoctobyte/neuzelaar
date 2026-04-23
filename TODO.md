@@ -146,6 +146,8 @@ Acceptance:
 
 Owner: Codex
 
+Status: DONE
+
 Files:
 
 - `neuzelaar/core/policy/capability.py`
@@ -160,8 +162,8 @@ Goal:
 
 Acceptance:
 
-- Script/WASM execution requests return structured blocked/noop results.
-- Tests prove JS/WASM are unavailable by default.
+- [x] Script/WASM execution requests return structured blocked/noop results.
+- [x] Tests prove JS/WASM are unavailable by default.
 
 ### 6. M1 Documentation Pass
 
