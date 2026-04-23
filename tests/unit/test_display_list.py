@@ -1,0 +1,25 @@
+from pathlib import Path
+
+from neuzelaar.core.page import PageLoader
+from neuzelaar.render.display_builder import build_display_list
+from neuzelaar.render.display_list import DrawText, FillRect, Placeholder
+
+
+def document_from_fixture(name: str):
+    result = PageLoader().load(Path(f"tests/fixtures/sites/{name}").resolve().as_uri())
+    return result.handler_result.value
+
+
+def test_build_display_list_contains_background_and_text() -> None:
+    display_list = build_display_list(document_from_fixture("example.html"))
+
+    assert isinstance(display_list.ops[0], FillRect)
+    assert any(isinstance(op, DrawText) and op.text == "Example Domain" for op in display_list.ops)
+    assert display_list.width == 800
+    assert display_list.height > 0
+
+
+def test_build_display_list_contains_image_placeholders() -> None:
+    display_list = build_display_list(document_from_fixture("basic_images.html"))
+
+    assert any(isinstance(op, Placeholder) and "Local Placeholder" in op.label for op in display_list.ops)
