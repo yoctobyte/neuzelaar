@@ -61,12 +61,12 @@ Expected today:
 8. [NEW - Approved by USER 2026-04-23] Smoke Test Documentation: [DONE]
    - Create `docs/smoke_tests.md` for manual M1 verification.
 
-9. Test Report Pass:
+9. Test Report Pass: [DONE]
    - Run the standing test commands.
    - Create or update `workdone-gemini-flash.md`.
    - Report exact commands, pass/fail, stdout snippets for CLI behavior, and any suspected bug.
 
-10. Fixture Expansion:
+10. Fixture Expansion: [DONE]
    - Add small offline fixtures only under `tests/fixtures/sites/`.
    - Good candidates: `nested_blocks.html`, `script_and_style_ignored.html`, `stylesheet_link.html`.
    - If adding fixtures, add or request tests that use them.
