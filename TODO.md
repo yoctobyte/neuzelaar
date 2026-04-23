@@ -124,6 +124,8 @@ Acceptance:
 
 Owner: Antigravity or Codex
 
+Status: DONE
+
 Files:
 
 - `neuzelaar/core/fetch/client.py`
@@ -137,8 +139,8 @@ Goal:
 
 Acceptance:
 
-- Tests cover local file success, missing file failure, byte cap failure, unsupported method.
-- No live network required.
+- [x] Tests cover local file success, missing file failure, byte cap failure, unsupported method.
+- [x] No live network required.
 
 ### 5. Add Minimal Capability Noops
 
