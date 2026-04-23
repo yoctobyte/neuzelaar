@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 from neuzelaar.core.bus import Bus
 from neuzelaar.core.fetch.client import FetchClient
 from neuzelaar.core.fetch.cookies import SessionCookieJar
+from neuzelaar.core.fetch.gateway import GateDecision, SubresourceGateway
 from neuzelaar.core.fetch.resource import FetchReason, Request, Resource
 from neuzelaar.core.handlers.registry import HandlerResult, default_registry
 from neuzelaar.core.mime.classifier import MimeDecision, classify_resource
@@ -112,6 +113,11 @@ class PageLoader:
         self.passive_budget = passive_budget or PassiveResourceBudget()
         self.js_engine = js_engine or NoopJavaScriptEngine()
         self.permission_store = permission_store or PermissionStore()
+        self.gateway = SubresourceGateway(
+            policy_engine=self.policy_engine,
+            bus=self.bus,
+            cookie_jar=self.cookie_jar,
+        )
 
     def load(
         self,
@@ -160,10 +166,11 @@ class PageLoader:
         links = self._extract_links(handler_result)
         forms = self._extract_forms(handler_result)
         plan = self._build_subresource_plan(handler_result)
-        stylesheet_urls, styles = self._compute_styles(resource, handler_result, plan)
+        gates = self.gateway.evaluate_plan(plan, resource)
+        stylesheet_urls, styles = self._compute_styles(resource, handler_result, plan, gates)
         page_root_style = self._root_style(handler_result, styles)
-        planned = self._evaluate_planned_subresources(resource, handler_result, plan)
-        images = self._fetch_images(resource, handler_result, plan)
+        planned = self._collect_planned_subresources(plan, gates)
+        images = self._fetch_images(resource, handler_result, plan, gates)
         scripts = self._plan_scripts(resource, handler_result)
         self._publish(PageLoadFinished(resource.final_url, resource.status))
         return PageLoadResult(
@@ -210,6 +217,7 @@ class PageLoader:
         resource: Resource,
         handler_result: HandlerResult,
         plan: tuple[SubresourceRequest, ...],
+        gates: dict[SubresourceRequest, GateDecision],
     ) -> tuple[tuple[str, ...], dict]:
         if handler_result.kind != "document":
             return (), {}
@@ -217,7 +225,7 @@ class PageLoader:
         stylesheet_urls: list[str] = []
         for block in style_text_blocks(handler_result.value):
             rules.extend(parse_stylesheet(block))
-        for stylesheet_url, css_text in self._fetch_stylesheets(resource, plan):
+        for stylesheet_url, css_text in self._fetch_stylesheets(plan, gates):
             stylesheet_urls.append(stylesheet_url)
             rules.extend(parse_stylesheet(css_text))
         return tuple(stylesheet_urls), compute_styles(handler_result.value, tuple(rules))
@@ -229,8 +237,8 @@ class PageLoader:
 
     def _fetch_stylesheets(
         self,
-        resource: Resource,
         plan: tuple[SubresourceRequest, ...],
+        gates: dict[SubresourceRequest, GateDecision],
     ) -> list[tuple[str, str]]:
         results: list[tuple[str, str]] = []
         used_bytes = 0
@@ -240,22 +248,10 @@ class PageLoader:
             if len(results) >= self.passive_budget.max_stylesheets:
                 self._publish(ResourceBlocked(planned.url, "passive stylesheet budget exceeded"))
                 continue
-            stylesheet_record = resolve_url(resource.final_url, planned.url)
-            stylesheet_request = Request(
-                url=stylesheet_record.normalized,
-                method="GET",
-                headers=self._subresource_headers(stylesheet_record.normalized),
-                body=None,
-                reason=FetchReason.STYLESHEET,
-                initiator=resource.id,
-                origin=stylesheet_record.origin,
-                context_origin=resource.request.context_origin,
-            )
-            decision = self.policy_engine.evaluate_fetch(stylesheet_request)
-            if not decision.allowed:
-                self._publish(ResourceBlocked(stylesheet_record.normalized, decision.reason))
+            gate = gates[planned]
+            if not gate.allowed:
                 continue
-            stylesheet_resource = self.fetch_client.fetch(stylesheet_request)
+            stylesheet_resource = self.fetch_client.fetch(gate.request)
             if used_bytes + len(stylesheet_resource.body) > self.passive_budget.max_bytes:
                 self._publish(ResourceBlocked(stylesheet_resource.final_url, "passive resource byte budget exceeded"))
                 continue
@@ -269,45 +265,26 @@ class PageLoader:
             results.append((stylesheet_resource.final_url, css_text))
         return results
 
-    def _evaluate_planned_subresources(
+    def _collect_planned_subresources(
         self,
-        resource: Resource,
-        handler_result: HandlerResult,
         plan: tuple[SubresourceRequest, ...],
+        gates: dict[SubresourceRequest, GateDecision],
     ) -> list[PlannedSubresourceDecision]:
-        if handler_result.kind != "document":
-            return []
-
-        result: list[PlannedSubresourceDecision] = []
-        for planned in plan:
-            subresource_record = resolve_url(resource.final_url, planned.url)
-            subresource_request = Request(
-                url=subresource_record.normalized,
-                method="GET",
-                headers=self._subresource_headers(subresource_record.normalized),
-                body=None,
-                reason=planned.reason,
-                initiator=resource.id,
-                origin=subresource_record.origin,
-                context_origin=resource.request.context_origin,
+        return [
+            PlannedSubresourceDecision(
+                request=planned,
+                decision=gates[planned].policy,
+                normalized_url=gates[planned].normalized_url,
             )
-            decision = self.policy_engine.evaluate_fetch(subresource_request)
-            if not decision.allowed:
-                self._publish(ResourceBlocked(subresource_record.normalized, decision.reason))
-            result.append(
-                PlannedSubresourceDecision(
-                    request=planned,
-                    decision=decision,
-                    normalized_url=subresource_record.normalized,
-                )
-            )
-        return result
+            for planned in plan
+        ]
 
     def _fetch_images(
         self,
         resource: Resource,
         handler_result: HandlerResult,
         plan: tuple[SubresourceRequest, ...],
+        gates: dict[SubresourceRequest, GateDecision],
     ) -> dict[NodeId, ImageAsset]:
         if handler_result.kind != "document":
             return {}
@@ -320,21 +297,10 @@ class PageLoader:
             if len(result) >= self.passive_budget.max_images:
                 self._publish(ResourceBlocked(planned.url, "passive image budget exceeded"))
                 continue
-            image_record = resolve_url(resource.final_url, planned.url)
-            image_request = Request(
-                url=image_record.normalized,
-                method="GET",
-                headers=self._subresource_headers(image_record.normalized),
-                body=None,
-                reason=FetchReason.IMAGE,
-                initiator=resource.id,
-                origin=image_record.origin,
-                context_origin=resource.request.context_origin,
-            )
-            decision = self.policy_engine.evaluate_fetch(image_request)
-            if not decision.allowed:
+            gate = gates[planned]
+            if not gate.allowed:
                 continue
-            image_resource = self.fetch_client.fetch(image_request)
+            image_resource = self.fetch_client.fetch(gate.request)
             if used_bytes + len(image_resource.body) > self.passive_budget.max_bytes:
                 self._publish(ResourceBlocked(image_resource.final_url, "passive resource byte budget exceeded"))
                 continue
@@ -401,9 +367,3 @@ class PageLoader:
     def _publish(self, event: object) -> None:
         if self.bus is not None:
             self.bus.publish(event)
-
-    def _subresource_headers(self, url: str) -> dict[str, str]:
-        headers: dict[str, str] = {}
-        if self.cookie_jar is not None:
-            self.cookie_jar.add_cookie_header(url, headers)
-        return headers
