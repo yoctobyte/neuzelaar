@@ -49,8 +49,8 @@ Expected:
 | M4a forms | Done | Form extraction, GET/POST submission, and fixture-server flow implemented. |
 | MVP code path | Done | Headless/console/Tk frame path, forms, cookies, policy, basic CSS, and tests implemented. |
 | P8 browser state hardening | Done | Persistent cookies, multi-tab model, and per-tab history isolation implemented. |
-| P9 styling and compatibility | In progress | Same-origin stylesheet fetch, descendant selectors, local image rendering, basic margin/padding/font-size layout, and passive asset budgets are in; broader CSS/layout still open. |
-| P10 active content | In progress | Script tags now become explicit blocked JS execution requests, emit permission events, show up in console diagnostics, and consult a permission store to avoid duplicate prompts; real permissions/execution remain open. |
+| P9 styling and compatibility | In progress | Same-origin stylesheet fetch, descendant selectors, local image rendering, basic margin/padding/font-size layout, passive asset budgets, and shared subresource gating are in; broader CSS/layout still open. |
+| P10 active content | In progress | Script tags become explicit execution requests; permission checks now flow through `PermissionService` and command-bus grants, with console diagnostics and remembered grants in place; real JS execution remains disabled. |
 
 ## Active Backlog
 
@@ -101,23 +101,6 @@ Acceptance:
 
 - one stable document to hand someone who wants the current state quickly
 
-### P1: Next Package Selection
-
-Owner: Codex + user
-
-Status: Open
-
-Choices:
-
-- P8 browser state hardening
-- P9 styling and compatibility
-- P10 active content
-
-Acceptance:
-
-- next package is chosen explicitly
-- `TODO.md` backlog reflects that choice
-
 ### P9: Styling And Compatibility
 
 Owner: Codex
@@ -127,6 +110,7 @@ Status: In progress
 Files:
 
 - `neuzelaar/core/page.py`
+- `neuzelaar/core/fetch/gateway.py`
 - `neuzelaar/document/styles.py`
 - `neuzelaar/document/layout.py`
 - `neuzelaar/render/display_builder.py`
@@ -136,7 +120,7 @@ Tasks:
 
 - expand CSS support beyond tag/class/id plus descendant matching
 - keep improving visual layout beyond simple stacked blocks
-- add resource-budget controls for fetched passive assets
+- tune resource-budget controls for fetched passive assets
 
 Acceptance:
 
@@ -144,25 +128,32 @@ Acceptance:
 - local passive assets stay policy-visible and budgeted
 - tests cover the added CSS/rendering behavior
 
-### P1: Claude Review Of Pipeline Shape
+### P10: Active Content
 
-Owner: Claude
+Owner: Codex
+
+Status: In progress
 
 Files:
 
-- `CLAUDE_TASKS.md`
-- `chat/claude-to-codex.md`
 - `neuzelaar/core/page.py`
+- `neuzelaar/core/policy/permission_service.py`
+- `neuzelaar/core/policy/permissions.py`
+- `neuzelaar/shell_api/events.py`
+- `neuzelaar/shell_api/commands.py`
+- `neuzelaar/shells/console/shell.py`
 
 Tasks:
 
-- Review `PageLoader` and `PageLoadResult` shape.
-- Confirm whether optional bus emission should wait until M2.
-- Leave notes in `chat/claude-to-codex.md` or implement a small reviewed change.
+- wire shell-facing grant and deny flows end to end
+- decide whether `AllowCapabilityOnce` remains as sugar or is removed
+- keep execution blocked until a restricted JS engine exists
 
 Acceptance:
 
-- Either "looks good for M1" note, or a small patch with tests.
+- shells can respond to `PermissionRequested` with command-bus grant/deny commands
+- remembered grants suppress duplicate permission requests
+- active-content diagnostics stay explicit and test-covered
 
 ## Completed Packages
 
@@ -173,6 +164,7 @@ Acceptance:
 - P5 Tiny Styling Layer: MVP baseline done
 - P6 Active Content Boundary: MVP baseline done
 - P8 Post-MVP Browser State: done for current package scope
+- Claude page-loader/permission review: done and landed
 
 ## M1 Completion Criteria
 

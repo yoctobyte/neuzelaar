@@ -192,6 +192,7 @@ Delivered:
 - basic margin/padding/font-size effect on layout
 - image `width`/`height` attribute sizing
 - per-page passive asset budgets for stylesheets/images
+- shared `SubresourceGateway` so subresources are gated once per plan
 
 Remaining:
 
@@ -212,9 +213,10 @@ Status:
 Scope:
 
 - explicit inline/external script execution requests
-- blocked script permission events with capability/origin metadata
+- blocked script permission events with capability/origin/context metadata
 - console diagnostics for active-content requests
 - permission store for remembered grants
+- `PermissionService` with command-bus grant/deny flow
 - permission events/prompts
 - restricted JS execution
 - capability bridge
