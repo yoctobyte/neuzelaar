@@ -16,12 +16,20 @@ from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
 from neuzelaar.document.forms import DocumentForm, extract_forms
 from neuzelaar.document.links import DocumentLink, extract_links
 from neuzelaar.document.dom import NodeId
+from neuzelaar.document.scripts import extract_scripts
 from neuzelaar.document.styles import ComputedStyle, compute_styles, root_style, style_text_blocks
 from neuzelaar.document.subresources import SubresourceRequest, extract_subresources
 from neuzelaar.engines.css.tinycss2_adapter import parse_stylesheet
 from neuzelaar.engines.image.pillow_adapter import DecodedImageBitmap, ImageDecodeError, decode_image_bitmap
+from neuzelaar.engines.js.interface import (
+    JavaScriptEngine,
+    ScriptExecutionRequest,
+    ScriptExecutionResult,
+    ScriptExecutionStatus,
+)
+from neuzelaar.engines.js.noop import NoopJavaScriptEngine
 from neuzelaar.render.text_only import render_text
-from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked
+from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked, ScriptBlocked
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +65,7 @@ class PageLoadResult:
     stylesheet_urls: tuple[str, ...]
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
     images: dict[NodeId, ImageAsset]
+    scripts: dict[NodeId, ScriptExecutionResult]
 
 
 class PageLoader:
@@ -68,12 +77,14 @@ class PageLoader:
         cookie_jar: SessionCookieJar | None = None,
         bus: Bus | None = None,
         passive_budget: PassiveResourceBudget | None = None,
+        js_engine: JavaScriptEngine | None = None,
     ) -> None:
         self.fetch_client = fetch_client or FetchClient()
         self.policy_engine = policy_engine or PolicyEngine()
         self.cookie_jar = cookie_jar
         self.bus = bus
         self.passive_budget = passive_budget or PassiveResourceBudget()
+        self.js_engine = js_engine or NoopJavaScriptEngine()
 
     def load(
         self,
@@ -125,6 +136,7 @@ class PageLoader:
         page_root_style = self._root_style(handler_result, styles)
         planned = self._evaluate_planned_subresources(resource, handler_result)
         images = self._fetch_images(resource, handler_result)
+        scripts = self._plan_scripts(resource, handler_result)
         self._publish(PageLoadFinished(resource.final_url, resource.status))
         return PageLoadResult(
             resource=resource,
@@ -138,6 +150,7 @@ class PageLoader:
             stylesheet_urls=stylesheet_urls,
             planned_subresources=tuple(planned),
             images=images,
+            scripts=scripts,
         )
 
     def _render(self, handler_result: HandlerResult) -> str:
@@ -283,6 +296,32 @@ class PageLoader:
             except ImageDecodeError:
                 continue
             result[planned.node_id] = ImageAsset(url=image_resource.final_url, bitmap=bitmap)
+        return result
+
+    def _plan_scripts(self, resource: Resource, handler_result: HandlerResult) -> dict[NodeId, ScriptExecutionResult]:
+        if handler_result.kind != "document":
+            return {}
+
+        result: dict[NodeId, ScriptExecutionResult] = {}
+        for request in extract_scripts(handler_result.value):
+            same_origin = None
+            normalized_url = None
+            if request.url is not None:
+                script_record = resolve_url(resource.final_url, request.url)
+                normalized_url = script_record.normalized
+                same_origin = script_record.origin == resource.request.context_origin
+            execution = self.js_engine.execute(
+                ScriptExecutionRequest(
+                    source=request.source,
+                    url=normalized_url,
+                    inline=request.inline,
+                    same_origin=same_origin,
+                    node_id=request.node_id,
+                )
+            )
+            result[request.node_id] = execution
+            if execution.status == ScriptExecutionStatus.BLOCKED:
+                self._publish(ScriptBlocked(normalized_url or resource.final_url, execution.reason))
         return result
 
     def _publish(self, event: object) -> None:

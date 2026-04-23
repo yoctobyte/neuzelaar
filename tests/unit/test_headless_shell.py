@@ -21,3 +21,13 @@ def test_headless_shell_formats_blocked_subresource() -> None:
     output = shell.format_result(result)
 
     assert "[block] script https://cdn.third-party.test/app.js" in output
+
+
+def test_headless_shell_formats_blocked_inline_script_execution() -> None:
+    shell = HeadlessShell()
+    result = shell.open_url(Path("tests/fixtures/sites/inline_script.html").resolve().as_uri())
+
+    output = shell.format_result(result)
+
+    assert "[blocked] script" in output
+    assert "JavaScript execution is disabled" in output

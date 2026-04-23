@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from neuzelaar.core.policy.capability import Capability
+from neuzelaar.document.dom import NodeId
 
 
 class ScriptExecutionStatus(Enum):
@@ -19,6 +20,8 @@ class ScriptExecutionRequest:
     source: str
     url: str | None = None
     inline: bool = True
+    same_origin: bool | None = None
+    node_id: NodeId | None = None
 
 
 @dataclass(frozen=True, slots=True)

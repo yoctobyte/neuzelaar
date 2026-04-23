@@ -14,11 +14,20 @@ def test_noop_javascript_engine_blocks_inline_scripts() -> None:
 
 def test_noop_javascript_engine_blocks_external_scripts() -> None:
     result = NoopJavaScriptEngine().execute(
-        ScriptExecutionRequest(source="", url="https://example.com/app.js", inline=False)
+        ScriptExecutionRequest(source="", url="https://example.com/app.js", inline=False, same_origin=True)
     )
 
     assert result.status == ScriptExecutionStatus.BLOCKED
     assert result.requested_capabilities == (Capability.EXEC_SAMEORIGIN_JS,)
+
+
+def test_noop_javascript_engine_marks_third_party_scripts_separately() -> None:
+    result = NoopJavaScriptEngine().execute(
+        ScriptExecutionRequest(source="", url="https://cdn.example.com/app.js", inline=False, same_origin=False)
+    )
+
+    assert result.status == ScriptExecutionStatus.BLOCKED
+    assert result.requested_capabilities == (Capability.EXEC_THIRDPARTY_JS,)
 
 
 def test_noop_wasm_engine_blocks_modules() -> None:

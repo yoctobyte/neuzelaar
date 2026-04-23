@@ -23,4 +23,9 @@ class HeadlessShell:
                 f"{planned.request.reason.name.lower()} {planned.normalized_url}: "
                 f"{planned.decision.reason}"
             )
+        for node_id, execution in result.scripts.items():
+            lines.append(
+                f"[{execution.status.value}] script {node_id}: "
+                f"{execution.reason}"
+            )
         return "\n".join(line for line in lines if line)

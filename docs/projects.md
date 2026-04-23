@@ -207,10 +207,11 @@ Goal:
 
 Status:
 
-- not started
+- in progress
 
 Scope:
 
+- explicit inline/external script execution requests
 - permission events/prompts
 - restricted JS execution
 - capability bridge

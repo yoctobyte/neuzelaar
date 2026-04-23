@@ -55,6 +55,16 @@ def test_page_loader_evaluates_planned_subresources() -> None:
     planned = result.planned_subresources[0]
     assert planned.normalized_url == "https://cdn.third-party.test/app.js"
     assert planned.decision.action == PolicyAction.BLOCK
+    assert len(result.scripts) == 1
+
+
+def test_page_loader_plans_inline_scripts_through_js_engine() -> None:
+    result = PageLoader().load(Path("tests/fixtures/sites/inline_script.html").resolve().as_uri())
+
+    assert len(result.scripts) == 1
+    execution = next(iter(result.scripts.values()))
+    assert execution.status.value == "blocked"
+    assert execution.reason == "JavaScript execution is disabled"
 
 
 def test_page_loader_blocks_third_party_images_in_strict_mode() -> None:

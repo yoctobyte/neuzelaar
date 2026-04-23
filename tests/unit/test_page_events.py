@@ -3,13 +3,13 @@ import pytest
 from neuzelaar.core.bus import Bus
 from neuzelaar.core.fetch.client import FetchError
 from neuzelaar.core.page import PageLoader
-from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked
+from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked, ScriptBlocked
 
 
 def test_page_loader_emits_load_and_blocked_resource_events() -> None:
     bus = Bus()
     events: list[object] = []
-    for event_type in (PageLoadStarted, PageLoadFinished, ResourceBlocked):
+    for event_type in (PageLoadStarted, PageLoadFinished, ResourceBlocked, ScriptBlocked):
         bus.subscribe(event_type, events.append)
 
     PageLoader(bus=bus).load("tests/fixtures/sites/third_party_script.html")
@@ -19,6 +19,9 @@ def test_page_loader_emits_load_and_blocked_resource_events() -> None:
     blocked = [event for event in events if isinstance(event, ResourceBlocked)]
     assert len(blocked) == 1
     assert blocked[0].url == "https://cdn.third-party.test/app.js"
+    script_blocked = [event for event in events if isinstance(event, ScriptBlocked)]
+    assert len(script_blocked) == 1
+    assert script_blocked[0].origin == "https://cdn.third-party.test/app.js"
 
 
 def test_page_loader_emits_failure_event() -> None:
