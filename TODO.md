@@ -102,6 +102,8 @@ Acceptance:
 
 Owner: Codex
 
+Status: DONE
+
 Files:
 
 - `neuzelaar/core/handlers/image_handler.py`
@@ -115,8 +117,8 @@ Goal:
 
 Acceptance:
 
-- Registry has explicit handlers for `html`, `text`, `image`, `download`.
-- Unsupported content degrades safely.
+- [x] Registry has explicit handlers for `html`, `text`, `image`, `download`.
+- [x] Unsupported content degrades safely.
 
 ### 4. Improve Fetch Client Basics
 
