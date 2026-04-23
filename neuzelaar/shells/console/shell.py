@@ -37,6 +37,8 @@ class ConsoleShell:
                 return self.format_links()
             if name == "resources":
                 return self.format_resources()
+            if name == "permissions":
+                return self.format_permissions()
             if name == "follow":
                 if not arg or not arg.isdigit():
                     return "usage: follow <link-number>"
@@ -92,6 +94,21 @@ class ConsoleShell:
             for planned in current.planned_subresources
         )
 
+    def format_permissions(self) -> str:
+        current = self.browser.active_tab.current
+        if current is None:
+            return "no page loaded"
+        if not current.scripts:
+            return "no active content requests"
+        lines = []
+        for node_id, script in current.scripts.items():
+            capability = script.result.requested_capabilities[0].name.lower() if script.result.requested_capabilities else "unknown"
+            source = script.url or "inline"
+            lines.append(
+                f"[{script.result.status.value}] {capability} {source} ({node_id}): {script.result.reason}"
+            )
+        return "\n".join(lines)
+
     def format_tabs(self) -> str:
         lines = []
         for tab in self.browser.list_tabs():
@@ -109,4 +126,6 @@ class ConsoleShell:
             lines.append(f"{len(result.links)} link(s)")
         if result.planned_subresources:
             lines.append(f"{len(result.planned_subresources)} planned resource(s)")
+        if result.scripts:
+            lines.append(f"{len(result.scripts)} active content request(s)")
         return "\n".join(line for line in lines if line)

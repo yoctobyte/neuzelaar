@@ -41,6 +41,17 @@ def test_console_resources_reports_blocked_script() -> None:
     assert "[block] script https://cdn.third-party.test/app.js" in output
 
 
+def test_console_permissions_reports_blocked_script_capability() -> None:
+    shell = ConsoleShell()
+
+    opened = shell.run_command(f"open {fixture_path('inline_script.html')}")
+    output = shell.run_command("permissions")
+
+    assert "1 active content request(s)" in opened
+    assert "[blocked] exec_inline_js inline" in output
+    assert "JavaScript execution is disabled" in output
+
+
 def test_console_reports_command_errors() -> None:
     shell = ConsoleShell()
 

@@ -213,6 +213,7 @@ Scope:
 
 - explicit inline/external script execution requests
 - blocked script permission events with capability/origin metadata
+- console diagnostics for active-content requests
 - permission events/prompts
 - restricted JS execution
 - capability bridge
