@@ -217,6 +217,7 @@ Scope:
 - console diagnostics for active-content requests
 - permission store for remembered grants
 - `PermissionService` with command-bus grant/deny flow
+- console grant/reload path proving remembered grants without enabling execution
 - permission events/prompts
 - restricted JS execution
 - capability bridge

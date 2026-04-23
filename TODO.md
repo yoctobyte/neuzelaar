@@ -50,7 +50,7 @@ Expected:
 | MVP code path | Done | Headless/console/Tk frame path, forms, cookies, policy, basic CSS, and tests implemented. |
 | P8 browser state hardening | Done | Persistent cookies, multi-tab model, and per-tab history isolation implemented. |
 | P9 styling and compatibility | In progress | Same-origin stylesheet fetch, descendant selectors, local image rendering, basic margin/padding/font-size layout, passive asset budgets, and shared subresource gating are in; broader CSS/layout still open. |
-| P10 active content | In progress | Script tags become explicit execution requests; permission checks now flow through `PermissionService` and command-bus grants, with console diagnostics and remembered grants in place; real JS execution remains disabled. |
+| P10 active content | In progress | Script tags become explicit execution requests; permission checks now flow through `PermissionService` and command-bus grants, with console diagnostics, shell-facing grant/deny flow, reload verification, and remembered grants in place; real JS execution remains disabled. |
 
 ## Active Backlog
 

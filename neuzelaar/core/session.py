@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from neuzelaar.core.bus import Bus
 from neuzelaar.core.fetch.resource import FetchReason
 from neuzelaar.core.fetch.cookies import SessionCookieJar
 from neuzelaar.core.page import PageLoader, PageLoadResult
+from neuzelaar.core.policy.capability import PermissionScope
+from neuzelaar.core.policy.permission_service import PermissionService
+from neuzelaar.shell_api.commands import DenyPermission, GrantPermission
 
 
 @dataclass(slots=True)
@@ -18,13 +22,22 @@ class HistoryEntry:
 @dataclass(slots=True)
 class BrowserSession:
     cookie_jar: SessionCookieJar = field(default_factory=SessionCookieJar)
+    bus: Bus = field(default_factory=Bus)
+    permission_service: PermissionService | None = None
     loader: PageLoader | None = None
     history: list[HistoryEntry] = field(default_factory=list)
     current_index: int = -1
 
     def __post_init__(self) -> None:
+        if self.permission_service is None:
+            self.permission_service = PermissionService(bus=self.bus)
+        self.permission_service.subscribe_to_bus(self.bus)
         if self.loader is None:
-            self.loader = PageLoader(cookie_jar=self.cookie_jar)
+            self.loader = PageLoader(
+                cookie_jar=self.cookie_jar,
+                bus=self.bus,
+                permission_service=self.permission_service,
+            )
 
     @property
     def current(self) -> PageLoadResult | None:
@@ -38,6 +51,12 @@ class BrowserSession:
         self.history.append(HistoryEntry(url=result.resource.final_url, result=result))
         self.current_index = len(self.history) - 1
         return result
+
+    def reload(self) -> PageLoadResult:
+        current = self.current
+        if current is None:
+            raise SessionError("No current page")
+        return self.open_url(current.resource.final_url)
 
     def follow_link(self, index: int) -> PageLoadResult:
         current = self.current
@@ -78,6 +97,58 @@ class BrowserSession:
             raise SessionError("No next history entry")
         self.current_index += 1
         return self.history[self.current_index].result
+
+    def grant_script_permission(self, index: int, scope: PermissionScope) -> None:
+        node_id, script = self._script_at(index)
+        capability = self._script_capability(node_id)
+        request_id = self.permission_service.request_id_for(
+            capability,
+            script.origin,
+            self.current.resource.final_url,
+        )
+        self.bus.publish(
+            GrantPermission(
+                capability=capability,
+                origin=script.origin,
+                scope=scope,
+                request_id=request_id,
+            )
+        )
+
+    def deny_script_permission(self, index: int) -> None:
+        node_id, script = self._script_at(index)
+        capability = self._script_capability(node_id)
+        request_id = self.permission_service.request_id_for(
+            capability,
+            script.origin,
+            self.current.resource.final_url,
+        )
+        self.bus.publish(
+            DenyPermission(
+                capability=capability,
+                origin=script.origin,
+                request_id=request_id,
+            )
+        )
+
+    def _script_at(self, index: int):
+        current = self.current
+        if current is None:
+            raise SessionError("No current page")
+        scripts = tuple(current.scripts.items())
+        try:
+            return scripts[index - 1]
+        except IndexError as exc:
+            raise SessionError(f"No script request at index {index}") from exc
+
+    def _script_capability(self, node_id) -> object:
+        current = self.current
+        if current is None:
+            raise SessionError("No current page")
+        script = current.scripts[node_id]
+        if not script.result.requested_capabilities:
+            raise SessionError("Script request has no capability")
+        return script.result.requested_capabilities[0]
 
 
 class SessionError(RuntimeError):

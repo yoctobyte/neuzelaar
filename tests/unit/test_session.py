@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from neuzelaar.core.policy.capability import PermissionScope
 from neuzelaar.core.session import BrowserSession, SessionError
 
 
@@ -69,3 +70,13 @@ def test_session_submits_get_form_with_overrides() -> None:
 
     assert result.resource.final_url.endswith("form_result.html?q=changed&note=hello&kind=b")
     assert "Form Result" in result.rendered_text
+
+
+def test_session_grant_script_permission_updates_shared_permission_state() -> None:
+    session = BrowserSession()
+    session.open_url(fixture_url("inline_script.html"))
+
+    session.grant_script_permission(1, PermissionScope.ORIGIN)
+
+    assert session.permission_service.store.permissions
+    assert session.permission_service.store.permissions[0].capability.name == "EXEC_INLINE_JS"

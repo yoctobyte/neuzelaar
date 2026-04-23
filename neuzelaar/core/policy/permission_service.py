@@ -37,6 +37,8 @@ from neuzelaar.shell_api.events import PermissionRequested
 class PermissionService:
     store: PermissionStore = field(default_factory=PermissionStore)
     bus: Bus | None = None
+    _pending: dict[str, tuple[Capability, Origin, str]] = field(default_factory=dict, init=False, repr=False)
+    _subscribed_bus_ids: set[int] = field(default_factory=set, init=False, repr=False)
 
     def request(
         self,
@@ -46,16 +48,37 @@ class PermissionService:
     ) -> bool:
         if self.store.is_granted(capability, origin):
             return True
+        request_id = str(uuid.uuid4())
+        self._pending[request_id] = (capability, origin, context_url)
         if self.bus is not None:
             self.bus.publish(
                 PermissionRequested(
-                    request_id=str(uuid.uuid4()),
+                    request_id=request_id,
                     capability=capability,
                     origin=origin,
                     context_url=context_url,
                 )
             )
         return False
+
+    def subscribe_to_bus(self, bus: Bus) -> None:
+        bus_id = id(bus)
+        if bus_id in self._subscribed_bus_ids:
+            return
+        bus.subscribe(GrantPermission, self.grant)
+        bus.subscribe(DenyPermission, self.deny)
+        self._subscribed_bus_ids.add(bus_id)
+
+    def request_id_for(
+        self,
+        capability: Capability,
+        origin: Origin,
+        context_url: str,
+    ) -> str | None:
+        for request_id, pending in reversed(tuple(self._pending.items())):
+            if pending == (capability, origin, context_url):
+                return request_id
+        return None
 
     def grant(self, command: GrantPermission) -> None:
         self.store.grant(
@@ -66,6 +89,7 @@ class PermissionService:
                 granted_at=datetime.now(UTC),
             )
         )
+        self._clear_pending(command.request_id, command.capability, command.origin)
 
     def deny(self, command: DenyPermission) -> None:
         # Denials are not yet persisted. When we add a deny-list in a
@@ -73,4 +97,18 @@ class PermissionService:
         # command is accepted silently so shells can send it without
         # breaking; nothing else needs to happen because the store does
         # not contain a grant.
-        _ = command
+        self._clear_pending(command.request_id, command.capability, command.origin)
+
+    def _clear_pending(
+        self,
+        request_id: str | None,
+        capability: Capability,
+        origin: Origin,
+    ) -> None:
+        if request_id is not None:
+            self._pending.pop(request_id, None)
+            return
+        for pending_id, pending in tuple(self._pending.items()):
+            pending_capability, pending_origin, _context_url = pending
+            if pending_capability == capability and pending_origin == origin:
+                self._pending.pop(pending_id, None)

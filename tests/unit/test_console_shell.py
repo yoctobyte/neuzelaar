@@ -48,8 +48,21 @@ def test_console_permissions_reports_blocked_script_capability() -> None:
     output = shell.run_command("permissions")
 
     assert "1 active content request(s)" in opened
-    assert "[blocked] exec_inline_js inline" in output
+    assert "1. [requested] [blocked] exec_inline_js inline" in output
     assert "JavaScript execution is disabled" in output
+
+
+def test_console_can_grant_script_permission_without_enabling_execution() -> None:
+    shell = ConsoleShell()
+    shell.run_command(f"open {fixture_path('inline_script.html')}")
+
+    granted = shell.run_command("grant 1 origin")
+    reloaded = shell.run_command("reload")
+    permissions = shell.run_command("permissions")
+
+    assert "1. [granted] [blocked] exec_inline_js inline" in granted
+    assert "1 active content request(s)" in reloaded
+    assert "1. [granted] [blocked] exec_inline_js inline" in permissions
 
 
 def test_console_reports_command_errors() -> None:

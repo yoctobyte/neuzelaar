@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from neuzelaar.core.bus import Bus
 from neuzelaar.core.fetch.cookies import PersistentCookieJar, SessionCookieJar
 from neuzelaar.core.page import PageLoadResult
+from neuzelaar.core.policy.capability import PermissionScope
+from neuzelaar.core.policy.permission_service import PermissionService
 from neuzelaar.core.session import BrowserSession, SessionError
 
 
@@ -23,9 +26,16 @@ class BrowserTab:
 @dataclass(slots=True)
 class BrowserState:
     cookie_jar: SessionCookieJar = field(default_factory=SessionCookieJar)
+    bus: Bus = field(default_factory=Bus)
+    permission_service: PermissionService | None = None
     tabs: dict[int, BrowserTab] = field(default_factory=dict)
     active_tab_id: int | None = None
     _next_tab_id: int = 1
+
+    def __post_init__(self) -> None:
+        if self.permission_service is None:
+            self.permission_service = PermissionService(bus=self.bus)
+        self.permission_service.subscribe_to_bus(self.bus)
 
     @classmethod
     def with_persistent_cookies(cls, path: str | Path) -> "BrowserState":
@@ -40,7 +50,11 @@ class BrowserState:
     def new_tab(self, url: str | None = None, *, activate: bool = True) -> BrowserTab:
         tab = BrowserTab(
             id=self._next_tab_id,
-            session=BrowserSession(cookie_jar=self.cookie_jar),
+            session=BrowserSession(
+                cookie_jar=self.cookie_jar,
+                bus=self.bus,
+                permission_service=self.permission_service,
+            ),
         )
         self.tabs[tab.id] = tab
         self._next_tab_id += 1
@@ -83,6 +97,15 @@ class BrowserState:
 
     def forward(self) -> PageLoadResult:
         return self.active_tab.session.forward()
+
+    def reload(self) -> PageLoadResult:
+        return self.active_tab.session.reload()
+
+    def grant_script_permission(self, index: int, scope: PermissionScope) -> None:
+        self.active_tab.session.grant_script_permission(index, scope)
+
+    def deny_script_permission(self, index: int) -> None:
+        self.active_tab.session.deny_script_permission(index)
 
 
 class BrowserStateError(RuntimeError):

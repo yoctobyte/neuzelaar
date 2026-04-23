@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from neuzelaar.core.browser import BrowserState, BrowserStateError
+from neuzelaar.core.policy.capability import PermissionScope
 from neuzelaar.core.session import SessionError
 
 
@@ -33,12 +34,18 @@ class ConsoleShell:
                 return self._format_page(self.browser.back())
             if name == "forward":
                 return self._format_page(self.browser.forward())
+            if name == "reload":
+                return self._format_page(self.browser.reload())
             if name == "links":
                 return self.format_links()
             if name == "resources":
                 return self.format_resources()
             if name == "permissions":
                 return self.format_permissions()
+            if name == "grant":
+                return self._grant_permission(arg)
+            if name == "deny":
+                return self._deny_permission(arg)
             if name == "follow":
                 if not arg or not arg.isdigit():
                     return "usage: follow <link-number>"
@@ -101,11 +108,20 @@ class ConsoleShell:
         if not current.scripts:
             return "no active content requests"
         lines = []
-        for node_id, script in current.scripts.items():
+        for index, (node_id, script) in enumerate(current.scripts.items(), start=1):
             capability = script.result.requested_capabilities[0].name.lower() if script.result.requested_capabilities else "unknown"
             source = script.url or "inline"
+            granted = (
+                bool(script.result.requested_capabilities)
+                and self.browser.active_tab.session.permission_service.store.is_granted(
+                    script.result.requested_capabilities[0],
+                    script.origin,
+                )
+            )
+            permission_state = "granted" if granted else "requested"
             lines.append(
-                f"[{script.result.status.value}] {capability} {source} ({node_id}): {script.result.reason}"
+                f"{index}. [{permission_state}] [{script.result.status.value}] "
+                f"{capability} {source} ({node_id}): {script.result.reason}"
             )
         return "\n".join(lines)
 
@@ -129,3 +145,29 @@ class ConsoleShell:
         if result.scripts:
             lines.append(f"{len(result.scripts)} active content request(s)")
         return "\n".join(line for line in lines if line)
+
+    def _grant_permission(self, arg: str) -> str:
+        parts = arg.split()
+        if not parts or not parts[0].isdigit():
+            return "usage: grant <script-number> [scope]"
+        scope = self._parse_scope(parts[1] if len(parts) > 1 else "origin")
+        if scope is None:
+            return "usage: grant <script-number> [scope]"
+        self.browser.grant_script_permission(int(parts[0]), scope)
+        return self.format_permissions()
+
+    def _deny_permission(self, arg: str) -> str:
+        if not arg or not arg.isdigit():
+            return "usage: deny <script-number>"
+        self.browser.deny_script_permission(int(arg))
+        return self.format_permissions()
+
+    def _parse_scope(self, raw: str) -> PermissionScope | None:
+        mapping = {
+            "once": PermissionScope.ONCE,
+            "tab": PermissionScope.TAB,
+            "session": PermissionScope.SESSION,
+            "origin": PermissionScope.ORIGIN,
+            "persistent": PermissionScope.PERSISTENT,
+        }
+        return mapping.get(raw.lower())
