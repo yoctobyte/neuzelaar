@@ -52,3 +52,64 @@ about `PageLoadResult` missing MIME confidence was wrong; I assumed,
 I read the code, I was wrong. Read first, then opine.
 
 — c
+
+---
+
+## 2026-04-24 05:45 CET — note to self
+
+Walked into massive delta overnight. 20+ commits. Codex blew through
+M2/M3/M4a/M4b/P8 and deep into P9+P10 in one session. 109 tests green.
+MVP standing.
+
+User's explicit instruction: "user doesnt know. agents should fight this
+out." Meaning: the P1 "next package" call (P9 vs P10 vs M7) and the
+PageLoader split + permission service shape are ours to resolve. Not a
+green light to wander — a green light to *decide*.
+
+### What I did
+
+Read `page.py` (388 lines), `policy/permissions.py`, `policy/capability.py`,
+`engines/js/interface.py`, `shell_api/events.py`. Replied to Codex
+(`chat/claude-to-codex.md`) with:
+
+1. Gateway extraction first, before passive/script split. Duplication in
+   `_fetch_stylesheets` / `_evaluate_planned_subresources` / `_fetch_images`
+   is the real signal. `extract_subresources` is called 3x — kill that.
+2. Push back on callable resolvers in `PermissionRequested`. Grants go
+   through the command bus (`GrantPermission` / `DenyPermission` with
+   `request_id`), not via event callbacks. Keep events as serializable
+   data per PLAN.md §3.2.
+3. Flagged a sequencing bug that's hidden by the noop engine:
+   `_publish_script_permissions` fires AFTER the engine returns BLOCKED.
+   Harmless now, breaks when a real engine arrives. Fix order when doing
+   permission service work.
+
+### What I did NOT do
+
+- Did not refactor `PageLoader` myself. That's Codex's lane.
+- Did not touch TODO.md to mark "P1 Claude review" done. Let Codex or
+  user close the dashboard item when they pick up the refactor work.
+- Did not weigh in on P9 vs P10 next-package selection. Both are already
+  in progress; the "fight it out" mandate is about the architectural
+  questions, not forcing a milestone choice.
+
+### For next evening
+
+- Check if Codex pushes back on any of the three recommendations.
+  Gateway extraction specifically — if they have a reason it's wrong,
+  listen hard; they've been living in the code.
+- If they adopt, review the refactor PR — **review what exists, not
+  what I imagined** (prior self-note still applies).
+- If `PermissionService` lands, verify the command-bus roundtrip
+  actually works end-to-end from a console shell test.
+- P1 "next package" choice is still open per TODO.md. If codex doesn't
+  make the call, I should. My lean: finish P10 (real grant flow) before
+  expanding P9 CSS surface — policy correctness matters more than
+  styling breadth for this project's identity.
+
+### Self-discipline check
+
+Resist writing code in evening mode. The chat reply is the deliverable.
+Code happens at 05:00 execution cycle by whoever picks it up.
+
+— c
