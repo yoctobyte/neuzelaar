@@ -1,171 +1,51 @@
-# Neuzelaar 2 TODO and Project Path
+# Neuzelaar 2 TODO
 
-This file is the day-to-day execution list. `PLAN.md` remains the deeper design
-and architecture reference.
+Day-to-day execution tracker. `PLAN.md` is the architecture reference;
+`*_TASKS.md` files define agent roles; `chat/` is async agent messaging.
 
-## Current State
+## Start Here
 
-Milestone 1 is partially implemented.
-
-Done:
-
-- Python package skeleton and `pyproject.toml`
-- local `.venv` workflow documented
-- command/event/frame/surface shell API contracts
-- synchronous `Bus`
-- URL/origin normalization and 1p/3p classification
-- `Request`, `Resource`, `FetchReason`, `TrustDecision`
-- `urllib`/file fetch client with byte cap
-- conservative MIME classifier
-- html5lib adapter into internal `Document`
-- internal DOM-like tree and tree walking
-- subresource planning for scripts/images/stylesheets/iframes
-- strict policy engine for top-level allow, tracker block, third-party script/iframe block
-- handler registry for HTML/text/image/download placeholders
-- text-only semantic renderer
-- CLI path: `python -m neuzelaar <fixture>`
-- offline fixtures and smoke docs
-- guardrail script and pytest guardrail wrapper
-- M1-focused test suite
-
-Current verification command:
+Run before development:
 
 ```sh
+git status --short
+git log --oneline -8
 .venv/bin/pytest -q
 tools/check_guardrails.sh
+```
+
+Current verification target:
+
+```sh
+.venv/bin/python -m neuzelaar tests/fixtures/sites/example.html
 .venv/bin/python -m neuzelaar tests/fixtures/sites/third_party_script.html
 ```
 
-## Immediate M1 TODO
+Expected:
 
-These are the remaining items before calling M1 complete.
+- `example.html` prints readable semantic text.
+- `third_party_script.html` reports the third-party script as blocked before fetch.
+- pytest and guardrails pass.
 
-### 1. Create Real Headless Shell
+## Status Dashboard
 
-Owner: Codex
+| Area | Status | Notes |
+|---|---|---|
+| M1 headless skeleton | Almost done | Code complete; needs final docs/smoke verification. |
+| Package/test setup | Done | `pyproject.toml`, `.venv` workflow, pytest suite. |
+| Core contracts | Done | commands/events/frame/surface, bus, resource/request types. |
+| URL/origin policy base | Done | `core/origin.py`, strict 1p/3p decisions. |
+| Fetch client basics | Done | local/HTTP GET, byte cap, structured `FetchError`; POST deferred. |
+| MIME/handlers | Done | HTML/text/image/download safe handlers. |
+| Document pipeline | Done | html5lib adapter, internal DOM, subresource planning. |
+| Headless pipeline | Done | reusable `PageLoader`, `HeadlessShell`, thin CLI. |
+| Active content hooks | Done | JS/WASM interfaces and no-op blocked engines. |
+| Guardrails | Done | pytest invokes `tools/check_guardrails.sh`. |
+| M1 docs verification | Open | Gemini Flash lane. |
 
-Status: DONE
+## Active Backlog
 
-Files:
-
-- `neuzelaar/shells/headless/shell.py`
-- `neuzelaar/shells/headless/__init__.py`
-- maybe `neuzelaar/core/page.py` or `neuzelaar/core/pipeline.py`
-
-Goal:
-
-- Move the pipeline currently inside `__main__.py` into a reusable headless shell or page loader.
-- `__main__.py` should become thin argument parsing.
-- Emit structured events through `Bus` where practical.
-
-Acceptance:
-
-- [x] CLI output stays equivalent or better.
-- [x] Tests cover success and blocked-resource output.
-- [x] `__main__.py` no longer owns browser pipeline logic.
-
-### 2. Add Page Load Pipeline Object
-
-Owner: Codex or Claude
-
-Status: DONE
-
-Files:
-
-- `neuzelaar/core/page.py` or `neuzelaar/core/pipeline.py`
-- `tests/unit/test_page_pipeline.py`
-
-Goal:
-
-- Centralize fetch -> classify -> handle -> render/subresource-policy planning.
-- Return a structured result instead of only printing.
-
-Suggested result:
-
-```text
-PageLoadResult:
-  resource
-  mime_decision
-  handler_result
-  rendered_text
-  planned_subresources
-  subresource_policy_decisions
-  events
-```
-
-Acceptance:
-
-- [x] CLI uses this object.
-- [x] Tests can assert on structured decisions without parsing stdout.
-
-### 3. Finish M1 Handler Set
-
-Owner: Codex
-
-Status: DONE
-
-Files:
-
-- `neuzelaar/core/handlers/image_handler.py`
-- `neuzelaar/core/handlers/download_handler.py`
-- `tests/unit/test_handlers.py`
-
-Goal:
-
-- Replace inline placeholder logic in `HandlerRegistry` with named handlers.
-- Keep image decoding out of M1; return metadata/placeholder only.
-
-Acceptance:
-
-- [x] Registry has explicit handlers for `html`, `text`, `image`, `download`.
-- [x] Unsupported content degrades safely.
-
-### 4. Improve Fetch Client Basics
-
-Owner: Antigravity or Codex
-
-Status: DONE
-
-Files:
-
-- `neuzelaar/core/fetch/client.py`
-- `tests/unit/test_fetch_client.py`
-
-Goal:
-
-- Add redirect cap behavior explicitly.
-- Better error object for unsupported methods, oversize responses/files, missing files.
-- Decide whether M1 supports `POST` in fetch client now or defers it to M4a.
-
-Acceptance:
-
-- [x] Tests cover local file success, missing file failure, byte cap failure, unsupported method.
-- [x] No live network required.
-
-### 5. Add Minimal Capability Noops
-
-Owner: Codex
-
-Status: DONE
-
-Files:
-
-- `neuzelaar/core/policy/capability.py`
-- `neuzelaar/engines/js/interface.py`
-- `neuzelaar/engines/js/noop.py`
-- `neuzelaar/engines/wasm/interface.py`
-- `neuzelaar/engines/wasm/noop.py`
-
-Goal:
-
-- Reserve active-content hooks without executing anything.
-
-Acceptance:
-
-- [x] Script/WASM execution requests return structured blocked/noop results.
-- [x] Tests prove JS/WASM are unavailable by default.
-
-### 6. M1 Documentation Pass
+### P0: Final M1 Docs And Smoke Verification
 
 Owner: Gemini Flash
 
@@ -173,28 +53,92 @@ Files:
 
 - `README.md`
 - `docs/smoke_tests.md`
-- `workdone.md`
+- `workdone-gemini-flash.md` or `workdone.md`
 
-Goal:
+Tasks:
 
-- Keep docs aligned with the new headless shell/pipeline after it lands.
-- Do not edit core code.
+- Run the standing test commands from `GEMINI_FLASH_TASKS.md`.
+- Confirm README commands match current reality.
+- Confirm smoke docs reflect current CLI output.
+- Report exact commands and pass/fail results.
 
 Acceptance:
 
-- README setup/run/test commands match reality.
-- Smoke tests describe current CLI output accurately.
+- pytest passes.
+- guardrails pass.
+- CLI smoke commands match documented expectations.
+- No core code edited.
+
+### P1: M1 Completion Tag/Note
+
+Owner: Codex
+
+Tasks:
+
+- Review Gemini Flash verification report.
+- If clean, mark M1 complete in this file and optionally add a short `docs/milestone_1.md`.
+- Commit the milestone note.
+
+Acceptance:
+
+- M1 criteria below are all checked.
+- No hidden uncommitted changes.
+
+### P1: Claude Review Of Pipeline Shape
+
+Owner: Claude
+
+Files:
+
+- `CLAUDE_TASKS.md`
+- `chat/claude-to-codex.md`
+- `neuzelaar/core/page.py`
+
+Tasks:
+
+- Review `PageLoader` and `PageLoadResult` shape.
+- Confirm whether optional bus emission should wait until M2.
+- Leave notes in `chat/claude-to-codex.md` or implement a small reviewed change.
+
+Acceptance:
+
+- Either "looks good for M1" note, or a small patch with tests.
 
 ## M1 Completion Criteria
 
-M1 is complete when:
+M1 is complete when all are checked:
 
-- `.venv/bin/pytest -q` passes.
-- `tools/check_guardrails.sh` passes.
-- `python -m neuzelaar tests/fixtures/sites/example.html` prints readable semantic text.
-- `python -m neuzelaar tests/fixtures/sites/third_party_script.html` reports the script blocked before fetch.
-- Browser pipeline is reusable outside `__main__.py`.
-- No GUI, CSS cascade, JS execution, image decode, forms, cookies, or history are required.
+- [x] `.venv/bin/pytest -q` passes.
+- [x] `tools/check_guardrails.sh` passes.
+- [x] `python -m neuzelaar tests/fixtures/sites/example.html` prints readable semantic text.
+- [x] `python -m neuzelaar tests/fixtures/sites/third_party_script.html` reports the script blocked before fetch.
+- [x] Browser pipeline is reusable outside `__main__.py`.
+- [x] No GUI, CSS cascade, JS execution, image decode, forms, cookies, or history are required.
+- [ ] Final docs/smoke verification report exists.
+
+## Completed M1 Work
+
+- [x] Python package skeleton and `pyproject.toml`
+- [x] local `.venv` workflow documented
+- [x] command/event/frame/surface shell API contracts
+- [x] synchronous `Bus`
+- [x] URL/origin normalization and 1p/3p classification
+- [x] `Request`, `Resource`, `FetchReason`, `TrustDecision`
+- [x] `urllib`/file fetch client with byte cap and structured fetch errors
+- [x] conservative MIME classifier
+- [x] html5lib adapter into internal `Document`
+- [x] internal DOM-like tree and tree walking
+- [x] subresource planning for scripts/images/stylesheets/iframes
+- [x] strict policy engine for top-level allow, tracker block, third-party script/iframe block
+- [x] explicit handlers for HTML, text, image placeholder, and download fallback
+- [x] text-only semantic renderer
+- [x] reusable `PageLoader` / `PageLoadResult`
+- [x] `HeadlessShell`
+- [x] CLI path: `python -m neuzelaar <fixture>`
+- [x] offline fixtures and smoke docs
+- [x] guardrail script and pytest guardrail wrapper
+- [x] M1-focused test suite
+- [x] JS/WASM no-op active-content engines
 
 ## M2 Path: Minimal Document Browser
 
@@ -206,8 +150,9 @@ Work:
 - navigation history
 - link following by URL or link index in console mode
 - session-only cookie jar
-- console shell with simple commands: open, back, forward, links, resources, quit
+- console shell commands: `open`, `back`, `forward`, `links`, `resources`, `quit`
 - page summary: title, URL, links, blocked resources
+- optional bus events from `PageLoader`: load started/progress/finished/resource blocked
 
 Acceptance:
 
@@ -220,7 +165,7 @@ Theme: first actual viewport.
 
 Work:
 
-- choose/lock Tk as first shell unless explicitly changed
+- lock Tk as first shell unless explicitly changed
 - software frame generation and neutral `Frame` presentation
 - display list types
 - basic block/inline/text layout
@@ -233,6 +178,7 @@ Acceptance:
 - A blog/docs fixture renders readably in a window.
 - Shell remains thin and imports no core internals beyond shell API.
 - Rendering can still be tested headlessly.
+- Gemini Flash verifies GUI behavior with screenshots/notes when available.
 
 ## M4a Path: Forms
 
@@ -251,7 +197,7 @@ Acceptance:
 
 - Fixture login/comment flow works without JS.
 
-## M4b Path: Persistence and Tabs
+## M4b Path: Persistence And Tabs
 
 Theme: browser state.
 
@@ -266,7 +212,7 @@ Acceptance:
 
 - Two tabs can hold independent state and history.
 
-## M5 Path: Styling and Policy Maturity
+## M5 Path: Styling And Policy Maturity
 
 Theme: safe browsing with usable rendering.
 
@@ -290,21 +236,24 @@ Theme: permissions before execution.
 
 Work:
 
-- JS engine interface
+- JS engine integration point
 - capability bridge
 - permission events/prompts
 - no-op/stub engine that logs blocked or requested capabilities
+- inline script planning alongside `<script src>` planning
 
 Acceptance:
 
 - JS-heavy fixture produces a useful capability/block report without executing JS.
 
-## Coordination Notes
+## Coordination Rules
 
 - Commit small, coherent slices.
 - Run `.venv/bin/pytest -q` before commits touching behavior.
 - Run `tools/check_guardrails.sh` before commits touching architecture boundaries.
+- Read relevant `chat/*-to-<you>.md` messages before starting.
+- Do not edit or delete another agent's `chat/` messages.
 - Do not revert another agent's changes; inspect and adapt.
-- Codex and Claude are the main architecture/implementation leads. Either may change core architecture, but should leave a rationale in commit messages or handoff notes for non-trivial design moves.
-- Gemini Flash should focus on testing, fixtures, smoke-test verification, GUI behavior confirmation, docs alignment, and clear bug reports. It should not fight core architecture unless explicitly reassigned.
-- Antigravity can own bounded implementation or verification tasks when available, especially fetch/policy integration and end-to-end checks.
+- Codex and Claude are architecture/implementation leads.
+- Gemini Flash focuses on testing, fixtures, smoke verification, GUI behavior checks, docs alignment, and bug reports.
+- Antigravity can own bounded implementation or verification tasks when available.
