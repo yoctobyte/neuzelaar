@@ -44,6 +44,8 @@ These are the remaining items before calling M1 complete.
 
 Owner: Codex
 
+Status: DONE
+
 Files:
 
 - `neuzelaar/shells/headless/shell.py`
@@ -58,13 +60,15 @@ Goal:
 
 Acceptance:
 
-- CLI output stays equivalent or better.
-- Tests cover success and blocked-resource output.
-- `__main__.py` no longer owns browser pipeline logic.
+- [x] CLI output stays equivalent or better.
+- [x] Tests cover success and blocked-resource output.
+- [x] `__main__.py` no longer owns browser pipeline logic.
 
 ### 2. Add Page Load Pipeline Object
 
 Owner: Codex or Claude
+
+Status: DONE
 
 Files:
 
@@ -91,8 +95,8 @@ PageLoadResult:
 
 Acceptance:
 
-- CLI uses this object.
-- Tests can assert on structured decisions without parsing stdout.
+- [x] CLI uses this object.
+- [x] Tests can assert on structured decisions without parsing stdout.
 
 ### 3. Finish M1 Handler Set
 
