@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from neuzelaar.core.page import PageLoader
+from neuzelaar.core.page import PageLoader, PassiveResourceBudget
 from neuzelaar.core.policy.rules import PolicyAction
 
 
@@ -67,3 +67,20 @@ def test_page_loader_blocks_third_party_images_in_strict_mode() -> None:
     ][0]
 
     assert external.decision.action == PolicyAction.BLOCK
+
+
+def test_page_loader_applies_passive_stylesheet_budget() -> None:
+    loader = PageLoader(passive_budget=PassiveResourceBudget(max_stylesheets=0))
+
+    result = loader.load(Path("tests/fixtures/sites/linked_styles.html").resolve().as_uri())
+
+    assert result.stylesheet_urls == ()
+    assert result.root_style.color == "#141414"
+
+
+def test_page_loader_applies_passive_image_budget() -> None:
+    loader = PageLoader(passive_budget=PassiveResourceBudget(max_images=0))
+
+    result = loader.load(Path("tests/fixtures/sites/basic_images.html").resolve().as_uri())
+
+    assert result.images == {}

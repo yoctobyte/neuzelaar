@@ -38,6 +38,13 @@ class ImageAsset:
 
 
 @dataclass(frozen=True, slots=True)
+class PassiveResourceBudget:
+    max_stylesheets: int = 4
+    max_images: int = 16
+    max_bytes: int = 500_000
+
+
+@dataclass(frozen=True, slots=True)
 class PageLoadResult:
     resource: Resource
     mime_decision: MimeDecision
@@ -60,11 +67,13 @@ class PageLoader:
         policy_engine: PolicyEngine | None = None,
         cookie_jar: SessionCookieJar | None = None,
         bus: Bus | None = None,
+        passive_budget: PassiveResourceBudget | None = None,
     ) -> None:
         self.fetch_client = fetch_client or FetchClient()
         self.policy_engine = policy_engine or PolicyEngine()
         self.cookie_jar = cookie_jar
         self.bus = bus
+        self.passive_budget = passive_budget or PassiveResourceBudget()
 
     def load(
         self,
@@ -169,8 +178,12 @@ class PageLoader:
         if handler_result.kind != "document":
             return []
         results: list[tuple[str, str]] = []
+        used_bytes = 0
         for planned in extract_subresources(handler_result.value):
             if planned.reason != FetchReason.STYLESHEET:
+                continue
+            if len(results) >= self.passive_budget.max_stylesheets:
+                self._publish(ResourceBlocked(planned.url, "passive stylesheet budget exceeded"))
                 continue
             stylesheet_record = resolve_url(resource.final_url, planned.url)
             stylesheet_request = Request(
@@ -188,6 +201,10 @@ class PageLoader:
                 self._publish(ResourceBlocked(stylesheet_record.normalized, decision.reason))
                 continue
             stylesheet_resource = self.fetch_client.fetch(stylesheet_request)
+            if used_bytes + len(stylesheet_resource.body) > self.passive_budget.max_bytes:
+                self._publish(ResourceBlocked(stylesheet_resource.final_url, "passive resource byte budget exceeded"))
+                continue
+            used_bytes += len(stylesheet_resource.body)
             if self.cookie_jar is not None:
                 self.cookie_jar.store_from_resource(stylesheet_resource)
             css_text = stylesheet_resource.body.decode(
@@ -235,8 +252,12 @@ class PageLoader:
             return {}
 
         result: dict[NodeId, ImageAsset] = {}
+        used_bytes = 0
         for planned in extract_subresources(handler_result.value):
             if planned.reason != FetchReason.IMAGE:
+                continue
+            if len(result) >= self.passive_budget.max_images:
+                self._publish(ResourceBlocked(planned.url, "passive image budget exceeded"))
                 continue
             image_record = resolve_url(resource.final_url, planned.url)
             image_request = Request(
@@ -253,6 +274,10 @@ class PageLoader:
             if not decision.allowed:
                 continue
             image_resource = self.fetch_client.fetch(image_request)
+            if used_bytes + len(image_resource.body) > self.passive_budget.max_bytes:
+                self._publish(ResourceBlocked(image_resource.final_url, "passive resource byte budget exceeded"))
+                continue
+            used_bytes += len(image_resource.body)
             try:
                 bitmap = decode_image_bitmap(image_resource.body)
             except ImageDecodeError:

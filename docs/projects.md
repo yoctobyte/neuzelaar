@@ -191,6 +191,7 @@ Delivered:
 - descendant selector support for the tiny CSS slice
 - basic margin/padding/font-size effect on layout
 - image `width`/`height` attribute sizing
+- per-page passive asset budgets for stylesheets/images
 
 Remaining:
 
