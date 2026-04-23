@@ -295,4 +295,6 @@ Acceptance:
 - Run `.venv/bin/pytest -q` before commits touching behavior.
 - Run `tools/check_guardrails.sh` before commits touching architecture boundaries.
 - Do not revert another agent's changes; inspect and adapt.
-- Gemini Flash should stay on docs, fixtures, and smoke-test updates unless reassigned.
+- Codex and Claude are the main architecture/implementation leads. Either may change core architecture, but should leave a rationale in commit messages or handoff notes for non-trivial design moves.
+- Gemini Flash should focus on testing, fixtures, smoke-test verification, GUI behavior confirmation, docs alignment, and clear bug reports. It should not fight core architecture unless explicitly reassigned.
+- Antigravity can own bounded implementation or verification tasks when available, especially fetch/policy integration and end-to-end checks.

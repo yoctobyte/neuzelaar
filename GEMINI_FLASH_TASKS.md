@@ -1,7 +1,31 @@
 # Gemini Flash Task Notes
 
-These are low-risk tasks suitable for Gemini Flash while Codex continues core
-implementation. Avoid editing core behavior unless explicitly reassigned.
+Gemini Flash is most useful as the testing, verification, fixture, docs, and GUI
+behavior agent. Codex and Claude are the primary architecture/implementation
+leads; Gemini Flash should amplify them by finding regressions, checking user
+behavior, expanding fixtures, and reporting clearly.
+
+Avoid editing core behavior unless explicitly reassigned.
+
+## Standing Test Commands
+
+Run these after pulling latest changes:
+
+```sh
+git status --short
+git log --oneline -5
+.venv/bin/pytest -q
+tools/check_guardrails.sh
+.venv/bin/python -m neuzelaar tests/fixtures/sites/example.html
+.venv/bin/python -m neuzelaar tests/fixtures/sites/third_party_script.html
+```
+
+Expected today:
+
+- pytest passes.
+- guardrails pass.
+- `example.html` prints readable semantic text.
+- `third_party_script.html` prints a `[block] script ...` line.
 
 ## Safe Tasks
 
@@ -36,6 +60,53 @@ implementation. Avoid editing core behavior unless explicitly reassigned.
 
 8. [NEW - Approved by USER 2026-04-23] Smoke Test Documentation: [DONE]
    - Create `docs/smoke_tests.md` for manual M1 verification.
+
+9. Test Report Pass:
+   - Run the standing test commands.
+   - Create or update `workdone-gemini-flash.md`.
+   - Report exact commands, pass/fail, stdout snippets for CLI behavior, and any suspected bug.
+
+10. Fixture Expansion:
+   - Add small offline fixtures only under `tests/fixtures/sites/`.
+   - Good candidates: `nested_blocks.html`, `script_and_style_ignored.html`, `stylesheet_link.html`.
+   - If adding fixtures, add or request tests that use them.
+
+11. GUI Behavior Verification Later:
+   - When M3 visual shell exists, run manual GUI smoke tests.
+   - Check window opens, text is visible, scrolling works, no overlap in basic fixtures.
+   - Take notes in `workdone-gemini-flash.md`; screenshots are useful if available.
+
+## Report Format
+
+Use this exact shape in `workdone-gemini-flash.md`:
+
+```text
+# Work Done by Gemini Flash - YYYY-MM-DD
+
+## Summary
+- ...
+
+## Commands Run
+- `.venv/bin/pytest -q`: PASS/FAIL
+- `tools/check_guardrails.sh`: PASS/FAIL
+- `.venv/bin/python -m neuzelaar ...`: PASS/FAIL
+
+## Observed Behavior
+- ...
+
+## Bugs Found
+- Severity: high/medium/low
+- Repro command:
+- Expected:
+- Actual:
+- Suspected area:
+
+## Files Changed
+- ...
+
+## Follow-Up Suggestions
+- ...
+```
 
 ## Do Not Touch For Now
 
