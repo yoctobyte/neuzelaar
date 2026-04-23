@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from neuzelaar.document.dom import Document, Element, NodeId, walk
+from neuzelaar.document.dom import Document, Element, Node, NodeId, Text, walk
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +32,12 @@ SUPPORTED_PROPERTIES = {
     "padding",
 }
 
+DEFAULT_COLOR = "#141414"
+DEFAULT_BACKGROUND_COLOR = "#ffffff"
+DEFAULT_FONT_WEIGHT = "normal"
+DEFAULT_FONT_SIZE = "16px"
+DEFAULT_DISPLAY = "block"
+
 
 def compute_styles(document: Document, rules: tuple[StyleRule, ...] = ()) -> dict[NodeId, ComputedStyle]:
     styles: dict[NodeId, ComputedStyle] = {}
@@ -47,6 +53,23 @@ def compute_styles(document: Document, rules: tuple[StyleRule, ...] = ()) -> dic
             declarations.update(parse_declarations(inline_style))
         styles[node.id] = _style_from_declarations(declarations)
     return styles
+
+
+def style_text_blocks(document: Document) -> tuple[str, ...]:
+    blocks: list[str] = []
+    for node in walk(document):
+        if isinstance(node, Element) and node.tag.lower() == "style":
+            text = _text_content(node)
+            if text:
+                blocks.append(text)
+    return tuple(blocks)
+
+
+def root_style(document: Document, styles: dict[NodeId, ComputedStyle]) -> ComputedStyle:
+    for node in walk(document):
+        if isinstance(node, Element) and node.tag.lower() == "body":
+            return styles.get(node.id, ComputedStyle())
+    return ComputedStyle()
 
 
 def parse_declarations(text: str) -> dict[str, str]:
@@ -67,11 +90,11 @@ def _supported(declarations: dict[str, str]) -> dict[str, str]:
 
 def _style_from_declarations(declarations: dict[str, str]) -> ComputedStyle:
     return ComputedStyle(
-        color=declarations.get("color", ComputedStyle.color),
-        background_color=declarations.get("background-color", ComputedStyle.background_color),
-        font_weight=declarations.get("font-weight", ComputedStyle.font_weight),
-        font_size=declarations.get("font-size", ComputedStyle.font_size),
-        display=declarations.get("display", ComputedStyle.display),
+        color=declarations.get("color", DEFAULT_COLOR),
+        background_color=declarations.get("background-color", DEFAULT_BACKGROUND_COLOR),
+        font_weight=declarations.get("font-weight", DEFAULT_FONT_WEIGHT),
+        font_size=declarations.get("font-size", DEFAULT_FONT_SIZE),
+        display=declarations.get("display", DEFAULT_DISPLAY),
     )
 
 
@@ -85,3 +108,12 @@ def _matches_selector(node: Element, selector: str) -> bool:
     if selector.startswith("#"):
         return node.attr("id") == selector[1:]
     return node.tag.lower() == selector.lower()
+
+
+def _text_content(node: Node) -> str:
+    if isinstance(node, Text):
+        return node.data
+    children = getattr(node, "children", None)
+    if not children:
+        return ""
+    return "".join(_text_content(child) for child in children)

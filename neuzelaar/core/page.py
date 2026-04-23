@@ -13,9 +13,11 @@ from neuzelaar.core.handlers.registry import HandlerResult, default_registry
 from neuzelaar.core.mime.classifier import MimeDecision, classify_resource
 from neuzelaar.core.origin import parse_url, resolve_url
 from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
-from neuzelaar.document.links import DocumentLink, extract_links
 from neuzelaar.document.forms import DocumentForm, extract_forms
+from neuzelaar.document.links import DocumentLink, extract_links
+from neuzelaar.document.styles import ComputedStyle, compute_styles, root_style, style_text_blocks
 from neuzelaar.document.subresources import SubresourceRequest, extract_subresources
+from neuzelaar.engines.css.tinycss2_adapter import parse_stylesheet
 from neuzelaar.render.text_only import render_text
 from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked
 
@@ -35,6 +37,8 @@ class PageLoadResult:
     rendered_text: str
     links: tuple[DocumentLink, ...]
     forms: tuple[DocumentForm, ...]
+    styles: dict
+    root_style: ComputedStyle
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
 
 
@@ -98,6 +102,8 @@ class PageLoader:
         rendered_text = self._render(handler_result)
         links = self._extract_links(handler_result)
         forms = self._extract_forms(handler_result)
+        styles = self._compute_styles(handler_result)
+        page_root_style = self._root_style(handler_result, styles)
         planned = self._evaluate_planned_subresources(resource, handler_result)
         self._publish(PageLoadFinished(resource.final_url, resource.status))
         return PageLoadResult(
@@ -107,6 +113,8 @@ class PageLoader:
             rendered_text=rendered_text,
             links=links,
             forms=forms,
+            styles=styles,
+            root_style=page_root_style,
             planned_subresources=tuple(planned),
         )
 
@@ -126,6 +134,19 @@ class PageLoader:
         if handler_result.kind != "document":
             return ()
         return extract_forms(handler_result.value)
+
+    def _compute_styles(self, handler_result: HandlerResult) -> dict:
+        if handler_result.kind != "document":
+            return {}
+        rules = []
+        for block in style_text_blocks(handler_result.value):
+            rules.extend(parse_stylesheet(block))
+        return compute_styles(handler_result.value, tuple(rules))
+
+    def _root_style(self, handler_result: HandlerResult, styles: dict) -> ComputedStyle:
+        if handler_result.kind != "document":
+            return ComputedStyle()
+        return root_style(handler_result.value, styles)
 
     def _evaluate_planned_subresources(
         self,

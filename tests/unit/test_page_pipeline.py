@@ -22,6 +22,13 @@ def test_page_loader_returns_forms() -> None:
     assert result.forms[0].controls[0].name == "q"
 
 
+def test_page_loader_computes_styles_from_style_blocks_and_inline_styles() -> None:
+    result = PageLoader().load(Path("tests/fixtures/sites/styled_page.html").resolve().as_uri())
+
+    assert result.root_style.color == "red"
+    assert result.root_style.background_color == "#eeeeee"
+
+
 def test_page_loader_evaluates_planned_subresources() -> None:
     result = PageLoader().load(Path("tests/fixtures/sites/third_party_script.html").resolve().as_uri())
 

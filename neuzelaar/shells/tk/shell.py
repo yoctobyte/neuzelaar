@@ -23,7 +23,11 @@ class TkShell:
         result = self.loader.load(url)
         if result.handler_result.kind != "document":
             raise TkShellError("Tk shell currently renders document results only")
-        display_list = build_display_list(result.handler_result.value, width=self.width)
+        display_list = build_display_list(
+            result.handler_result.value,
+            width=self.width,
+            root_style=result.root_style,
+        )
         return result, rasterize(display_list)
 
     def run(self, url: str) -> None:
