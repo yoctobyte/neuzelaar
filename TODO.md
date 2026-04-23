@@ -42,6 +42,7 @@ Expected:
 | Active content hooks | Done | JS/WASM interfaces and no-op blocked engines. |
 | Guardrails | Done | pytest invokes `tools/check_guardrails.sh`. |
 | M1 docs verification | Done | See `workdone-gemini-flash.md`. |
+| M2 minimal document browser | In progress | Session/history/link listing/console commands implemented. |
 
 ## Active Backlog
 
@@ -150,12 +151,12 @@ Theme: make headless/console browsing feel like a small browser, not a one-shot 
 
 Work:
 
-- in-memory session and single-tab page state
-- navigation history
-- link following by URL or link index in console mode
+- [x] in-memory session and single-tab page state
+- [x] navigation history
+- [x] link following by URL or link index in console mode
 - session-only cookie jar
-- console shell commands: `open`, `back`, `forward`, `links`, `resources`, `quit`
-- page summary: title, URL, links, blocked resources
+- [x] console shell commands: `open`, `back`, `forward`, `links`, `resources`, `quit`
+- [x] page summary: title, URL, links, blocked resources
 - optional bus events from `PageLoader`: load started/progress/finished/resource blocked
 
 Acceptance:

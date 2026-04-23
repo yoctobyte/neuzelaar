@@ -34,5 +34,21 @@ The current Milestone 1 implementation is a headless skeleton. You can run it ag
 .venv/bin/python -m neuzelaar tests/fixtures/sites/third_party_script.html
 ```
 
+The M2 console shell can also be used from Python:
+
+```sh
+.venv/bin/python -q
+```
+
+```python
+from neuzelaar.shells.console.shell import ConsoleShell
+
+shell = ConsoleShell()
+print(shell.run_command("open tests/fixtures/sites/basic_links.html"))
+print(shell.run_command("links"))
+print(shell.run_command("follow 2"))
+print(shell.run_command("back"))
+```
+
 The initial implementation is intentionally small. CI-style tests should use
 offline fixtures rather than live websites.

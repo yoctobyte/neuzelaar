@@ -10,6 +10,7 @@ from neuzelaar.core.handlers.registry import HandlerResult, default_registry
 from neuzelaar.core.mime.classifier import MimeDecision, classify_resource
 from neuzelaar.core.origin import parse_url, resolve_url
 from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
+from neuzelaar.document.links import DocumentLink, extract_links
 from neuzelaar.document.subresources import SubresourceRequest, extract_subresources
 from neuzelaar.render.text_only import render_text
 
@@ -27,6 +28,7 @@ class PageLoadResult:
     mime_decision: MimeDecision
     handler_result: HandlerResult
     rendered_text: str
+    links: tuple[DocumentLink, ...]
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
 
 
@@ -56,12 +58,14 @@ class PageLoader:
         mime_decision = classify_resource(resource)
         handler_result = default_registry().handle(resource, mime_decision)
         rendered_text = self._render(handler_result)
+        links = self._extract_links(handler_result)
         planned = self._evaluate_planned_subresources(resource, handler_result)
         return PageLoadResult(
             resource=resource,
             mime_decision=mime_decision,
             handler_result=handler_result,
             rendered_text=rendered_text,
+            links=links,
             planned_subresources=tuple(planned),
         )
 
@@ -71,6 +75,11 @@ class PageLoader:
         if handler_result.kind == "text":
             return handler_result.value
         return f"[{handler_result.kind}] {handler_result.value}"
+
+    def _extract_links(self, handler_result: HandlerResult) -> tuple[DocumentLink, ...]:
+        if handler_result.kind != "document":
+            return ()
+        return extract_links(handler_result.value)
 
     def _evaluate_planned_subresources(
         self,
