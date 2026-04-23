@@ -197,12 +197,12 @@ Work:
 - [x] POST submission
 - [x] input/textarea/select/button state
 - focus and text entry
-- session cookies sufficient for fixture login/comment flow
-- local fixture server for tests
+- [x] session cookies sufficient for fixture login/comment flow
+- [x] local fixture server for tests
 
 Acceptance:
 
-- Fixture login/comment flow works without JS.
+- [x] Fixture login/comment flow works without JS.
 
 ## M4b Path: Persistence And Tabs
 
