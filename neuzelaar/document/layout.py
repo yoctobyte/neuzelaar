@@ -98,44 +98,52 @@ def _layout_node(
             return y
         if tag in {"script", "style", "head", "title"}:
             return y
+        margin = _size_px(style.margin)
+        padding = _size_px(style.padding)
+        if tag in {"body", "div", "section", "article", "p", "ul", "ol", "li"}:
+            y += margin
         if tag in {"h1", "h2", "h3"}:
             text = _collect_text(node)
             if text:
                 items.append(LayoutText(x, y, text, style.color))
-                return y + 30
+                return y + max(_line_height(style), 30) + margin
             return y
         if tag == "img":
             label = node.attr("alt") or node.attr("src") or "image"
+            image_width, image_height = _image_dimensions(node, images.get(node.id))
             image = images.get(node.id)
             if image is not None:
                 items.append(
                     LayoutImage(
                         x,
                         y,
-                        image.bitmap.width,
-                        image.bitmap.height,
+                        image_width,
+                        image_height,
                         label,
                         image,
                     )
                 )
-                return y + image.bitmap.height + 12
-            items.append(LayoutImage(x, y, 240, 32, label, None))
-            return y + 44
+                return y + image_height + margin + 12
+            items.append(LayoutImage(x, y, image_width, image_height, label, None))
+            return y + image_height + margin + 12
         if tag == "li":
             text = _collect_text(node)
             if text:
                 items.append(LayoutText(x, y, f"- {text}", style.color))
-                return y + _line_height(style)
+                return y + _line_height(style) + margin
             return y
+        y += padding
         start_y = y
         insert_at = len(items)
+        child_x = x + padding
+        child_width = max(content_width - (padding * 2), 40)
         for child in node.children:
             y = _layout_node(
                 child,
                 items,
-                x=x,
+                x=child_x,
                 y=y,
-                content_width=content_width,
+                content_width=child_width,
                 styles=styles,
                 images=images,
                 inherited_style=style,
@@ -148,15 +156,17 @@ def _layout_node(
             items.insert(
                 insert_at,
                 LayoutBox(
-                    x=max(0, x - 4),
-                    y=max(0, start_y - 4),
-                    width=max(content_width + 8, 40),
-                    height=max((y - start_y) + 8, 8),
+                    x=max(0, x),
+                    y=max(0, start_y - padding),
+                    width=max(content_width, 40),
+                    height=max((y - start_y) + (padding * 2), 8),
                     color=style.background_color,
                 ),
             )
+        y += padding
         if tag in {"p", "div", "section", "ul", "ol", "article"}:
             y += 8
+        y += margin
         return y
 
     children = getattr(node, "children", None)
@@ -199,6 +209,8 @@ def _effective_style(
         font_weight=style.font_weight or inherited_style.font_weight,
         font_size=style.font_size or inherited_style.font_size,
         display=style.display or inherited_style.display,
+        margin=style.margin or inherited_style.margin,
+        padding=style.padding or inherited_style.padding,
     )
 
 
@@ -209,3 +221,33 @@ def _line_height(style: ComputedStyle) -> int:
     except ValueError:
         pass
     return 22
+
+
+def _size_px(value: str) -> int:
+    token = value.strip().split()[0] if value.strip() else "0"
+    if token.endswith("px"):
+        token = token[:-2]
+    try:
+        return max(int(float(token)), 0)
+    except ValueError:
+        return 0
+
+
+def _image_dimensions(node: Element, image: ImageAsset | None) -> tuple[int, int]:
+    intrinsic_width = image.bitmap.width if image is not None else 240
+    intrinsic_height = image.bitmap.height if image is not None else 32
+    attr_width = _attr_px(node.attr("width"))
+    attr_height = _attr_px(node.attr("height"))
+    return (
+        attr_width if attr_width is not None else intrinsic_width,
+        attr_height if attr_height is not None else intrinsic_height,
+    )
+
+
+def _attr_px(value: str | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        return max(int(value), 1)
+    except ValueError:
+        return None

@@ -52,3 +52,15 @@ def test_compute_styles_matches_descendant_selectors() -> None:
     styles = compute_styles(document, parse_stylesheet("section p { color: green }"))
 
     assert styles[NodeId("paragraph")].color == "green"
+
+
+def test_compute_styles_keeps_spacing_properties() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("p { margin: 12px; padding: 8px; font-size: 20px }"))
+
+    assert styles[NodeId("p")].margin == "12px"
+    assert styles[NodeId("p")].padding == "8px"
+    assert styles[NodeId("p")].font_size == "20px"

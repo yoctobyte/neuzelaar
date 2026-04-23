@@ -20,6 +20,8 @@ class ComputedStyle:
     font_weight: str = "normal"
     font_size: str = "16px"
     display: str = "block"
+    margin: str = "0"
+    padding: str = "0"
 
 
 SUPPORTED_PROPERTIES = {
@@ -95,6 +97,8 @@ def _style_from_declarations(declarations: dict[str, str]) -> ComputedStyle:
         font_weight=declarations.get("font-weight", DEFAULT_FONT_WEIGHT),
         font_size=declarations.get("font-size", DEFAULT_FONT_SIZE),
         display=declarations.get("display", DEFAULT_DISPLAY),
+        margin=declarations.get("margin", "0"),
+        padding=declarations.get("padding", "0"),
     )
 
 

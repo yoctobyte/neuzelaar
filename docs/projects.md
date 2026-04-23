@@ -189,6 +189,8 @@ Delivered:
 - same-origin external stylesheet fetch/apply under policy
 - local image decode and software blit path
 - descendant selector support for the tiny CSS slice
+- basic margin/padding/font-size effect on layout
+- image `width`/`height` attribute sizing
 
 Remaining:
 
