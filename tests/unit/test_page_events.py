@@ -37,6 +37,8 @@ def test_page_loader_emits_load_and_blocked_resource_events() -> None:
     assert len(permission_requests) == 1
     assert permission_requests[0].capability == Capability.EXEC_THIRDPARTY_JS
     assert permission_requests[0].origin.host == "cdn.third-party.test"
+    assert permission_requests[0].request_id
+    assert permission_requests[0].context_url.endswith("/third_party_script.html")
 
 
 def test_page_loader_emits_failure_event() -> None:

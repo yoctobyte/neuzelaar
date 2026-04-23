@@ -13,7 +13,7 @@ from neuzelaar.core.fetch.resource import FetchReason, Request, Resource
 from neuzelaar.core.handlers.registry import HandlerResult, default_registry
 from neuzelaar.core.mime.classifier import MimeDecision, classify_resource
 from neuzelaar.core.origin import Origin, parse_url, resolve_url
-from neuzelaar.core.policy.capability import Capability
+from neuzelaar.core.policy.permission_service import PermissionService
 from neuzelaar.core.policy.permissions import PermissionStore
 from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
 from neuzelaar.document.forms import DocumentForm, extract_forms
@@ -29,6 +29,7 @@ from neuzelaar.engines.js.interface import (
     ScriptExecutionRequest,
     ScriptExecutionResult,
     ScriptExecutionStatus,
+    required_capability_for,
 )
 from neuzelaar.engines.js.noop import NoopJavaScriptEngine
 from neuzelaar.render.text_only import render_text
@@ -36,17 +37,9 @@ from neuzelaar.shell_api.events import (
     PageFailed,
     PageLoadFinished,
     PageLoadStarted,
-    PermissionRequested,
     ResourceBlocked,
     ScriptBlocked,
 )
-
-
-_SCRIPT_CAPABILITIES = {
-    Capability.EXEC_INLINE_JS,
-    Capability.EXEC_SAMEORIGIN_JS,
-    Capability.EXEC_THIRDPARTY_JS,
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +98,7 @@ class PageLoader:
         passive_budget: PassiveResourceBudget | None = None,
         js_engine: JavaScriptEngine | None = None,
         permission_store: PermissionStore | None = None,
+        permission_service: PermissionService | None = None,
     ) -> None:
         self.fetch_client = fetch_client or FetchClient()
         self.policy_engine = policy_engine or PolicyEngine()
@@ -112,7 +106,11 @@ class PageLoader:
         self.bus = bus
         self.passive_budget = passive_budget or PassiveResourceBudget()
         self.js_engine = js_engine or NoopJavaScriptEngine()
-        self.permission_store = permission_store or PermissionStore()
+        self.permission_service = permission_service or PermissionService(
+            store=permission_store or PermissionStore(),
+            bus=self.bus,
+        )
+        self.permission_store = self.permission_service.store
         self.gateway = SubresourceGateway(
             policy_engine=self.policy_engine,
             bus=self.bus,
@@ -326,15 +324,23 @@ class PageLoader:
                 normalized_url = script_record.normalized
                 same_origin = script_record.origin == resource.request.context_origin
                 origin = script_record.origin
-            execution = self.js_engine.execute(
-                ScriptExecutionRequest(
-                    source=request.source,
-                    url=normalized_url,
-                    inline=request.inline,
-                    same_origin=same_origin,
-                    node_id=request.node_id,
-                )
+            execution_request = ScriptExecutionRequest(
+                source=request.source,
+                url=normalized_url,
+                inline=request.inline,
+                same_origin=same_origin,
+                node_id=request.node_id,
             )
+            # Permission check happens before execute so the grant flow is
+            # correctly ordered for the day a real JS engine replaces the
+            # noop. See chat/claude-to-codex.md, section on permission
+            # service, for why this matters.
+            self.permission_service.request(
+                required_capability_for(execution_request),
+                origin,
+                resource.final_url,
+            )
+            execution = self.js_engine.execute(execution_request)
             record = ScriptExecutionRecord(
                 url=normalized_url,
                 origin=origin,
@@ -343,26 +349,9 @@ class PageLoader:
                 result=execution,
             )
             result[request.node_id] = record
-            self._publish_script_permissions(record)
             if execution.status == ScriptExecutionStatus.BLOCKED:
                 self._publish(ScriptBlocked(normalized_url or resource.final_url, execution.reason))
         return result
-
-    def _publish_script_permissions(self, script: ScriptExecutionRecord) -> None:
-        if script.result.status != ScriptExecutionStatus.BLOCKED:
-            return
-        for capability in script.result.requested_capabilities:
-            if capability not in _SCRIPT_CAPABILITIES:
-                continue
-            if self.permission_store.is_granted(capability, script.origin):
-                continue
-            self._publish(
-                PermissionRequested(
-                    capability=capability,
-                    origin=script.origin,
-                    resolver=None,
-                )
-            )
 
     def _publish(self, event: object) -> None:
         if self.bus is not None:

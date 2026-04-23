@@ -31,6 +31,21 @@ class ScriptExecutionResult:
     requested_capabilities: tuple[Capability, ...] = ()
 
 
+def required_capability_for(request: ScriptExecutionRequest) -> Capability:
+    """The capability a script needs to execute, derived purely from its shape.
+
+    Kept outside JavaScriptEngine.execute() so the pipeline can check
+    permissions before asking the engine to run anything. All engines must
+    agree on this mapping; only the mapping of (inline, same_origin) to
+    capability matters, not engine internals.
+    """
+    if request.inline:
+        return Capability.EXEC_INLINE_JS
+    if request.same_origin is False:
+        return Capability.EXEC_THIRDPARTY_JS
+    return Capability.EXEC_SAMEORIGIN_JS
+
+
 class JavaScriptEngine:
     def execute(self, request: ScriptExecutionRequest) -> ScriptExecutionResult:
         raise NotImplementedError

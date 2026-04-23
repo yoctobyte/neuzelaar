@@ -55,9 +55,10 @@ class RenderInvalidated:
 
 @dataclass(frozen=True, slots=True)
 class PermissionRequested:
+    request_id: str
     capability: Any
     origin: Any
-    resolver: Any
+    context_url: str
 
 
 @dataclass(frozen=True, slots=True)

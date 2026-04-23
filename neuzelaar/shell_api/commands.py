@@ -76,6 +76,22 @@ class AllowCapabilityOnce:
 
 
 @dataclass(frozen=True, slots=True)
+class GrantPermission:
+    capability: Any
+    origin: Any
+    scope: Any
+    request_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DenyPermission:
+    capability: Any
+    origin: Any
+    remember: bool = False
+    request_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SetSitePolicy:
     origin: Any
     profile: Any
