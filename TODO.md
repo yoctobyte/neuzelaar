@@ -177,7 +177,7 @@ Work:
 - [x] basic block/inline/text layout
 - decoded images via Pillow adapter
 - scroll support
-- tiny CSS slice: inline styles, `<style>`, limited properties
+- [x] tiny CSS slice: inline styles, `<style>`, limited properties
 
 Acceptance:
 
