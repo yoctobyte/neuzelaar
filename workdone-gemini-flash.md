@@ -4,6 +4,8 @@
 - Ran standing test commands to verify M1 core health.
 - Added 3 new offline HTML fixtures for deeper verification.
 - Expanded unit test suite (added 5 new tests) to cover nested rendering, script/style ignoring, subresource extraction from fixtures, and URL resolution edge cases.
+- Created `tools/setup.sh` for one-click "single venv per platform" environment preparation.
+- Fixed a build-time package discovery issue in `pyproject.toml` where `chat/` was incorrectly identified as a package.
 - Identified a crash bug in `PageLoader` when subresources (like stylesheets) fail to fetch.
 
 ## Commands Run

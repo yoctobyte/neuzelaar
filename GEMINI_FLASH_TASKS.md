@@ -82,6 +82,11 @@ Expected today:
    - Verify `subresources` extraction from real fixtures.
    - Add URL resolution edge cases to `test_origin`.
 
+13. Single Venv Setup Tool: [DONE]
+   - Create `tools/setup.sh` to bootstrap a single platform-native venv.
+   - Fix `pyproject.toml` package discovery.
+   - Ensure the script runs guardrails and provides clear usage instructions.
+
 ## Report Format
 
 Use this exact shape in `workdone-gemini-flash.md`:

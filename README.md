@@ -8,12 +8,19 @@ text, and report blocked planned subresources.
 
 ### Setup
 
-It is recommended to use a virtual environment:
+Prepare the environment using the setup script:
 
 ```sh
-python -m venv .venv
-source .venv/bin/activate  # On Linux/macOS
-python -m pip install -e ".[dev]"
+chmod +x tools/setup.sh
+./tools/setup.sh
+```
+
+This will create a virtual environment (`.venv`), install dependencies, and run architectural guardrails.
+
+To activate the environment:
+
+```sh
+source .venv/bin/activate
 ```
 
 ### Running Tests
