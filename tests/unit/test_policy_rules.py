@@ -37,6 +37,15 @@ def test_strict_profile_allows_first_party_image() -> None:
     assert PolicyEngine(PolicyProfile.STRICT).evaluate_fetch(request).action == PolicyAction.ALLOW
 
 
+def test_strict_profile_blocks_third_party_passive_resource() -> None:
+    request = make_request("https://cdn.test/logo.png", "https://example.com/", FetchReason.IMAGE)
+
+    decision = PolicyEngine(PolicyProfile.STRICT).evaluate_fetch(request)
+
+    assert decision.action == PolicyAction.BLOCK
+    assert decision.reason == "strict mode blocks third-party resources"
+
+
 def test_tracker_host_is_blocked_even_for_passive_resource() -> None:
     request = make_request(
         "https://www.google-analytics.com/pixel.gif",

@@ -51,6 +51,8 @@ class PolicyEngine:
                 return PolicyDecision(PolicyAction.BLOCK, "strict mode blocks third-party scripts")
             if request.reason == FetchReason.IFRAME and third_party:
                 return PolicyDecision(PolicyAction.BLOCK, "strict mode blocks third-party iframes")
+            if third_party:
+                return PolicyDecision(PolicyAction.BLOCK, "strict mode blocks third-party resources")
 
         if self.profile == PolicyProfile.BALANCED:
             if request.reason == FetchReason.SCRIPT and third_party:

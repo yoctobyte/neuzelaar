@@ -36,3 +36,15 @@ def test_page_loader_evaluates_planned_subresources() -> None:
     planned = result.planned_subresources[0]
     assert planned.normalized_url == "https://cdn.third-party.test/app.js"
     assert planned.decision.action == PolicyAction.BLOCK
+
+
+def test_page_loader_blocks_third_party_images_in_strict_mode() -> None:
+    result = PageLoader().load(Path("tests/fixtures/sites/basic_images.html").resolve().as_uri())
+
+    external = [
+        planned
+        for planned in result.planned_subresources
+        if planned.normalized_url == "https://example.com/external.png"
+    ][0]
+
+    assert external.decision.action == PolicyAction.BLOCK
