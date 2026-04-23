@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from neuzelaar.core.fetch.cookies import SessionCookieJar
 from neuzelaar.core.page import PageLoader, PageLoadResult
 
 
@@ -15,9 +16,14 @@ class HistoryEntry:
 
 @dataclass(slots=True)
 class BrowserSession:
-    loader: PageLoader = field(default_factory=PageLoader)
+    cookie_jar: SessionCookieJar = field(default_factory=SessionCookieJar)
+    loader: PageLoader | None = None
     history: list[HistoryEntry] = field(default_factory=list)
     current_index: int = -1
+
+    def __post_init__(self) -> None:
+        if self.loader is None:
+            self.loader = PageLoader(cookie_jar=self.cookie_jar)
 
     @property
     def current(self) -> PageLoadResult | None:

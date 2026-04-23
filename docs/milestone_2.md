@@ -9,6 +9,8 @@ Implemented:
 - back/forward navigation
 - document link extraction
 - link following by index
+- session-only cookie jar
+- optional page load events through `Bus`
 - console shell commands: `open`, `links`, `follow`, `back`, `forward`, `resources`, `quit`
 - page resource summary for blocked planned subresources
 
@@ -19,7 +21,4 @@ Verification:
 tools/check_guardrails.sh
 ```
 
-Remaining M2 work:
-
-- session-only cookie jar
-- optional load/resource events from `PageLoader`
+M2 is complete enough to move on to the first visual/rendering foundation.

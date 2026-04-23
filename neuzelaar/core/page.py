@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from neuzelaar.core.bus import Bus
 from neuzelaar.core.fetch.client import FetchClient
+from neuzelaar.core.fetch.cookies import SessionCookieJar
 from neuzelaar.core.fetch.resource import FetchReason, Request, Resource
 from neuzelaar.core.handlers.registry import HandlerResult, default_registry
 from neuzelaar.core.mime.classifier import MimeDecision, classify_resource
@@ -13,6 +15,7 @@ from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
 from neuzelaar.document.links import DocumentLink, extract_links
 from neuzelaar.document.subresources import SubresourceRequest, extract_subresources
 from neuzelaar.render.text_only import render_text
+from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,28 +41,43 @@ class PageLoader:
         *,
         fetch_client: FetchClient | None = None,
         policy_engine: PolicyEngine | None = None,
+        cookie_jar: SessionCookieJar | None = None,
+        bus: Bus | None = None,
     ) -> None:
         self.fetch_client = fetch_client or FetchClient()
         self.policy_engine = policy_engine or PolicyEngine()
+        self.cookie_jar = cookie_jar
+        self.bus = bus
 
     def load(self, url: str) -> PageLoadResult:
         url_record = parse_url(url)
+        headers: dict[str, str] = {}
+        if self.cookie_jar is not None:
+            self.cookie_jar.add_cookie_header(url_record.normalized, headers)
         top_level_request = Request(
             url=url_record.normalized,
             method="GET",
-            headers={},
+            headers=headers,
             body=None,
             reason=FetchReason.TOP_LEVEL,
             initiator=None,
             origin=url_record.origin,
             context_origin=url_record.origin,
         )
-        resource = self.fetch_client.fetch(top_level_request)
+        self._publish(PageLoadStarted(url_record.normalized))
+        try:
+            resource = self.fetch_client.fetch(top_level_request)
+        except Exception as exc:
+            self._publish(PageFailed(url_record.normalized, str(exc)))
+            raise
+        if self.cookie_jar is not None:
+            self.cookie_jar.store_from_resource(resource)
         mime_decision = classify_resource(resource)
         handler_result = default_registry().handle(resource, mime_decision)
         rendered_text = self._render(handler_result)
         links = self._extract_links(handler_result)
         planned = self._evaluate_planned_subresources(resource, handler_result)
+        self._publish(PageLoadFinished(resource.final_url, resource.status))
         return PageLoadResult(
             resource=resource,
             mime_decision=mime_decision,
@@ -102,11 +120,18 @@ class PageLoader:
                 origin=subresource_record.origin,
                 context_origin=resource.request.context_origin,
             )
+            decision = self.policy_engine.evaluate_fetch(subresource_request)
+            if not decision.allowed:
+                self._publish(ResourceBlocked(subresource_record.normalized, decision.reason))
             result.append(
                 PlannedSubresourceDecision(
                     request=planned,
-                    decision=self.policy_engine.evaluate_fetch(subresource_request),
+                    decision=decision,
                     normalized_url=subresource_record.normalized,
                 )
             )
         return result
+
+    def _publish(self, event: object) -> None:
+        if self.bus is not None:
+            self.bus.publish(event)

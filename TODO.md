@@ -42,7 +42,7 @@ Expected:
 | Active content hooks | Done | JS/WASM interfaces and no-op blocked engines. |
 | Guardrails | Done | pytest invokes `tools/check_guardrails.sh`. |
 | M1 docs verification | Done | See `workdone-gemini-flash.md`. |
-| M2 minimal document browser | In progress | Session/history/link listing/console commands implemented. |
+| M2 minimal document browser | Done | Session/history/link listing/console commands/cookies/events implemented. |
 
 ## Active Backlog
 
@@ -154,10 +154,10 @@ Work:
 - [x] in-memory session and single-tab page state
 - [x] navigation history
 - [x] link following by URL or link index in console mode
-- session-only cookie jar
+- [x] session-only cookie jar
 - [x] console shell commands: `open`, `back`, `forward`, `links`, `resources`, `quit`
 - [x] page summary: title, URL, links, blocked resources
-- optional bus events from `PageLoader`: load started/progress/finished/resource blocked
+- [x] optional bus events from `PageLoader`: load started/finished/failed/resource blocked
 
 Acceptance:
 
