@@ -44,6 +44,8 @@ Expected:
 | M1 docs verification | Done | See `workdone-gemini-flash.md`. |
 | M2 minimal document browser | Done | Session/history/link listing/console commands/cookies/events implemented. |
 | M3 rendering foundation | In progress | Display list, software rasterizer, and Tk shell frame path implemented; GUI smoke pending. |
+| M4a forms | Done | Form extraction, GET/POST submission, and fixture-server flow implemented. |
+| MVP code path | Done | Headless/console/Tk frame path, forms, cookies, policy, basic CSS, and tests implemented. |
 
 ## Active Backlog
 
@@ -203,6 +205,27 @@ Work:
 Acceptance:
 
 - [x] Fixture login/comment flow works without JS.
+
+## MVP Status
+
+MVP code path is complete enough for internal testing:
+
+- [x] open URL / local path
+- [x] fetch top-level HTML
+- [x] parse into internal document tree
+- [x] semantic text rendering
+- [x] links, headings, paragraphs, lists, image placeholders
+- [x] simple forms
+- [x] tiny CSS slice
+- [x] navigation and history
+- [x] GET/POST form submission
+- [x] session cookies
+- [x] strict third-party resource blocking
+- [x] headless diagnostics
+- [x] console shell
+- [x] Tk visual frame path
+- [x] software rasterization
+- [ ] manual GUI smoke verification on a machine with a display
 
 ## M4b Path: Persistence And Tabs
 
