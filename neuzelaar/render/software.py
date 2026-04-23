@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PIL import Image, ImageDraw, ImageFont
 
-from neuzelaar.render.display_list import Color, DisplayList, DrawText, FillRect, Placeholder
+from neuzelaar.render.display_list import Color, DisplayList, DrawImage, DrawText, FillRect, Placeholder
 from neuzelaar.shell_api.frame import Frame, PixelFormat
 
 
@@ -18,6 +18,9 @@ def rasterize(display_list: DisplayList) -> Frame:
             draw.rectangle(_rect_tuple(op.rect), fill=_color_tuple(op.color))
         elif isinstance(op, DrawText):
             draw.text((op.x, op.y), op.text, fill=_color_tuple(op.color), font=font)
+        elif isinstance(op, DrawImage):
+            bitmap = Image.frombytes("RGBA", (op.bitmap.width, op.bitmap.height), op.bitmap.pixels)
+            image.alpha_composite(bitmap, (op.x, op.y))
         elif isinstance(op, Placeholder):
             draw.rectangle(_rect_tuple(op.rect), outline=(120, 120, 120, 255), fill=(245, 245, 245, 255))
             draw.text((op.rect.x + 6, op.rect.y + 9), op.label, fill=(60, 60, 60, 255), font=font)

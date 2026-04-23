@@ -2,21 +2,43 @@
 
 from __future__ import annotations
 
-from neuzelaar.document.layout import LayoutImage, LayoutText, layout_document
+from neuzelaar.document.layout import LayoutBox, LayoutImage, LayoutText, layout_document
 from neuzelaar.document.styles import ComputedStyle
-from neuzelaar.render.display_list import Color, DisplayList, DrawText, FillRect, Placeholder, Rect
+from neuzelaar.render.display_list import Bitmap, Color, DisplayList, DrawImage, DrawText, FillRect, Placeholder, Rect
 
 
-def build_display_list(document, *, width: int = 800, root_style: ComputedStyle | None = None) -> DisplayList:
-    layout = layout_document(document, width=width)
+def build_display_list(
+    document,
+    *,
+    width: int = 800,
+    root_style: ComputedStyle | None = None,
+    styles: dict | None = None,
+    images: dict | None = None,
+) -> DisplayList:
+    layout = layout_document(document, width=width, styles=styles, images=images, root_style=root_style)
     style = root_style or ComputedStyle()
     ops = [FillRect(Rect(0, 0, layout.width, layout.height), _parse_color(style.background_color))]
-    text_color = _parse_color(style.color)
     for item in layout.items:
-        if isinstance(item, LayoutText):
-            ops.append(DrawText(item.x, item.y, item.text, text_color))
+        if isinstance(item, LayoutBox):
+            ops.append(FillRect(Rect(item.x, item.y, item.width, item.height), _parse_color(item.color)))
+        elif isinstance(item, LayoutText):
+            ops.append(DrawText(item.x, item.y, item.text, _parse_color(item.color)))
         elif isinstance(item, LayoutImage):
-            ops.append(Placeholder(Rect(item.x, item.y, 240, 32), f"image: {item.label}"))
+            if item.bitmap is not None:
+                ops.append(
+                    DrawImage(
+                        item.x,
+                        item.y,
+                        Bitmap(
+                            width=item.bitmap.bitmap.width,
+                            height=item.bitmap.bitmap.height,
+                            stride=item.bitmap.bitmap.stride,
+                            pixels=item.bitmap.bitmap.pixels,
+                        ),
+                    )
+                )
+            else:
+                ops.append(Placeholder(Rect(item.x, item.y, item.width, item.height), f"image: {item.label}"))
     return DisplayList(width=layout.width, height=layout.height, ops=tuple(ops))
 
 

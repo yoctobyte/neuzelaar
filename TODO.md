@@ -49,7 +49,7 @@ Expected:
 | M4a forms | Done | Form extraction, GET/POST submission, and fixture-server flow implemented. |
 | MVP code path | Done | Headless/console/Tk frame path, forms, cookies, policy, basic CSS, and tests implemented. |
 | P8 browser state hardening | Done | Persistent cookies, multi-tab model, and per-tab history isolation implemented. |
-| P9 styling and compatibility | In progress | Same-origin external stylesheet fetch/apply is being integrated. |
+| P9 styling and compatibility | In progress | Same-origin stylesheet fetch, descendant selectors, and local image rendering are in; broader CSS/layout still open. |
 
 ## Active Backlog
 
@@ -116,6 +116,32 @@ Acceptance:
 
 - next package is chosen explicitly
 - `TODO.md` backlog reflects that choice
+
+### P9: Styling And Compatibility
+
+Owner: Codex
+
+Status: In progress
+
+Files:
+
+- `neuzelaar/core/page.py`
+- `neuzelaar/document/styles.py`
+- `neuzelaar/document/layout.py`
+- `neuzelaar/render/display_builder.py`
+- `neuzelaar/render/software.py`
+
+Tasks:
+
+- expand CSS support beyond tag/class/id plus descendant matching
+- keep improving visual layout beyond simple stacked blocks
+- add resource-budget controls for fetched passive assets
+
+Acceptance:
+
+- more styled fixtures render materially closer to author intent
+- local passive assets stay policy-visible and budgeted
+- tests cover the added CSS/rendering behavior
 
 ### P1: Claude Review Of Pipeline Shape
 

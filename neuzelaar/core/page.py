@@ -15,9 +15,11 @@ from neuzelaar.core.origin import parse_url, resolve_url
 from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
 from neuzelaar.document.forms import DocumentForm, extract_forms
 from neuzelaar.document.links import DocumentLink, extract_links
+from neuzelaar.document.dom import NodeId
 from neuzelaar.document.styles import ComputedStyle, compute_styles, root_style, style_text_blocks
 from neuzelaar.document.subresources import SubresourceRequest, extract_subresources
 from neuzelaar.engines.css.tinycss2_adapter import parse_stylesheet
+from neuzelaar.engines.image.pillow_adapter import DecodedImageBitmap, ImageDecodeError, decode_image_bitmap
 from neuzelaar.render.text_only import render_text
 from neuzelaar.shell_api.events import PageFailed, PageLoadFinished, PageLoadStarted, ResourceBlocked
 
@@ -27,6 +29,12 @@ class PlannedSubresourceDecision:
     request: SubresourceRequest
     decision: PolicyDecision
     normalized_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class ImageAsset:
+    url: str
+    bitmap: DecodedImageBitmap
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +49,7 @@ class PageLoadResult:
     root_style: ComputedStyle
     stylesheet_urls: tuple[str, ...]
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
+    images: dict[NodeId, ImageAsset]
 
 
 class PageLoader:
@@ -106,6 +115,7 @@ class PageLoader:
         stylesheet_urls, styles = self._compute_styles(resource, handler_result)
         page_root_style = self._root_style(handler_result, styles)
         planned = self._evaluate_planned_subresources(resource, handler_result)
+        images = self._fetch_images(resource, handler_result)
         self._publish(PageLoadFinished(resource.final_url, resource.status))
         return PageLoadResult(
             resource=resource,
@@ -118,6 +128,7 @@ class PageLoader:
             root_style=page_root_style,
             stylesheet_urls=stylesheet_urls,
             planned_subresources=tuple(planned),
+            images=images,
         )
 
     def _render(self, handler_result: HandlerResult) -> str:
@@ -217,6 +228,36 @@ class PageLoader:
                     normalized_url=subresource_record.normalized,
                 )
             )
+        return result
+
+    def _fetch_images(self, resource: Resource, handler_result: HandlerResult) -> dict[NodeId, ImageAsset]:
+        if handler_result.kind != "document":
+            return {}
+
+        result: dict[NodeId, ImageAsset] = {}
+        for planned in extract_subresources(handler_result.value):
+            if planned.reason != FetchReason.IMAGE:
+                continue
+            image_record = resolve_url(resource.final_url, planned.url)
+            image_request = Request(
+                url=image_record.normalized,
+                method="GET",
+                headers=self._subresource_headers(image_record.normalized),
+                body=None,
+                reason=FetchReason.IMAGE,
+                initiator=resource.id,
+                origin=image_record.origin,
+                context_origin=resource.request.context_origin,
+            )
+            decision = self.policy_engine.evaluate_fetch(image_request)
+            if not decision.allowed:
+                continue
+            image_resource = self.fetch_client.fetch(image_request)
+            try:
+                bitmap = decode_image_bitmap(image_resource.body)
+            except ImageDecodeError:
+                continue
+            result[planned.node_id] = ImageAsset(url=image_resource.final_url, bitmap=bitmap)
         return result
 
     def _publish(self, event: object) -> None:

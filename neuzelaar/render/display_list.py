@@ -42,7 +42,22 @@ class Placeholder:
     label: str
 
 
-DisplayOp = Union[FillRect, DrawText, Placeholder]
+@dataclass(frozen=True, slots=True)
+class Bitmap:
+    width: int
+    height: int
+    stride: int
+    pixels: bytes
+
+
+@dataclass(frozen=True, slots=True)
+class DrawImage:
+    x: int
+    y: int
+    bitmap: Bitmap
+
+
+DisplayOp = Union[FillRect, DrawText, Placeholder, DrawImage]
 
 
 @dataclass(frozen=True, slots=True)

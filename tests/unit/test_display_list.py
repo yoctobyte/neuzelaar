@@ -3,7 +3,7 @@ from pathlib import Path
 from neuzelaar.core.page import PageLoader
 from neuzelaar.render.display_builder import build_display_list
 from neuzelaar.document.styles import ComputedStyle
-from neuzelaar.render.display_list import Color, DrawText, FillRect, Placeholder
+from neuzelaar.render.display_list import Color, DrawImage, DrawText, FillRect, Placeholder
 
 
 def document_from_fixture(name: str):
@@ -24,6 +24,17 @@ def test_build_display_list_contains_image_placeholders() -> None:
     display_list = build_display_list(document_from_fixture("basic_images.html"))
 
     assert any(isinstance(op, Placeholder) and "Local Placeholder" in op.label for op in display_list.ops)
+
+
+def test_build_display_list_draws_decoded_images_when_provided() -> None:
+    result = PageLoader().load(Path("tests/fixtures/sites/basic_images.html").resolve().as_uri())
+    display_list = build_display_list(
+        result.handler_result.value,
+        styles=result.styles,
+        images=result.images,
+    )
+
+    assert any(isinstance(op, DrawImage) for op in display_list.ops)
 
 
 def test_build_display_list_uses_root_style_colors() -> None:

@@ -99,9 +99,22 @@ def _style_from_declarations(declarations: dict[str, str]) -> ComputedStyle:
 
 
 def _matches_selector(node: Element, selector: str) -> bool:
-    selector = selector.strip()
-    if not selector:
+    parts = [part for part in selector.strip().split() if part]
+    if not parts:
         return False
+    current: Element | None = node
+    for part in reversed(parts):
+        while current is not None and not _matches_simple_selector(current, part):
+            parent = current.parent
+            current = parent if isinstance(parent, Element) else None
+        if current is None:
+            return False
+        parent = current.parent
+        current = parent if isinstance(parent, Element) else None
+    return True
+
+
+def _matches_simple_selector(node: Element, selector: str) -> bool:
     if selector.startswith("."):
         classes = (node.attr("class") or "").split()
         return selector[1:] in classes

@@ -38,6 +38,16 @@ def test_page_loader_fetches_same_origin_stylesheets() -> None:
     assert result.root_style.background_color == "#dddddd"
 
 
+def test_page_loader_fetches_same_origin_images() -> None:
+    result = PageLoader().load(Path("tests/fixtures/sites/basic_images.html").resolve().as_uri())
+
+    assert len(result.images) == 1
+    image = next(iter(result.images.values()))
+    assert image.url.endswith("/tests/fixtures/sites/placeholder.png")
+    assert image.bitmap.width == 1
+    assert image.bitmap.height == 1
+
+
 def test_page_loader_evaluates_planned_subresources() -> None:
     result = PageLoader().load(Path("tests/fixtures/sites/third_party_script.html").resolve().as_uri())
 

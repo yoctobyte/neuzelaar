@@ -27,6 +27,8 @@ class TkShell:
             result.handler_result.value,
             width=self.width,
             root_style=result.root_style,
+            styles=result.styles,
+            images=result.images,
         )
         return result, rasterize(display_list)
 

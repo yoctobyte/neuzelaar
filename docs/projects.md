@@ -107,11 +107,11 @@ Delivered:
 - `<style>` blocks
 - tinycss2 adapter
 - root color/background application
+- descendant selector matching
 
 Still deferred:
 
-- external stylesheet fetch/apply
-- broader selector support
+- broader selector support beyond simple descendant chains
 - full cascade/inheritance behavior
 
 ## P6. Active Content Boundary
@@ -187,11 +187,13 @@ Status:
 Delivered:
 
 - same-origin external stylesheet fetch/apply under policy
+- local image decode and software blit path
+- descendant selector support for the tiny CSS slice
 
 Remaining:
 
 - broader CSS subset
-- better image rendering
+- better layout and image sizing
 - richer resource budget controls
 
 ## P10. Post-MVP Active Content

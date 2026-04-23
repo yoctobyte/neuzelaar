@@ -40,3 +40,15 @@ def test_style_text_blocks_and_root_style() -> None:
     styles = compute_styles(document, rules)
 
     assert root_style(document, styles).color == "blue"
+
+
+def test_compute_styles_matches_descendant_selectors() -> None:
+    document = Document(id=NodeId("doc"))
+    section = Element(id=NodeId("section"), tag="section")
+    paragraph = Element(id=NodeId("paragraph"), tag="p")
+    append_child(document, section)
+    append_child(section, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("section p { color: green }"))
+
+    assert styles[NodeId("paragraph")].color == "green"
