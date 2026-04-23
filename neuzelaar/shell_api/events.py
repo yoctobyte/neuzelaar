@@ -1,4 +1,8 @@
-"""Events emitted from core to shells."""
+"""Events emitted from core to shells.
+
+These dataclasses represent state changes, diagnostic messages, or 
+requests for user interaction (like permissions) sent from the core.
+"""
 
 from __future__ import annotations
 

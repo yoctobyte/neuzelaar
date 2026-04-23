@@ -1,4 +1,8 @@
-"""Command line entry point for early Neuzelaar milestones."""
+"""Command line entry point for early Neuzelaar milestones.
+
+This module provides the 'headless' execution path for Milestone 1, 
+driving the fetch, classify, parse, and render pipeline.
+"""
 
 from __future__ import annotations
 

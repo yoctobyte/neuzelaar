@@ -1,4 +1,9 @@
-"""Internal DOM-like tree owned by Neuzelaar."""
+"""Internal DOM-like tree owned by Neuzelaar.
+
+This tree is the source of truth for the document structure. It is 
+constructed from raw content by engine adapters and should only contain 
+standard Neuzelaar node types.
+"""
 
 from __future__ import annotations
 

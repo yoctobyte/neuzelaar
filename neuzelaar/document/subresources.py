@@ -1,4 +1,9 @@
-"""Subresource discovery from the internal document tree."""
+"""Subresource discovery from the internal document tree.
+
+This module scans a Document node for external resources (images, 
+scripts, stylesheets) and emits SubresourceRequests that the core 
+must approve via policy before fetching.
+"""
 
 from __future__ import annotations
 

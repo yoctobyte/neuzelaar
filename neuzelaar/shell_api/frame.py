@@ -1,4 +1,8 @@
-"""Renderer-neutral frame object exposed to shells."""
+"""Renderer-neutral frame object exposed to shells.
+
+A Frame represents a single rendered state of the viewport, ready for 
+presentation by a shell.
+"""
 
 from __future__ import annotations
 

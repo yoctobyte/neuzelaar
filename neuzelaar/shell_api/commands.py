@@ -1,4 +1,8 @@
-"""Commands sent from shells into core."""
+"""Commands sent from shells into core.
+
+These dataclasses represent user actions or shell-initiated requests 
+that the core must process.
+"""
 
 from __future__ import annotations
 

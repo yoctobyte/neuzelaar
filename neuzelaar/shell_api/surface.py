@@ -1,4 +1,8 @@
-"""Viewport host contract implemented by shells."""
+"""Viewport host contract implemented by shells.
+
+Shells provide a Surface to the core, which the core (via a renderer) 
+paints into.
+"""
 
 from __future__ import annotations
 

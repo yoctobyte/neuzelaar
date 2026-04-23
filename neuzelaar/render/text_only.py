@@ -1,4 +1,8 @@
-"""Semantic text renderer for headless and console output."""
+"""Semantic text renderer for headless and console output.
+
+Converts a Document tree into a human-readable text representation, 
+respecting headings, links, and block structure.
+"""
 
 from __future__ import annotations
 
