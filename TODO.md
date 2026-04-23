@@ -176,7 +176,7 @@ Work:
 - [x] display list types
 - [x] basic block/inline/text layout
 - [x] decoded images via Pillow adapter
-- scroll support
+- [x] scroll support
 - [x] tiny CSS slice: inline styles, `<style>`, limited properties
 
 Acceptance:

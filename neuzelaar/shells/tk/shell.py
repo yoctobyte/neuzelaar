@@ -30,12 +30,24 @@ class TkShell:
         result, frame = self.render_url_to_frame(url)
         root = tk.Tk()
         root.title(result.handler_result.value.title or "Neuzelaar")
-        canvas = tk.Canvas(root, width=min(frame.width, self.width), height=min(frame.height, self.height))
-        canvas.pack(fill=tk.BOTH, expand=True)
+        canvas = tk.Canvas(
+            root,
+            width=min(frame.width, self.width),
+            height=min(frame.height, self.height),
+            scrollregion=(0, 0, frame.width, frame.height),
+        )
+        scrollbar = tk.Scrollbar(root, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         photo = _frame_to_photo(frame)
         canvas.create_image(0, 0, image=photo, anchor=tk.NW)
         canvas.image = photo
+        canvas.bind_all("<MouseWheel>", lambda event: canvas.yview_scroll(int(-event.delta / 120), "units"))
         root.mainloop()
+
+    def needs_vertical_scroll(self, frame: Frame) -> bool:
+        return frame.height > self.height
 
 
 class TkShellError(RuntimeError):

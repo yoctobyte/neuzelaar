@@ -13,3 +13,11 @@ def test_tk_shell_can_render_url_to_frame_without_opening_window() -> None:
     assert frame.width == 640
     assert frame.height > 0
     assert frame.format == PixelFormat.RGBA8888
+
+
+def test_tk_shell_detects_when_frame_needs_scroll() -> None:
+    shell = TkShell(width=640, height=10)
+
+    _result, frame = shell.render_url_to_frame(Path("tests/fixtures/sites/basic_lists.html").resolve().as_uri())
+
+    assert shell.needs_vertical_scroll(frame)
