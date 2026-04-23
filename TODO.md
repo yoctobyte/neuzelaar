@@ -43,6 +43,7 @@ Expected:
 | Guardrails | Done | pytest invokes `tools/check_guardrails.sh`. |
 | M1 docs verification | Done | See `workdone-gemini-flash.md`. |
 | M2 minimal document browser | Done | Session/history/link listing/console commands/cookies/events implemented. |
+| M3 rendering foundation | In progress | Display list and software rasterizer implemented; Tk shell/layout polish pending. |
 
 ## Active Backlog
 
@@ -171,9 +172,9 @@ Theme: first actual viewport.
 Work:
 
 - lock Tk as first shell unless explicitly changed
-- software frame generation and neutral `Frame` presentation
-- display list types
-- basic block/inline/text layout
+- [x] software frame generation and neutral `Frame` presentation
+- [x] display list types
+- [x] basic block/inline/text layout
 - decoded images via Pillow adapter
 - scroll support
 - tiny CSS slice: inline styles, `<style>`, limited properties
