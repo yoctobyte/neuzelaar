@@ -37,6 +37,7 @@ from neuzelaar.core.page import ImageAsset
 from neuzelaar.document.box import Box, BoxGeometry, BoxKind, EdgeSizes
 from neuzelaar.document.dom import NodeId
 from neuzelaar.document.styles import ComputedStyle
+from neuzelaar.core.watchdog import check_resources
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +99,7 @@ def layout_block(
     """Lay out a root block box at viewport_width and return the
     total content height plus the flat placement list.
     """
+    check_resources()
     state = LayoutState(
         viewport_width=viewport_width,
         images=images or {},

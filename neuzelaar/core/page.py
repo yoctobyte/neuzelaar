@@ -16,6 +16,7 @@ from neuzelaar.core.origin import Origin, parse_url, resolve_url
 from neuzelaar.core.policy.permission_service import PermissionService
 from neuzelaar.core.policy.permissions import PermissionStore
 from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
+from neuzelaar.core.watchdog import check_resources
 from neuzelaar.document.forms import DocumentForm, extract_forms
 from neuzelaar.document.links import DocumentLink, extract_links
 from neuzelaar.document.dom import NodeId
@@ -125,6 +126,7 @@ class PageLoader:
         form_data: dict[str, str] | None = None,
         reason: FetchReason = FetchReason.TOP_LEVEL,
     ) -> PageLoadResult:
+        check_resources()
         url_record = parse_url(url)
         body = None
         final_url = url_record.normalized

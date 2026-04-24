@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from neuzelaar.render.display_list import Color, DisplayList, DrawImage, DrawText, FillRect, Placeholder
 from neuzelaar.shell_api.frame import Frame, PixelFormat
+from neuzelaar.core.watchdog import check_resources
 
 
 # Safety cap: prevent X11 BadAlloc by limiting the rasterized bitmap.
@@ -18,6 +19,7 @@ MAX_RASTER_PIXELS = 800 * MAX_RASTER_HEIGHT  # ~52 million pixels
 
 
 def rasterize(display_list: DisplayList) -> Frame:
+    check_resources()
     clamped_height = min(display_list.height, MAX_RASTER_HEIGHT)
     clamped_height = max(clamped_height, 1)
     image = Image.new("RGBA", (display_list.width, clamped_height), (255, 255, 255, 255))
