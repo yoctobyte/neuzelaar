@@ -8,6 +8,7 @@ from neuzelaar.engines.js_own.host import HostCallable
 from neuzelaar.engines.js_own.ast import (
     ArrayLiteral,
     AssignmentExpr,
+    ArrowFunctionExpr,
     BinaryExpr,
     BlockStatement,
     BooleanLiteral,
@@ -92,8 +93,37 @@ class JavaScriptFunction:
             return signal.value
 
 
+class JavaScriptArrowFunction:
+    def __init__(
+        self,
+        *,
+        params: tuple[str, ...],
+        body: BlockStatement | Expr,
+        closure: Environment,
+        lexical_this: object,
+    ) -> None:
+        self.params = params
+        self.body = body
+        self.closure = closure
+        self.lexical_this = lexical_this
+
+    def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
+        call_env = Environment(parent=self.closure)
+        call_env.declare("this", self.lexical_this, kind="const")
+        for index, param in enumerate(self.params):
+            value = arguments[index] if index < len(arguments) else None
+            call_env.declare(param, value, kind="var")
+        if isinstance(self.body, BlockStatement):
+            try:
+                return evaluate_statement(self.body, call_env)
+            except ReturnSignal as signal:
+                return signal.value
+        return evaluate_expr(self.body, call_env)
+
+
 def create_global_environment() -> Environment:
     env = Environment()
+    env.declare("this", None, kind="const")
     install_builtins(env)
     return env
 
@@ -197,6 +227,13 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         return environment.get(expr.name)
     if isinstance(expr, ThisExpr):
         return environment.get("this")
+    if isinstance(expr, ArrowFunctionExpr):
+        return JavaScriptArrowFunction(
+            params=expr.params,
+            body=expr.body,
+            closure=environment,
+            lexical_this=environment.get("this"),
+        )
     if isinstance(expr, FunctionExpr):
         function = JavaScriptFunction(
             name=expr.name,

@@ -70,6 +70,12 @@ class FunctionExpr(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class ArrowFunctionExpr(Expr):
+    params: tuple[str, ...]
+    body: "BlockStatement | Expr"
+
+
+@dataclass(frozen=True, slots=True)
 class CallExpr(Expr):
     callee: Expr
     arguments: tuple[Expr, ...]

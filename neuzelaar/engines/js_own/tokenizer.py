@@ -26,6 +26,7 @@ KEYWORDS = {
 }
 
 MULTI_CHAR_OPERATORS = (
+    "=>",
     "===",
     "!==",
     "<=",

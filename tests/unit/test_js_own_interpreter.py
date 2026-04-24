@@ -217,3 +217,30 @@ def test_math_and_primitive_builtins_work() -> None:
     error = evaluate_program('Error("x");')
     assert error["name"] == "Error"
     assert error["message"] == "x"
+
+
+def test_arrow_function_expression_body_works() -> None:
+    assert evaluate_program("var inc = x => x + 1; inc(2);") == 3.0
+
+
+def test_arrow_function_block_body_works() -> None:
+    assert evaluate_program("var add = (x, y) => { return x + y; }; add(2, 3);") == 5.0
+
+
+def test_arrow_function_lexically_captures_this() -> None:
+    result = evaluate_program(
+        "var o = { value: 7, get: function () { var f = () => this.value; return f(); } }; o.get();"
+    )
+
+    assert result == 7.0
+
+
+def test_arrow_function_ignores_call_site_this() -> None:
+    result = evaluate_program(
+        "var outer = { value: 3, make: function () { return () => this.value; } }; "
+        "var fn = outer.make(); "
+        "var other = { value: 9, fn: fn }; "
+        "other.fn();"
+    )
+
+    assert result == 3.0

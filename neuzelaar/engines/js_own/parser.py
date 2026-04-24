@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from neuzelaar.engines.js_own.ast import (
     ArrayLiteral,
     AssignmentExpr,
+    ArrowFunctionExpr,
     BinaryExpr,
     BlockStatement,
     BooleanLiteral,
@@ -64,13 +65,47 @@ class Parser:
     tokens: tuple[Token, ...]
     index: int = 0
 
+    def maybe_parse_arrow_expression(self) -> ArrowFunctionExpr | None:
+        checkpoint = self.index
+        params = self._maybe_parse_arrow_params()
+        if params is None or not self._match("=>"):
+            self.index = checkpoint
+            return None
+        if self._check("LBRACE"):
+            body: BlockStatement | Expr = self._parse_block_statement()
+        else:
+            body = self.parse_expression()
+        return ArrowFunctionExpr(params=params, body=body)
+
     def parse_expression(self, precedence: int = 0) -> Expr:
+        if precedence == 0:
+            checkpoint = self.index
+            arrow = self.maybe_parse_arrow_expression()
+            if arrow is not None:
+                return arrow
+            self.index = checkpoint
         token = self._advance()
         left = self._parse_prefix(token)
         while precedence < self._current_precedence():
             operator = self._advance()
             left = self._parse_infix(left, operator)
         return left
+
+    def _maybe_parse_arrow_params(self) -> tuple[str, ...] | None:
+        if self._check("IDENTIFIER"):
+            return (str(self._advance().value),)
+        if not self._match("LPAREN"):
+            return None
+        params: list[str] = []
+        if not self._check("RPAREN"):
+            while True:
+                if not self._check("IDENTIFIER"):
+                    return None
+                params.append(str(self._advance().value))
+                if not self._match("COMMA"):
+                    break
+        self._consume("RPAREN", "Expected ')' after arrow parameters")
+        return tuple(params)
 
     def parse_program(self) -> Program:
         statements: list[Stmt] = []

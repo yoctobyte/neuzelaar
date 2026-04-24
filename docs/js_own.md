@@ -70,6 +70,7 @@ Scope:
 
 - function declarations
 - function expressions
+- arrow functions
 - calls
 - `return`
 - lexical closure capture

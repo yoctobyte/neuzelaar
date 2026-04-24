@@ -1,6 +1,7 @@
 from neuzelaar.engines.js_own.ast import (
     ArrayLiteral,
     AssignmentExpr,
+    ArrowFunctionExpr,
     BinaryExpr,
     BlockStatement,
     CallExpr,
@@ -96,3 +97,13 @@ def test_parse_throw_and_try_statement() -> None:
 
     assert isinstance(program.statements[0], TryStatement)
     assert isinstance(program.statements[0].body.statements[0], ThrowStatement)
+
+
+def test_parse_arrow_function_expressions() -> None:
+    expr1 = parse_expression("x => x + 1")
+    expr2 = parse_expression("(x, y) => { return x + y; }")
+
+    assert isinstance(expr1, ArrowFunctionExpr)
+    assert expr1.params == ("x",)
+    assert isinstance(expr2, ArrowFunctionExpr)
+    assert expr2.params == ("x", "y")
