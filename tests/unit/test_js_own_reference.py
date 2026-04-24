@@ -18,6 +18,10 @@ CASES = [
     "let x = 1; { let x = 2; x; } x;",
     "{ var x = 4; } x;",
     'if (false) { "a"; } else { "b"; }',
+    "function add(a, b) { return a + b; } add(2, 3);",
+    "(function (x) { return x + 1; })(2);",
+    "function outer(x) { function inner(y) { return x + y; } return inner; } var add2 = outer(2); add2(3);",
+    "function fact(n) { if (n === 0) { return 1; } return n * fact(n - 1); } fact(5);",
 ]
 
 

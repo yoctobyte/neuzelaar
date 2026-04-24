@@ -9,13 +9,17 @@ from neuzelaar.engines.js_own.ast import (
     BinaryExpr,
     BlockStatement,
     BooleanLiteral,
+    CallExpr,
     Expr,
     ExpressionStatement,
+    FunctionDeclaration,
+    FunctionExpr,
     Identifier,
     IfStatement,
     NullLiteral,
     NumberLiteral,
     Program,
+    ReturnStatement,
     Stmt,
     StringLiteral,
     UnaryExpr,
@@ -41,6 +45,7 @@ PRECEDENCE = {
     "STAR": 7,
     "SLASH": 7,
     "PERCENT": 7,
+    "LPAREN": 9,
 }
 
 
@@ -68,8 +73,12 @@ class Parser:
             return ExpressionStatement(NumberLiteral(0.0))
         if self._check("LBRACE"):
             return self._parse_block_statement()
+        if self._check("FUNCTION"):
+            return self._parse_function_declaration()
         if self._check("IF"):
             return self._parse_if_statement()
+        if self._check("RETURN"):
+            return self._parse_return_statement()
         if self._check("VAR") or self._check("LET") or self._check("CONST"):
             return self._parse_variable_declaration()
         expression = self.parse_expression()
@@ -93,6 +102,15 @@ class Parser:
         alternate = self.parse_statement() if self._match("ELSE") else None
         return IfStatement(test=test, consequent=consequent, alternate=alternate)
 
+    def _parse_return_statement(self) -> ReturnStatement:
+        keyword = self._advance()
+        if self._check("SEMICOLON") or self._check("RBRACE") or self._check("EOF"):
+            self._consume_optional_semicolon()
+            return ReturnStatement(value=None)
+        value = self.parse_expression()
+        self._consume_optional_semicolon()
+        return ReturnStatement(value=value)
+
     def _parse_variable_declaration(self) -> VariableDeclaration:
         kind_token = self._advance()
         identifier = self._consume("IDENTIFIER", "Expected identifier after declaration keyword")
@@ -108,6 +126,34 @@ class Parser:
             initializer=initializer,
         )
 
+    def _parse_function_declaration(self) -> FunctionDeclaration:
+        function_expr = self._parse_function_expression(require_name=True)
+        assert function_expr.name is not None
+        return FunctionDeclaration(
+            name=function_expr.name,
+            params=function_expr.params,
+            body=function_expr.body,
+        )
+
+    def _parse_function_expression(self, *, require_name: bool) -> FunctionExpr:
+        self._consume("FUNCTION", "Expected 'function'")
+        name: str | None = None
+        if self._check("IDENTIFIER"):
+            name = str(self._advance().value)
+        elif require_name:
+            raise JavaScriptSyntaxError(f"Expected function name at offset {self._peek().offset}")
+        self._consume("LPAREN", "Expected '(' after function name")
+        params: list[str] = []
+        if not self._check("RPAREN"):
+            while True:
+                param = self._consume("IDENTIFIER", "Expected parameter name")
+                params.append(str(param.value))
+                if not self._match("COMMA"):
+                    break
+        self._consume("RPAREN", "Expected ')' after function parameters")
+        body = self._parse_block_statement()
+        return FunctionExpr(name=name, params=tuple(params), body=body)
+
     def _parse_prefix(self, token: Token) -> Expr:
         if token.kind == "NUMBER":
             return NumberLiteral(value=float(token.value))
@@ -119,6 +165,9 @@ class Parser:
             return NullLiteral()
         if token.kind == "IDENTIFIER":
             return Identifier(name=str(token.value))
+        if token.kind == "FUNCTION":
+            self.index -= 1
+            return self._parse_function_expression(require_name=False)
         if token.kind in {"PLUS", "MINUS", "BANG"}:
             return UnaryExpr(operator=token.lexeme, operand=self.parse_expression(8))
         if token.kind == "LPAREN":
@@ -128,6 +177,15 @@ class Parser:
         raise JavaScriptSyntaxError(f"Unexpected token {token.lexeme!r} at offset {token.offset}")
 
     def _parse_infix(self, left: Expr, token: Token) -> Expr:
+        if token.kind == "LPAREN":
+            arguments: list[Expr] = []
+            if not self._check("RPAREN"):
+                while True:
+                    arguments.append(self.parse_expression())
+                    if not self._match("COMMA"):
+                        break
+            self._consume("RPAREN", "Expected ')' after arguments")
+            return CallExpr(callee=left, arguments=tuple(arguments))
         if token.kind == "EQUAL":
             if not isinstance(left, Identifier):
                 raise JavaScriptSyntaxError(f"Invalid assignment target at offset {token.offset}")

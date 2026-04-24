@@ -2,9 +2,13 @@ from neuzelaar.engines.js_own.ast import (
     AssignmentExpr,
     BinaryExpr,
     BlockStatement,
+    CallExpr,
+    FunctionDeclaration,
+    FunctionExpr,
     Identifier,
     IfStatement,
     NumberLiteral,
+    ReturnStatement,
     UnaryExpr,
     VariableDeclaration,
 )
@@ -49,3 +53,18 @@ def test_parse_variable_declaration_and_if_block() -> None:
     assert isinstance(program.statements[0], VariableDeclaration)
     assert isinstance(program.statements[1], IfStatement)
     assert isinstance(program.statements[1].consequent, BlockStatement)
+
+
+def test_parse_function_declaration_and_return() -> None:
+    program = parse_program("function add(a, b) { return a + b; }")
+
+    assert isinstance(program.statements[0], FunctionDeclaration)
+    assert program.statements[0].params == ("a", "b")
+    assert isinstance(program.statements[0].body.statements[0], ReturnStatement)
+
+
+def test_parse_function_expression_call() -> None:
+    expr = parse_expression("(function (x) { return x; })(1)")
+
+    assert isinstance(expr, CallExpr)
+    assert isinstance(expr.callee, FunctionExpr)

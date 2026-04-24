@@ -66,10 +66,17 @@ Status:
 
 ### JS2
 
-- functions
+Scope:
+
+- function declarations
+- function expressions
 - calls
 - `return`
-- lexical environments / closures
+- lexical closure capture
+
+Status:
+
+- implemented
 
 ### JS3
 

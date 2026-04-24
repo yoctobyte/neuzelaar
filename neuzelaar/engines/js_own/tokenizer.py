@@ -16,6 +16,8 @@ KEYWORDS = {
     "const": "CONST",
     "if": "IF",
     "else": "ELSE",
+    "function": "FUNCTION",
+    "return": "RETURN",
 }
 
 MULTI_CHAR_OPERATORS = (
@@ -41,6 +43,7 @@ SINGLE_CHAR_TOKENS = {
     ")": "RPAREN",
     "{": "LBRACE",
     "}": "RBRACE",
+    ",": "COMMA",
     ";": "SEMICOLON",
     "<": "LT",
     ">": "GT",

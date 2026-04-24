@@ -98,3 +98,43 @@ def test_if_without_else_can_mutate_existing_binding() -> None:
     result = evaluate_program("if (1) x = 9; x;", env)
 
     assert result == 9.0
+
+
+def test_function_declaration_call_works() -> None:
+    result = evaluate_program("function add(a, b) { return a + b; } add(2, 3);")
+
+    assert result == 5.0
+
+
+def test_function_expression_call_works() -> None:
+    result = evaluate_program("(function (x) { return x + 1; })(2);")
+
+    assert result == 3.0
+
+
+def test_closure_captures_outer_binding() -> None:
+    result = evaluate_program(
+        "function outer(x) { function inner(y) { return x + y; } return inner; } "
+        "var add2 = outer(2); add2(3);"
+    )
+
+    assert result == 5.0
+
+
+def test_recursive_named_function_works() -> None:
+    result = evaluate_program(
+        "function fact(n) { if (n === 0) { return 1; } return n * fact(n - 1); } fact(5);"
+    )
+
+    assert result == 120.0
+
+
+def test_return_without_value_produces_nullish_python_none() -> None:
+    result = evaluate_program("function f() { return; } f();")
+
+    assert result is None
+
+
+def test_calling_non_callable_raises() -> None:
+    with pytest.raises(TypeError):
+        evaluate_program("var x = 1; x();")

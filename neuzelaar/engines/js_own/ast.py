@@ -58,6 +58,19 @@ class AssignmentExpr(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class FunctionExpr(Expr):
+    name: str | None
+    params: tuple[str, ...]
+    body: "BlockStatement"
+
+
+@dataclass(frozen=True, slots=True)
+class CallExpr(Expr):
+    callee: Expr
+    arguments: tuple[Expr, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ExpressionStatement(Stmt):
     expression: Expr
 
@@ -70,6 +83,13 @@ class VariableDeclaration(Stmt):
 
 
 @dataclass(frozen=True, slots=True)
+class FunctionDeclaration(Stmt):
+    name: str
+    params: tuple[str, ...]
+    body: "BlockStatement"
+
+
+@dataclass(frozen=True, slots=True)
 class BlockStatement(Stmt):
     statements: tuple[Stmt, ...]
 
@@ -79,6 +99,11 @@ class IfStatement(Stmt):
     test: Expr
     consequent: Stmt
     alternate: Stmt | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReturnStatement(Stmt):
+    value: Expr | None
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,13 +7,17 @@ from neuzelaar.engines.js_own.ast import (
     BinaryExpr,
     BlockStatement,
     BooleanLiteral,
+    CallExpr,
     Expr,
     ExpressionStatement,
+    FunctionDeclaration,
+    FunctionExpr,
     Identifier,
     IfStatement,
     NullLiteral,
     NumberLiteral,
     Program,
+    ReturnStatement,
     Stmt,
     StringLiteral,
     UnaryExpr,
@@ -29,6 +33,39 @@ from neuzelaar.engines.js_own.runtime import (
     js_to_number,
     js_truthy,
 )
+
+
+class ReturnSignal(Exception):
+    def __init__(self, value: object) -> None:
+        super().__init__("return")
+        self.value = value
+
+
+class JavaScriptFunction:
+    def __init__(
+        self,
+        *,
+        name: str | None,
+        params: tuple[str, ...],
+        body: BlockStatement,
+        closure: Environment,
+    ) -> None:
+        self.name = name
+        self.params = params
+        self.body = body
+        self.closure = closure
+
+    def call(self, arguments: tuple[object, ...]) -> object:
+        call_env = Environment(parent=self.closure)
+        if self.name is not None:
+            call_env.declare(self.name, self, kind="const")
+        for index, param in enumerate(self.params):
+            value = arguments[index] if index < len(arguments) else None
+            call_env.declare(param, value, kind="var")
+        try:
+            return evaluate_statement(self.body, call_env)
+        except ReturnSignal as signal:
+            return signal.value
 
 
 def evaluate_expression(source: str, environment: Environment | None = None) -> object:
@@ -57,6 +94,15 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
         value = None if statement.initializer is None else evaluate_expr(statement.initializer, environment)
         environment.declare(statement.name, value, kind=statement.kind)
         return value
+    if isinstance(statement, FunctionDeclaration):
+        function = JavaScriptFunction(
+            name=statement.name,
+            params=statement.params,
+            body=statement.body,
+            closure=environment,
+        )
+        environment.declare(statement.name, function, kind="var")
+        return function
     if isinstance(statement, BlockStatement):
         block_env = environment.child_block()
         value: object = None
@@ -69,6 +115,9 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
         if statement.alternate is not None:
             return evaluate_statement(statement.alternate, environment)
         return None
+    if isinstance(statement, ReturnStatement):
+        value = None if statement.value is None else evaluate_expr(statement.value, environment)
+        raise ReturnSignal(value)
     raise RuntimeError(f"Unsupported statement node: {type(statement).__name__}")
 
 
@@ -83,6 +132,14 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         return None
     if isinstance(expr, Identifier):
         return environment.get(expr.name)
+    if isinstance(expr, FunctionExpr):
+        function = JavaScriptFunction(
+            name=expr.name,
+            params=expr.params,
+            body=expr.body,
+            closure=environment,
+        )
+        return function
     if isinstance(expr, UnaryExpr):
         operand = evaluate_expr(expr.operand, environment)
         if expr.operator == "!":
@@ -91,6 +148,12 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return js_to_number(operand)
         if expr.operator == "-":
             return -js_to_number(operand)
+    if isinstance(expr, CallExpr):
+        callee = evaluate_expr(expr.callee, environment)
+        if not isinstance(callee, JavaScriptFunction):
+            raise TypeError("Value is not callable")
+        arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
+        return callee.call(arguments)
     if isinstance(expr, AssignmentExpr):
         value = evaluate_expr(expr.value, environment)
         return environment.assign(expr.target.name, value)
