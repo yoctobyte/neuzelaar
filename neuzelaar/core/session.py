@@ -10,6 +10,7 @@ from neuzelaar.core.fetch.cookies import SessionCookieJar
 from neuzelaar.core.page import PageLoader, PageLoadResult
 from neuzelaar.core.policy.capability import PermissionScope
 from neuzelaar.core.policy.permission_service import PermissionService
+from neuzelaar.core.policy.profile import PolicyProfile
 from neuzelaar.shell_api.commands import DenyPermission, GrantPermission
 
 
@@ -97,6 +98,13 @@ class BrowserSession:
             raise SessionError("No next history entry")
         self.current_index += 1
         return self.history[self.current_index].result
+
+    @property
+    def policy_profile(self) -> PolicyProfile:
+        return self.loader.policy_engine.profile
+
+    def set_policy_profile(self, profile: PolicyProfile) -> None:
+        self.loader.policy_engine.profile = profile
 
     def grant_script_permission(self, index: int, scope: PermissionScope) -> None:
         node_id, script = self._script_at(index)

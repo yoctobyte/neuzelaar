@@ -14,6 +14,7 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 
 from neuzelaar.core.page import PageLoadResult, PlannedSubresourceDecision
+from neuzelaar.core.policy.profile import PolicyProfile
 from neuzelaar.core.session import BrowserSession
 from neuzelaar.document.dom import Comment, Document, Element, Node, Text
 from neuzelaar.render.display_builder import build_display_list
@@ -124,12 +125,15 @@ class TkShell:
         reload_button = ttk.Button(toolbar, text="Reload", width=8)
         address_var = tk.StringVar(value=initial_url)
         address_entry = ttk.Entry(toolbar, textvariable=address_var, font=("TkDefaultFont", 13))
+        blocked_var = tk.StringVar(value="0 blocked")
+        blocked_button = ttk.Button(toolbar, textvariable=blocked_var, width=12)
         status_var = tk.StringVar(value="")
 
         back_button.pack(side=tk.LEFT, padx=4, pady=4)
         forward_button.pack(side=tk.LEFT, padx=4, pady=4)
         reload_button.pack(side=tk.LEFT, padx=4, pady=4)
         address_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=4)
+        blocked_button.pack(side=tk.LEFT, padx=4, pady=4)
 
         content = ttk.Frame(page_tab)
         content.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
@@ -158,7 +162,10 @@ class TkShell:
         previous_sigint = signal.getsignal(signal.SIGINT)
         signal.signal(signal.SIGINT, handle_sigint)
 
+        last_result: list[PageLoadResult | None] = [None]
+
         def present(result: PageLoadResult, frame: Frame) -> None:
+            last_result[0] = result
             photo = _frame_to_photo(frame)
             canvas.itemconfigure(canvas_image, image=photo)
             canvas.image = photo
@@ -168,6 +175,8 @@ class TkShell:
             status_var.set(self.page_summary(result))
             back_button.configure(state=tk.NORMAL if self.can_go_back() else tk.DISABLED)
             forward_button.configure(state=tk.NORMAL if self.can_go_forward() else tk.DISABLED)
+            blocked_count = len(self.blocked_entries(result))
+            blocked_var.set(f"{blocked_count} blocked")
             self.populate_dom_tree(dom_tree, result)
             self.populate_text_widget(source_text, self.source_text(result))
             self.populate_text_widget(request_text, self.requests_text(result))
@@ -206,6 +215,60 @@ class TkShell:
                 present(*self.reload_to_frame())
             except Exception as exc:
                 show_error(exc)
+
+        def show_blocked_popup() -> None:
+            self.show_blocked_popup(root, last_result[0])
+
+        blocked_button.configure(command=show_blocked_popup)
+
+        profile_var = tk.StringVar(value=self.session.policy_profile.value)
+
+        def switch_profile() -> None:
+            try:
+                profile = PolicyProfile(profile_var.get())
+            except ValueError:
+                return
+            self.session.set_policy_profile(profile)
+            if last_result[0] is not None:
+                try:
+                    present(*self.reload_to_frame())
+                except Exception as exc:
+                    show_error(exc)
+
+        menubar = tk.Menu(root)
+        file_menu = tk.Menu(menubar, tearoff=False)
+        file_menu.add_command(
+            label="Focus address bar",
+            command=lambda: (address_entry.focus_set(), address_entry.selection_range(0, tk.END)),
+            accelerator="Ctrl+L",
+        )
+        file_menu.add_separator()
+        file_menu.add_command(label="Quit", command=root.destroy, accelerator="Ctrl+Q")
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        view_menu = tk.Menu(menubar, tearoff=False)
+        view_menu.add_command(label="Reload", command=reload_page, accelerator="Ctrl+R")
+        view_menu.add_command(label="Back", command=go_back, accelerator="Alt+Left")
+        view_menu.add_command(label="Forward", command=go_forward, accelerator="Alt+Right")
+        view_menu.add_separator()
+        view_menu.add_command(label="Show blocked resources", command=show_blocked_popup)
+        menubar.add_cascade(label="View", menu=view_menu)
+
+        policy_menu = tk.Menu(menubar, tearoff=False)
+        for profile in (PolicyProfile.STRICT, PolicyProfile.BALANCED, PolicyProfile.COMPATIBILITY):
+            policy_menu.add_radiobutton(
+                label=profile.value.capitalize(),
+                value=profile.value,
+                variable=profile_var,
+                command=switch_profile,
+            )
+        menubar.add_cascade(label="Policy", menu=policy_menu)
+
+        root.config(menu=menubar)
+
+        root.bind_all("<Control-l>", lambda _e: (address_entry.focus_set(), address_entry.selection_range(0, tk.END)))
+        root.bind_all("<Control-q>", lambda _e: root.destroy())
+        root.bind_all("<Control-r>", lambda _e: reload_page())
 
         back_button.configure(command=go_back)
         forward_button.configure(command=go_forward)
@@ -329,6 +392,45 @@ class TkShell:
             f"{planned.request.reason.name.lower()} {planned.normalized_url}: "
             f"{planned.decision.reason}"
         )
+
+    def blocked_entries(self, result: PageLoadResult | None) -> tuple[PlannedSubresourceDecision, ...]:
+        if result is None:
+            return ()
+        return tuple(
+            planned for planned in result.planned_subresources
+            if planned.decision.action.value == "block"
+        )
+
+    def show_blocked_popup(self, root: tk.Misc, result: PageLoadResult | None) -> None:
+        popup = tk.Toplevel(root)
+        popup.title("Blocked resources")
+        popup.geometry("720x360")
+
+        header = ttk.Label(
+            popup,
+            text=f"Current policy profile: {self.session.policy_profile.value}",
+            anchor="w",
+        )
+        header.pack(fill=tk.X, padx=8, pady=(8, 4))
+
+        text = tk.Text(popup, wrap=tk.WORD, font=("TkFixedFont", 12))
+        scrollbar = ttk.Scrollbar(popup, orient=tk.VERTICAL, command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0), pady=(0, 8))
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=(0, 8), padx=(0, 8))
+
+        entries = self.blocked_entries(result)
+        if not entries:
+            text.insert(tk.END, "No blocked resources on this page.\n")
+        else:
+            for planned in entries:
+                text.insert(tk.END, self._format_request_line(planned) + "\n")
+            text.insert(
+                tk.END,
+                "\nSwitch to Balanced or Compatibility under the Policy menu to allow"
+                " more third-party assets, then reload.\n",
+            )
+        text.configure(state=tk.DISABLED)
 
 
 class TkShellError(RuntimeError):
