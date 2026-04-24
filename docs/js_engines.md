@@ -68,7 +68,11 @@ Current read:
 
 ## Next Useful Step
 
-If we want a browser-executable JS backend instead of only a reference backend,
-the next change should be in `core/page.py`: permission checks need to become
-execution gates rather than diagnostics emitted before unconditional engine
-execution.
+The current execution plan is split:
+
+- build the in-repo interpreter first: see `docs/js_own.md`
+- keep `quickjs` as the reference backend and oracle
+- keep browser default on `noop`
+
+Only after the in-repo interpreter has a credible standalone core should
+`core/page.py` grow real execution gating and browser wiring.

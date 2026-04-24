@@ -224,3 +224,28 @@ Scope:
 - restricted JS execution
 - capability bridge
 - later canvas and WASM integration
+
+## P11. Own JavaScript Interpreter
+
+Goal:
+
+- build an in-repo interpreter we understand end to end before using it live
+
+Status:
+
+- in progress
+
+Delivered:
+
+- JS0 standalone tokenizer
+- JS0 Pratt parser
+- JS0 evaluator
+- QuickJS oracle checks for supported expressions
+
+Remaining:
+
+- JS1 declarations and statements
+- JS2 functions and closures
+- JS3 objects, arrays, property access
+- JS4 exceptions and builtins
+- JS5 host bridge and later browser experiments

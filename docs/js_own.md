@@ -1,0 +1,89 @@
+# Own JavaScript Interpreter
+
+This is the in-repo interpreter track. It is intentionally separate from the
+browser execution path.
+
+## Goal
+
+Build a small JavaScript interpreter we understand end to end, then wire it
+into the browser only after the language core is credible enough.
+
+## Package
+
+- `neuzelaar/engines/js_own/tokenizer.py`
+- `neuzelaar/engines/js_own/parser.py`
+- `neuzelaar/engines/js_own/ast.py`
+- `neuzelaar/engines/js_own/environment.py`
+- `neuzelaar/engines/js_own/runtime.py`
+- `neuzelaar/engines/js_own/interpreter.py`
+
+## Stages
+
+### JS0
+
+Scope:
+
+- numeric literals
+- string literals
+- `true`, `false`, `null`
+- identifiers
+- grouping
+- unary `!`, unary `+`, unary `-`
+- arithmetic `+ - * / %`
+- comparison `< > <= >=`
+- equality `== != === !==`
+- logical `&& ||`
+- semicolon-separated expression programs
+
+Out of scope:
+
+- declarations
+- assignment
+- objects
+- arrays
+- functions
+- property access
+- statements beyond expression sequencing
+
+### JS1
+
+- declarations
+- assignment
+- block statements
+- `if`
+
+### JS2
+
+- functions
+- calls
+- `return`
+- lexical environments / closures
+
+### JS3
+
+- objects
+- arrays
+- property access
+- indexing
+- `this`
+
+### JS4
+
+- exceptions
+- selected builtins
+- selected Test262 expansion
+
+### JS5
+
+- host bridge
+- browser integration experiments on fixtures only
+
+## Current Reference
+
+Use `quickjs` as the current oracle backend for supported snippets.
+
+For JS0, the comparison strategy is:
+
+- keep a narrow list of supported expressions
+- compare our evaluator against `quickjs`
+- grow coverage only when semantics are deliberate and tested

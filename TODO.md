@@ -53,6 +53,7 @@ Expected:
 | P9 styling and compatibility | In progress | Same-origin stylesheet fetch, descendant selectors, local image rendering, basic margin/padding/font-size layout, passive asset budgets, and shared subresource gating are in; broader CSS/layout still open. |
 | P10 active content | In progress | Script tags become explicit execution requests; permission checks now flow through `PermissionService` and command-bus grants, with console diagnostics, shell-facing grant/deny flow, reload verification, and remembered grants in place; real JS execution remains disabled. |
 | JS backend plumbing | In progress | Swappable JS backend factory, session/browser injection points, and a narrow Test262 subset runner are in; execution remains opt-in and browser-default is still `noop`. |
+| JS own interpreter | In progress | Standalone `js_own` package is the main track now; browser wiring stays deferred until the interpreter is credible on its own. |
 
 ## Active Backlog
 
@@ -161,6 +162,34 @@ Acceptance:
 - remembered grants suppress duplicate permission requests
 - active-content diagnostics stay explicit and test-covered
 - JS backend comparison is repeatable through the local Test262 subset runner
+
+### P11: Own JavaScript Interpreter
+
+Owner: Codex
+
+Status: In progress
+
+Files:
+
+- `neuzelaar/engines/js_own/ast.py`
+- `neuzelaar/engines/js_own/tokenizer.py`
+- `neuzelaar/engines/js_own/parser.py`
+- `neuzelaar/engines/js_own/environment.py`
+- `neuzelaar/engines/js_own/runtime.py`
+- `neuzelaar/engines/js_own/interpreter.py`
+- `docs/js_own.md`
+
+Tasks:
+
+- land `JS0` as a standalone expression interpreter
+- compare supported snippets against `quickjs`
+- keep browser integration out of scope until later stages
+
+Acceptance:
+
+- tokenization, parsing, and evaluation exist for the JS0 subset
+- a focused unit test suite exists
+- `quickjs` oracle comparisons exist for supported expressions
 
 ## Completed Packages
 
