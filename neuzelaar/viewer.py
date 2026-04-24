@@ -9,7 +9,7 @@ from neuzelaar.shells.tk.shell import TkShell
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="python -m neuzelaar.viewer")
-    parser.add_argument("url", help="URL or local path to open")
+    parser.add_argument("url", nargs="?", default="example.com", help="URL or local path to open")
     parser.add_argument("--width", type=int, default=1200, help="Initial viewport width")
     parser.add_argument("--height", type=int, default=800, help="Initial viewport height")
     args = parser.parse_args()

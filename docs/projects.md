@@ -61,7 +61,7 @@ Delivered:
 - display list
 - software rasterizer
 - neutral `Frame`
-- Tk viewer with address bar, back/forward, reload, and scrolling
+- Tk viewer with split debug/browser panes, address bar, tabs stub, back/forward, reload, and scrolling
 - scroll support
 
 Open verification:

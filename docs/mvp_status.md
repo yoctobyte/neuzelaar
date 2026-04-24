@@ -20,7 +20,7 @@ Implemented:
 - tiny CSS model for inline styles and style blocks
 - display list generation
 - Pillow-backed software rasterization into neutral `Frame`
-- Tk viewer with address bar, back/forward/reload, and scrolling
+- Tk viewer with split debug/browser panes, address bar, back/forward/reload, and scrolling
 - console shell commands
 - JS/WASM no-op blocked engines
 - guardrail tests

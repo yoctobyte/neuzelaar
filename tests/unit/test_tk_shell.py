@@ -66,3 +66,41 @@ def test_tk_shell_page_summary_reports_navigation_and_requests() -> None:
 
     assert "html" in summary
     assert "3 link(s)" in summary
+
+
+def test_tk_shell_normalize_address_defaults_web_input_to_https() -> None:
+    shell = TkShell(width=640, height=480)
+
+    assert shell.normalize_address("msn.com") == "https://msn.com"
+    assert shell.normalize_address("example.com/path") == "https://example.com/path"
+
+
+def test_tk_shell_normalize_address_keeps_local_paths_local() -> None:
+    shell = TkShell(width=640, height=480)
+
+    normalized = shell.normalize_address("tests/fixtures/sites/example.html")
+
+    assert normalized.startswith("file:///")
+    assert normalized.endswith("/tests/fixtures/sites/example.html")
+
+
+def test_tk_shell_requests_text_reports_blocked_and_allowed_requests() -> None:
+    shell = TkShell(width=640, height=480)
+
+    blocked_result, _ = shell.render_url_to_frame(Path("tests/fixtures/sites/third_party_script.html").resolve().as_uri())
+    allowed_result, _ = shell.render_url_to_frame(Path("tests/fixtures/sites/linked_styles.html").resolve().as_uri())
+
+    blocked = shell.requests_text(blocked_result)
+    allowed = shell.requests_text(allowed_result)
+
+    assert "[block] script https://cdn.third-party.test/app.js" in blocked
+    assert "[allow] stylesheet" in allowed
+
+
+def test_tk_shell_source_text_returns_html_source() -> None:
+    shell = TkShell(width=640, height=480)
+    result, _ = shell.render_url_to_frame(Path("tests/fixtures/sites/example.html").resolve().as_uri())
+
+    source = shell.source_text(result)
+
+    assert "<title>Example Fixture</title>" in source

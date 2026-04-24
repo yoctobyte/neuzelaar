@@ -53,11 +53,23 @@ Direct invocation still works:
 To launch the Tk viewer:
 
 ```sh
+./neuzelaar-ui.sh
 ./neuzelaar-ui.sh tests/fixtures/sites/example.html
 ./neuzelaar-ui.sh https://msn.com
 ```
 
 The UI launcher uses the same local `.venv` bootstrap behavior and runs `python -m neuzelaar.viewer`.
+If no URL is provided, it starts at `https://example.com`.
+
+The viewer currently has:
+
+- a browser pane with one tab, address bar, back/forward, reload, and scrolling
+- a debug pane with DOM tree, HTML source, and request diagnostics
+
+Address bar behavior:
+
+- plain hostnames like `msn.com` default to `https://`
+- local paths still open as local files
 
 The M2 console shell can also be used from Python:
 
