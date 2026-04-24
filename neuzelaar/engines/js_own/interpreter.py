@@ -1,17 +1,23 @@
-"""Evaluator for the standalone JS expression interpreter."""
+"""Evaluator for the standalone JS interpreter."""
 
 from __future__ import annotations
 
 from neuzelaar.engines.js_own.ast import (
+    AssignmentExpr,
     BinaryExpr,
+    BlockStatement,
     BooleanLiteral,
     Expr,
+    ExpressionStatement,
     Identifier,
+    IfStatement,
     NullLiteral,
     NumberLiteral,
     Program,
+    Stmt,
     StringLiteral,
     UnaryExpr,
+    VariableDeclaration,
 )
 from neuzelaar.engines.js_own.environment import Environment
 from neuzelaar.engines.js_own.parser import parse_expression as parse_expression_ast
@@ -39,9 +45,31 @@ def evaluate_program(source: str, environment: Environment | None = None) -> obj
 def evaluate_ast_program(program: Program, environment: Environment | None = None) -> object:
     env = environment or Environment()
     value: object = None
-    for expr in program.expressions:
-        value = evaluate_expr(expr, env)
+    for statement in program.statements:
+        value = evaluate_statement(statement, env)
     return value
+
+
+def evaluate_statement(statement: Stmt, environment: Environment) -> object:
+    if isinstance(statement, ExpressionStatement):
+        return evaluate_expr(statement.expression, environment)
+    if isinstance(statement, VariableDeclaration):
+        value = None if statement.initializer is None else evaluate_expr(statement.initializer, environment)
+        environment.declare(statement.name, value, kind=statement.kind)
+        return value
+    if isinstance(statement, BlockStatement):
+        block_env = environment.child_block()
+        value: object = None
+        for nested in statement.statements:
+            value = evaluate_statement(nested, block_env)
+        return value
+    if isinstance(statement, IfStatement):
+        if js_truthy(evaluate_expr(statement.test, environment)):
+            return evaluate_statement(statement.consequent, environment)
+        if statement.alternate is not None:
+            return evaluate_statement(statement.alternate, environment)
+        return None
+    raise RuntimeError(f"Unsupported statement node: {type(statement).__name__}")
 
 
 def evaluate_expr(expr: Expr, environment: Environment) -> object:
@@ -63,6 +91,9 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return js_to_number(operand)
         if expr.operator == "-":
             return -js_to_number(operand)
+    if isinstance(expr, AssignmentExpr):
+        value = evaluate_expr(expr.value, environment)
+        return environment.assign(expr.target.name, value)
     if isinstance(expr, BinaryExpr):
         if expr.operator == "&&":
             left = evaluate_expr(expr.left, environment)

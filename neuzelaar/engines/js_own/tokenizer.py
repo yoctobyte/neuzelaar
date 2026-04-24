@@ -11,6 +11,11 @@ KEYWORDS = {
     "true": "TRUE",
     "false": "FALSE",
     "null": "NULL",
+    "var": "VAR",
+    "let": "LET",
+    "const": "CONST",
+    "if": "IF",
+    "else": "ELSE",
 }
 
 MULTI_CHAR_OPERATORS = (
@@ -31,8 +36,11 @@ SINGLE_CHAR_TOKENS = {
     "/": "SLASH",
     "%": "PERCENT",
     "!": "BANG",
+    "=": "EQUAL",
     "(": "LPAREN",
     ")": "RPAREN",
+    "{": "LBRACE",
+    "}": "RBRACE",
     ";": "SEMICOLON",
     "<": "LT",
     ">": "GT",
@@ -142,10 +150,12 @@ def _read_identifier(source: str, start: int) -> tuple[Token, int]:
         index += 1
     lexeme = source[start:index]
     keyword_kind = KEYWORDS.get(lexeme)
-    if keyword_kind == "TRUE":
-        return Token(kind=keyword_kind, lexeme=lexeme, value=True, offset=start), index
-    if keyword_kind == "FALSE":
-        return Token(kind=keyword_kind, lexeme=lexeme, value=False, offset=start), index
-    if keyword_kind == "NULL":
-        return Token(kind=keyword_kind, lexeme=lexeme, value=None, offset=start), index
+    if keyword_kind is not None:
+        if keyword_kind == "TRUE":
+            return Token(kind=keyword_kind, lexeme=lexeme, value=True, offset=start), index
+        if keyword_kind == "FALSE":
+            return Token(kind=keyword_kind, lexeme=lexeme, value=False, offset=start), index
+        if keyword_kind == "NULL":
+            return Token(kind=keyword_kind, lexeme=lexeme, value=None, offset=start), index
+        return Token(kind=keyword_kind, lexeme=lexeme, value=lexeme, offset=start), index
     return Token(kind="IDENTIFIER", lexeme=lexeme, value=lexeme, offset=start), index

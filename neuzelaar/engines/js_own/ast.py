@@ -9,6 +9,10 @@ class Expr:
     """Base type for JS expressions."""
 
 
+class Stmt:
+    """Base type for JS statements."""
+
+
 @dataclass(frozen=True, slots=True)
 class NumberLiteral(Expr):
     value: float
@@ -48,5 +52,35 @@ class BinaryExpr(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class AssignmentExpr(Expr):
+    target: Identifier
+    value: Expr
+
+
+@dataclass(frozen=True, slots=True)
+class ExpressionStatement(Stmt):
+    expression: Expr
+
+
+@dataclass(frozen=True, slots=True)
+class VariableDeclaration(Stmt):
+    kind: str
+    name: str
+    initializer: Expr | None
+
+
+@dataclass(frozen=True, slots=True)
+class BlockStatement(Stmt):
+    statements: tuple[Stmt, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class IfStatement(Stmt):
+    test: Expr
+    consequent: Stmt
+    alternate: Stmt | None
+
+
+@dataclass(frozen=True, slots=True)
 class Program:
-    expressions: tuple[Expr, ...]
+    statements: tuple[Stmt, ...]

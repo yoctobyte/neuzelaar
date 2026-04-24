@@ -47,10 +47,22 @@ Out of scope:
 
 ### JS1
 
-- declarations
-- assignment
+Scope:
+
+- `var`, `let`, `const`
+- assignment to existing bindings
 - block statements
-- `if`
+- `if` / `else`
+
+Notes:
+
+- `let` / `const` use block scope
+- `var` binds in the current var-scope root
+- functions are still out of scope, so there is no function-scope behavior yet
+
+Status:
+
+- implemented
 
 ### JS2
 
@@ -82,7 +94,7 @@ Out of scope:
 
 Use `quickjs` as the current oracle backend for supported snippets.
 
-For JS0, the comparison strategy is:
+For JS0 and JS1, the comparison strategy is:
 
 - keep a narrow list of supported expressions
 - compare our evaluator against `quickjs`
