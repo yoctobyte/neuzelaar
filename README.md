@@ -50,6 +50,15 @@ Direct invocation still works:
 .venv/bin/python -m neuzelaar tests/fixtures/sites/third_party_script.html
 ```
 
+To launch the Tk viewer:
+
+```sh
+./neuzelaar-ui.sh tests/fixtures/sites/example.html
+./neuzelaar-ui.sh https://msn.com
+```
+
+The UI launcher uses the same local `.venv` bootstrap behavior and runs `python -m neuzelaar.viewer`.
+
 The M2 console shell can also be used from Python:
 
 ```sh
