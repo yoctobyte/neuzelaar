@@ -18,6 +18,7 @@ KEYWORDS = {
     "else": "ELSE",
     "function": "FUNCTION",
     "return": "RETURN",
+    "this": "THIS",
 }
 
 MULTI_CHAR_OPERATORS = (
@@ -43,7 +44,11 @@ SINGLE_CHAR_TOKENS = {
     ")": "RPAREN",
     "{": "LBRACE",
     "}": "RBRACE",
+    "[": "LBRACKET",
+    "]": "RBRACKET",
     ",": "COMMA",
+    ".": "DOT",
+    ":": "COLON",
     ";": "SEMICOLON",
     "<": "LT",
     ">": "GT",

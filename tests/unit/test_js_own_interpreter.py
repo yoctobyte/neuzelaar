@@ -138,3 +138,39 @@ def test_return_without_value_produces_nullish_python_none() -> None:
 def test_calling_non_callable_raises() -> None:
     with pytest.raises(TypeError):
         evaluate_program("var x = 1; x();")
+
+
+def test_array_literal_and_indexing_work() -> None:
+    assert evaluate_program("var a = [1, 2, 3]; a[1];") == 2.0
+
+
+def test_object_literal_and_member_access_work() -> None:
+    assert evaluate_program('var o = { x: 1, "y": 2 }; o.x + o["y"];') == 3.0
+
+
+def test_array_assignment_by_index_works() -> None:
+    assert evaluate_program("var a = [1, 2]; a[1] = 9; a[1];") == 9.0
+
+
+def test_object_assignment_by_property_works() -> None:
+    assert evaluate_program("var o = { x: 1 }; o.x = 4; o.x;") == 4.0
+
+
+def test_array_length_property_works() -> None:
+    assert evaluate_program("var a = [1, 2, 3]; a.length;") == 3.0
+
+
+def test_method_call_binds_this() -> None:
+    result = evaluate_program(
+        "var o = { value: 7, get: function () { return this.value; } }; o.get();"
+    )
+
+    assert result == 7.0
+
+
+def test_method_call_via_index_binds_this() -> None:
+    result = evaluate_program(
+        'var o = { value: 8, get: function () { return this["value"]; } }; o["get"]();'
+    )
+
+    assert result == 8.0

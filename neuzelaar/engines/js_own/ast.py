@@ -39,6 +39,11 @@ class Identifier(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class ThisExpr(Expr):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
 class UnaryExpr(Expr):
     operator: str
     operand: Expr
@@ -53,7 +58,7 @@ class BinaryExpr(Expr):
 
 @dataclass(frozen=True, slots=True)
 class AssignmentExpr(Expr):
-    target: Identifier
+    target: Expr
     value: Expr
 
 
@@ -68,6 +73,34 @@ class FunctionExpr(Expr):
 class CallExpr(Expr):
     callee: Expr
     arguments: tuple[Expr, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MemberExpr(Expr):
+    object: Expr
+    property_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class IndexExpr(Expr):
+    object: Expr
+    index: Expr
+
+
+@dataclass(frozen=True, slots=True)
+class ArrayLiteral(Expr):
+    elements: tuple[Expr, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectProperty:
+    key: str
+    value: Expr
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectLiteral(Expr):
+    properties: tuple[ObjectProperty, ...]
 
 
 @dataclass(frozen=True, slots=True)

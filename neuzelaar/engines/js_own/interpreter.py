@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from neuzelaar.engines.js_own.ast import (
+    ArrayLiteral,
     AssignmentExpr,
     BinaryExpr,
     BlockStatement,
@@ -13,13 +14,17 @@ from neuzelaar.engines.js_own.ast import (
     FunctionDeclaration,
     FunctionExpr,
     Identifier,
+    IndexExpr,
     IfStatement,
+    MemberExpr,
     NullLiteral,
     NumberLiteral,
+    ObjectLiteral,
     Program,
     ReturnStatement,
     Stmt,
     StringLiteral,
+    ThisExpr,
     UnaryExpr,
     VariableDeclaration,
 )
@@ -55,8 +60,9 @@ class JavaScriptFunction:
         self.body = body
         self.closure = closure
 
-    def call(self, arguments: tuple[object, ...]) -> object:
+    def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
+        call_env.declare("this", this_value, kind="const")
         if self.name is not None:
             call_env.declare(self.name, self, kind="const")
         for index, param in enumerate(self.params):
@@ -132,6 +138,8 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         return None
     if isinstance(expr, Identifier):
         return environment.get(expr.name)
+    if isinstance(expr, ThisExpr):
+        return environment.get("this")
     if isinstance(expr, FunctionExpr):
         function = JavaScriptFunction(
             name=expr.name,
@@ -140,6 +148,13 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             closure=environment,
         )
         return function
+    if isinstance(expr, ArrayLiteral):
+        return [evaluate_expr(element, environment) for element in expr.elements]
+    if isinstance(expr, ObjectLiteral):
+        return {
+            prop.key: evaluate_expr(prop.value, environment)
+            for prop in expr.properties
+        }
     if isinstance(expr, UnaryExpr):
         operand = evaluate_expr(expr.operand, environment)
         if expr.operator == "!":
@@ -149,14 +164,40 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         if expr.operator == "-":
             return -js_to_number(operand)
     if isinstance(expr, CallExpr):
-        callee = evaluate_expr(expr.callee, environment)
+        this_value = None
+        if isinstance(expr.callee, MemberExpr):
+            this_value = evaluate_expr(expr.callee.object, environment)
+            callee = _read_property(this_value, expr.callee.property_name)
+        elif isinstance(expr.callee, IndexExpr):
+            this_value = evaluate_expr(expr.callee.object, environment)
+            callee = _read_index(this_value, evaluate_expr(expr.callee.index, environment))
+        else:
+            callee = evaluate_expr(expr.callee, environment)
         if not isinstance(callee, JavaScriptFunction):
             raise TypeError("Value is not callable")
         arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
-        return callee.call(arguments)
+        return callee.call(arguments, this_value=this_value)
     if isinstance(expr, AssignmentExpr):
         value = evaluate_expr(expr.value, environment)
-        return environment.assign(expr.target.name, value)
+        if isinstance(expr.target, Identifier):
+            return environment.assign(expr.target.name, value)
+        if isinstance(expr.target, MemberExpr):
+            target_object = evaluate_expr(expr.target.object, environment)
+            _write_property(target_object, expr.target.property_name, value)
+            return value
+        if isinstance(expr.target, IndexExpr):
+            target_object = evaluate_expr(expr.target.object, environment)
+            index = evaluate_expr(expr.target.index, environment)
+            _write_index(target_object, index, value)
+            return value
+        raise RuntimeError(f"Unsupported assignment target: {type(expr.target).__name__}")
+    if isinstance(expr, MemberExpr):
+        return _read_property(evaluate_expr(expr.object, environment), expr.property_name)
+    if isinstance(expr, IndexExpr):
+        return _read_index(
+            evaluate_expr(expr.object, environment),
+            evaluate_expr(expr.index, environment),
+        )
     if isinstance(expr, BinaryExpr):
         if expr.operator == "&&":
             left = evaluate_expr(expr.left, environment)
@@ -197,3 +238,48 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         if expr.operator == "!=":
             return not js_loose_equal(left, right)
     raise RuntimeError(f"Unsupported expression node: {type(expr).__name__}")
+
+
+def _read_property(target: object, property_name: str) -> object:
+    if isinstance(target, dict):
+        return target.get(property_name)
+    if isinstance(target, list) and property_name == "length":
+        return float(len(target))
+    raise TypeError(f"Cannot read property {property_name!r}")
+
+
+def _read_index(target: object, index: object) -> object:
+    if isinstance(target, list):
+        resolved = _to_index(index)
+        return target[resolved]
+    if isinstance(target, dict):
+        return target.get(str(index))
+    raise TypeError("Cannot index value")
+
+
+def _write_property(target: object, property_name: str, value: object) -> None:
+    if isinstance(target, dict):
+        target[property_name] = value
+        return
+    raise TypeError(f"Cannot write property {property_name!r}")
+
+
+def _write_index(target: object, index: object, value: object) -> None:
+    if isinstance(target, list):
+        resolved = _to_index(index)
+        target[resolved] = value
+        return
+    if isinstance(target, dict):
+        target[str(index)] = value
+        return
+    raise TypeError("Cannot index-assign value")
+
+
+def _to_index(value: object) -> int:
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(float(value))
+    raise TypeError("Invalid index")

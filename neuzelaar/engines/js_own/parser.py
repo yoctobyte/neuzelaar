@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from neuzelaar.engines.js_own.ast import (
+    ArrayLiteral,
     AssignmentExpr,
     BinaryExpr,
     BlockStatement,
@@ -15,13 +16,18 @@ from neuzelaar.engines.js_own.ast import (
     FunctionDeclaration,
     FunctionExpr,
     Identifier,
+    IndexExpr,
     IfStatement,
+    MemberExpr,
     NullLiteral,
     NumberLiteral,
+    ObjectLiteral,
+    ObjectProperty,
     Program,
     ReturnStatement,
     Stmt,
     StringLiteral,
+    ThisExpr,
     UnaryExpr,
     VariableDeclaration,
 )
@@ -46,6 +52,8 @@ PRECEDENCE = {
     "SLASH": 7,
     "PERCENT": 7,
     "LPAREN": 9,
+    "DOT": 9,
+    "LBRACKET": 9,
 }
 
 
@@ -165,9 +173,15 @@ class Parser:
             return NullLiteral()
         if token.kind == "IDENTIFIER":
             return Identifier(name=str(token.value))
+        if token.kind == "THIS":
+            return ThisExpr()
         if token.kind == "FUNCTION":
             self.index -= 1
             return self._parse_function_expression(require_name=False)
+        if token.kind == "LBRACKET":
+            return self._parse_array_literal()
+        if token.kind == "LBRACE":
+            return self._parse_object_literal()
         if token.kind in {"PLUS", "MINUS", "BANG"}:
             return UnaryExpr(operator=token.lexeme, operand=self.parse_expression(8))
         if token.kind == "LPAREN":
@@ -186,13 +200,51 @@ class Parser:
                         break
             self._consume("RPAREN", "Expected ')' after arguments")
             return CallExpr(callee=left, arguments=tuple(arguments))
+        if token.kind == "DOT":
+            property_token = self._consume("IDENTIFIER", "Expected property name after '.'")
+            return MemberExpr(object=left, property_name=str(property_token.value))
+        if token.kind == "LBRACKET":
+            index = self.parse_expression()
+            self._consume("RBRACKET", "Expected ']' after index expression")
+            return IndexExpr(object=left, index=index)
         if token.kind == "EQUAL":
-            if not isinstance(left, Identifier):
+            if not isinstance(left, (Identifier, MemberExpr, IndexExpr)):
                 raise JavaScriptSyntaxError(f"Invalid assignment target at offset {token.offset}")
             return AssignmentExpr(target=left, value=self.parse_expression(PRECEDENCE["EQUAL"] - 1))
         precedence = PRECEDENCE[token.kind]
         right = self.parse_expression(precedence)
         return BinaryExpr(left=left, operator=token.lexeme, right=right)
+
+    def _parse_array_literal(self) -> ArrayLiteral:
+        elements: list[Expr] = []
+        if not self._check("RBRACKET"):
+            while True:
+                elements.append(self.parse_expression())
+                if not self._match("COMMA"):
+                    break
+        self._consume("RBRACKET", "Expected ']' after array literal")
+        return ArrayLiteral(elements=tuple(elements))
+
+    def _parse_object_literal(self) -> ObjectLiteral:
+        properties: list[ObjectProperty] = []
+        if not self._check("RBRACE"):
+            while True:
+                key_token = self._advance()
+                if key_token.kind == "IDENTIFIER":
+                    key = str(key_token.value)
+                elif key_token.kind == "STRING":
+                    key = str(key_token.value)
+                else:
+                    raise JavaScriptSyntaxError(
+                        f"Expected object property key at offset {key_token.offset}"
+                    )
+                self._consume("COLON", "Expected ':' after object property key")
+                value = self.parse_expression()
+                properties.append(ObjectProperty(key=key, value=value))
+                if not self._match("COMMA"):
+                    break
+        self._consume("RBRACE", "Expected '}' after object literal")
+        return ObjectLiteral(properties=tuple(properties))
 
     def _current_precedence(self) -> int:
         token = self._peek()

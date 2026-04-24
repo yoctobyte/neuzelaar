@@ -22,6 +22,13 @@ CASES = [
     "(function (x) { return x + 1; })(2);",
     "function outer(x) { function inner(y) { return x + y; } return inner; } var add2 = outer(2); add2(3);",
     "function fact(n) { if (n === 0) { return 1; } return n * fact(n - 1); } fact(5);",
+    "var a = [1, 2, 3]; a[1];",
+    'var o = { x: 1, "y": 2 }; o.x + o["y"];',
+    "var a = [1, 2]; a[1] = 9; a[1];",
+    "var o = { x: 1 }; o.x = 4; o.x;",
+    "var a = [1, 2, 3]; a.length;",
+    "var o = { value: 7, get: function () { return this.value; } }; o.get();",
+    'var o = { value: 8, get: function () { return this["value"]; } }; o["get"]();',
 ]
 
 

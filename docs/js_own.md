@@ -80,11 +80,17 @@ Status:
 
 ### JS3
 
-- objects
-- arrays
+Scope:
+
+- array literals
+- object literals
 - property access
 - indexing
-- `this`
+- method-call `this` binding
+
+Status:
+
+- implemented
 
 ### JS4
 

@@ -1,4 +1,5 @@
 from neuzelaar.engines.js_own.ast import (
+    ArrayLiteral,
     AssignmentExpr,
     BinaryExpr,
     BlockStatement,
@@ -6,9 +7,13 @@ from neuzelaar.engines.js_own.ast import (
     FunctionDeclaration,
     FunctionExpr,
     Identifier,
+    IndexExpr,
     IfStatement,
+    MemberExpr,
     NumberLiteral,
+    ObjectLiteral,
     ReturnStatement,
+    ThisExpr,
     UnaryExpr,
     VariableDeclaration,
 )
@@ -68,3 +73,17 @@ def test_parse_function_expression_call() -> None:
 
     assert isinstance(expr, CallExpr)
     assert isinstance(expr.callee, FunctionExpr)
+
+
+def test_parse_array_object_member_and_index_expressions() -> None:
+    array_expr = parse_expression("[1, 2, 3]")
+    object_expr = parse_expression('{ x: 1, "y": 2 }')
+    member_expr = parse_expression("obj.value")
+    index_expr = parse_expression("arr[1]")
+    this_expr = parse_expression("this")
+
+    assert isinstance(array_expr, ArrayLiteral)
+    assert isinstance(object_expr, ObjectLiteral)
+    assert isinstance(member_expr, MemberExpr)
+    assert isinstance(index_expr, IndexExpr)
+    assert isinstance(this_expr, ThisExpr)
