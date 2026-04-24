@@ -85,6 +85,17 @@ class TkShell:
         root.title("Neuzelaar")
         root.geometry(f"{window_width}x{self.height + 140}")
 
+        # Set window icon if available.
+        icon_path = Path(__file__).parent.parent.parent.parent / "assets" / "neuzelaar.png"
+        if icon_path.exists():
+            try:
+                icon_img = ImageTk.PhotoImage(Image.open(icon_path))
+                root.iconphoto(True, icon_img)
+            except Exception:
+                # Silently fail if icon cannot be loaded.
+                pass
+
+
         if not settings_path().exists():
             try:
                 scaling = float(root.tk.call("tk", "scaling"))
