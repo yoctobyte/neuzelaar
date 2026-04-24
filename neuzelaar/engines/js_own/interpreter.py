@@ -14,6 +14,7 @@ from neuzelaar.engines.js_own.ast import (
     BooleanLiteral,
     CallExpr,
     ClassDeclaration,
+    ClassExpr,
     ClassMethod,
     Expr,
     ExpressionStatement,
@@ -147,18 +148,24 @@ class JavaScriptClass:
         self.prototype: dict[str, object] = (
             {"__proto__": superclass.prototype} if superclass is not None else {}
         )
+        self.static_properties: dict[str, object] = {}
         self.constructor: JavaScriptFunction | None = None
+        self.install_methods(methods, closure=closure)
+
+    def install_methods(self, methods: tuple[ClassMethod, ...], *, closure: Environment) -> None:
         for method in methods:
             function = JavaScriptFunction(
                 name=method.name,
                 params=method.params,
                 body=method.body,
                 closure=closure,
-                super_class=superclass,
-                super_prototype=superclass.prototype if superclass is not None else None,
+                super_class=self.superclass,
+                super_prototype=self.superclass.prototype if self.superclass is not None else None,
             )
-            if method.name == "constructor":
+            if method.name == "constructor" and not method.is_static:
                 self.constructor = function
+            elif method.is_static:
+                self.static_properties[method.name] = function
             else:
                 self.prototype[method.name] = function
 
@@ -183,6 +190,27 @@ def create_global_environment() -> Environment:
     env.declare("this", None, kind="const")
     install_builtins(env)
     return env
+
+
+def evaluate_class_expr(expr: ClassExpr, environment: Environment) -> JavaScriptClass:
+    superclass = None
+    if expr.superclass is not None:
+        superclass_value = evaluate_expr(expr.superclass, environment)
+        if not isinstance(superclass_value, JavaScriptClass):
+            raise TypeError("Superclass must be a class")
+        superclass = superclass_value
+
+    class_scope = environment.child_block()
+    class_object = JavaScriptClass(
+        name=expr.name or "<anonymous>",
+        superclass=superclass,
+        methods=(),
+        closure=class_scope,
+    )
+    if expr.name is not None:
+        class_scope.declare(expr.name, class_object, kind="const")
+    class_object.install_methods(expr.methods, closure=class_scope)
+    return class_object
 
 
 def evaluate_expression(source: str, environment: Environment | None = None) -> object:
@@ -227,17 +255,13 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
         environment.declare(statement.name, function, kind="var")
         return function
     if isinstance(statement, ClassDeclaration):
-        superclass = None
-        if statement.superclass is not None:
-            superclass_value = evaluate_expr(statement.superclass, environment)
-            if not isinstance(superclass_value, JavaScriptClass):
-                raise TypeError("Superclass must be a class")
-            superclass = superclass_value
-        js_class = JavaScriptClass(
-            name=statement.name,
-            superclass=superclass,
-            methods=statement.methods,
-            closure=environment,
+        js_class = evaluate_class_expr(
+            ClassExpr(
+                name=statement.name,
+                superclass=statement.superclass,
+                methods=statement.methods,
+            ),
+            environment,
         )
         environment.declare(statement.name, js_class, kind="let")
         return js_class
@@ -316,6 +340,8 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             closure=environment,
         )
         return function
+    if isinstance(expr, ClassExpr):
+        return evaluate_class_expr(expr, environment)
     if isinstance(expr, ArrayLiteral):
         return [evaluate_expr(element, environment) for element in expr.elements]
     if isinstance(expr, ObjectLiteral):

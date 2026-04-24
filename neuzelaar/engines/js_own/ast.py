@@ -74,6 +74,21 @@ class NewExpr(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class ClassMethod:
+    name: str
+    params: tuple[str, ...]
+    body: "BlockStatement"
+    is_static: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ClassExpr(Expr):
+    name: str | None
+    superclass: Expr | None
+    methods: tuple[ClassMethod, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class FunctionExpr(Expr):
     name: str | None
     params: tuple[str, ...]
@@ -134,13 +149,6 @@ class VariableDeclaration(Stmt):
 
 @dataclass(frozen=True, slots=True)
 class FunctionDeclaration(Stmt):
-    name: str
-    params: tuple[str, ...]
-    body: "BlockStatement"
-
-
-@dataclass(frozen=True, slots=True)
-class ClassMethod:
     name: str
     params: tuple[str, ...]
     body: "BlockStatement"

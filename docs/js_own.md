@@ -98,8 +98,10 @@ Status:
 Scope:
 
 - class declarations
+- class expressions
 - `extends`
 - method declarations
+- static methods
 - `constructor`
 - `new`
 - prototype-based method lookup for plain JS objects
@@ -108,9 +110,7 @@ Scope:
 
 Out of scope:
 
-- class expressions
 - fields
-- static methods
 
 Status:
 

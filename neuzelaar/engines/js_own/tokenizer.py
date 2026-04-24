@@ -22,6 +22,7 @@ KEYWORDS = {
     "new": "NEW",
     "return": "RETURN",
     "super": "SUPER",
+    "static": "STATIC",
     "this": "THIS",
     "throw": "THROW",
     "try": "TRY",

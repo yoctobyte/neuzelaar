@@ -13,6 +13,7 @@ from neuzelaar.engines.js_own.ast import (
     BooleanLiteral,
     CallExpr,
     ClassDeclaration,
+    ClassExpr,
     ClassMethod,
     Expr,
     ExpressionStatement,
@@ -219,18 +220,16 @@ class Parser:
         )
 
     def _parse_class_declaration(self) -> ClassDeclaration:
-        self._consume("CLASS", "Expected 'class'")
-        name = str(self._consume("IDENTIFIER", "Expected class name").value)
-        superclass = self.parse_expression() if self._match("EXTENDS") else None
-        self._consume("LBRACE", "Expected '{' after class name")
-        methods: list[ClassMethod] = []
-        while not self._check("RBRACE") and not self._check("EOF"):
-            methods.append(self._parse_class_method())
-            self._match("SEMICOLON")
-        self._consume("RBRACE", "Expected '}' after class body")
-        return ClassDeclaration(name=name, superclass=superclass, methods=tuple(methods))
+        class_expr = self._parse_class_expression(require_name=True)
+        assert class_expr.name is not None
+        return ClassDeclaration(
+            name=class_expr.name,
+            superclass=class_expr.superclass,
+            methods=class_expr.methods,
+        )
 
     def _parse_class_method(self) -> ClassMethod:
+        is_static = self._match("STATIC")
         name_token = self._consume("IDENTIFIER", "Expected class method name")
         self._consume("LPAREN", "Expected '(' after method name")
         params: list[str] = []
@@ -242,7 +241,28 @@ class Parser:
                     break
         self._consume("RPAREN", "Expected ')' after method parameters")
         body = self._parse_block_statement()
-        return ClassMethod(name=str(name_token.value), params=tuple(params), body=body)
+        return ClassMethod(
+            name=str(name_token.value),
+            params=tuple(params),
+            body=body,
+            is_static=is_static,
+        )
+
+    def _parse_class_expression(self, *, require_name: bool) -> ClassExpr:
+        self._consume("CLASS", "Expected 'class'")
+        name: str | None = None
+        if self._check("IDENTIFIER"):
+            name = str(self._advance().value)
+        elif require_name:
+            raise JavaScriptSyntaxError(f"Expected class name at offset {self._peek().offset}")
+        superclass = self.parse_expression() if self._match("EXTENDS") else None
+        self._consume("LBRACE", "Expected '{' after class name")
+        methods: list[ClassMethod] = []
+        while not self._check("RBRACE") and not self._check("EOF"):
+            methods.append(self._parse_class_method())
+            self._match("SEMICOLON")
+        self._consume("RBRACE", "Expected '}' after class body")
+        return ClassExpr(name=name, superclass=superclass, methods=tuple(methods))
 
     def _parse_function_expression(self, *, require_name: bool) -> FunctionExpr:
         self._consume("FUNCTION", "Expected 'function'")
@@ -278,6 +298,9 @@ class Parser:
             return ThisExpr()
         if token.kind == "SUPER":
             return SuperExpr()
+        if token.kind == "CLASS":
+            self.index -= 1
+            return self._parse_class_expression(require_name=False)
         if token.kind == "FUNCTION":
             self.index -= 1
             return self._parse_function_expression(require_name=False)

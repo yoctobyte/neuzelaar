@@ -6,6 +6,7 @@ from neuzelaar.engines.js_own.ast import (
     BlockStatement,
     CallExpr,
     ClassDeclaration,
+    ClassExpr,
     FunctionDeclaration,
     FunctionExpr,
     Identifier,
@@ -130,3 +131,11 @@ def test_parse_class_extends_clause() -> None:
     assert isinstance(program.statements[0], ClassDeclaration)
     assert isinstance(program.statements[0].superclass, Identifier)
     assert program.statements[0].superclass.name == "Parent"
+
+
+def test_parse_class_expression_and_static_method() -> None:
+    expr = parse_expression("class Named { static make() { return 1; } }")
+
+    assert isinstance(expr, ClassExpr)
+    assert expr.name == "Named"
+    assert expr.methods[0].is_static is True

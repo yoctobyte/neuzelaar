@@ -317,3 +317,41 @@ def test_derived_class_without_constructor_uses_parent_constructor() -> None:
     )
 
     assert result == 6.0
+
+
+def test_class_expression_can_be_instantiated() -> None:
+    result = evaluate_program(
+        "var Point = class { constructor(x) { this.x = x; } getX() { return this.x; } }; "
+        "new Point(4).getX();"
+    )
+
+    assert result == 4.0
+
+
+def test_named_class_expression_can_self_reference_in_static_method() -> None:
+    result = evaluate_program(
+        "var Point = class NamedPoint { "
+        "  constructor(x) { this.x = x; } "
+        "  static make(x) { return new NamedPoint(x); } "
+        "}; "
+        "Point.make(5).x;"
+    )
+
+    assert result == 5.0
+
+
+def test_static_method_call_works() -> None:
+    result = evaluate_program(
+        "class MathBox { static sum(x, y) { return x + y; } } "
+        "MathBox.sum(2, 3);"
+    )
+
+    assert result == 5.0
+
+
+def test_static_method_is_not_on_instance() -> None:
+    with pytest.raises(TypeError):
+        evaluate_program(
+            "class MathBox { static sum(x, y) { return x + y; } } "
+            "new MathBox().sum(2, 3);"
+        )

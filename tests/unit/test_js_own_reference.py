@@ -46,6 +46,9 @@ CASES = [
     "class Base { greet() { return 7; } } class Child extends Base { } var c = new Child(); c.greet();",
     "class Base { greet() { return this.value + 1; } } class Child extends Base { constructor() { super(); this.value = 4; } greet() { return super.greet() + 2; } } new Child().greet();",
     "class Base { constructor(x) { this.x = x; } } class Child extends Base { } new Child(6).x;",
+    "var Point = class { constructor(x) { this.x = x; } getX() { return this.x; } }; new Point(4).getX();",
+    "var Point = class NamedPoint { constructor(x) { this.x = x; } static make(x) { return new NamedPoint(x); } }; Point.make(5).x;",
+    "class MathBox { static sum(x, y) { return x + y; } } MathBox.sum(2, 3);",
 ]
 
 

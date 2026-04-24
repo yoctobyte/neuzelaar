@@ -17,6 +17,10 @@ def _read_dict_property(target: dict[str, object], property_name: str) -> object
 def read_property(target: object, property_name: str) -> object:
     if isinstance(target, HostObject):
         return target.get(property_name)
+    if hasattr(target, "static_properties") and hasattr(target, "prototype"):
+        if property_name == "prototype":
+            return target.prototype
+        return target.static_properties.get(property_name)
     if isinstance(target, dict):
         return _read_dict_property(target, property_name)
     if isinstance(target, list) and property_name == "length":
@@ -38,6 +42,11 @@ def read_index(target: object, index: object) -> object:
 def write_property(target: object, property_name: str, value: object) -> object:
     if isinstance(target, HostObject):
         return target.set(property_name, value)
+    if hasattr(target, "static_properties") and hasattr(target, "prototype"):
+        if property_name == "prototype":
+            raise TypeError("Cannot assign to class prototype")
+        target.static_properties[property_name] = value
+        return value
     if isinstance(target, dict):
         target[property_name] = value
         return value
