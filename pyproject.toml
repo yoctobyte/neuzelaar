@@ -18,6 +18,10 @@ dependencies = [
 dev = [
   "pytest",
 ]
+js = [
+  "quickjs",
+  "js2py",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]

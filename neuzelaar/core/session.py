@@ -11,6 +11,7 @@ from neuzelaar.core.page import PageLoader, PageLoadResult
 from neuzelaar.core.policy.capability import PermissionScope
 from neuzelaar.core.policy.permission_service import PermissionService
 from neuzelaar.core.policy.profile import PolicyProfile
+from neuzelaar.engines.js.interface import JavaScriptEngine
 from neuzelaar.shell_api.commands import DenyPermission, GrantPermission
 
 
@@ -25,6 +26,7 @@ class BrowserSession:
     cookie_jar: SessionCookieJar = field(default_factory=SessionCookieJar)
     bus: Bus = field(default_factory=Bus)
     permission_service: PermissionService | None = None
+    js_engine: JavaScriptEngine | None = None
     loader: PageLoader | None = None
     history: list[HistoryEntry] = field(default_factory=list)
     current_index: int = -1
@@ -38,6 +40,7 @@ class BrowserSession:
                 cookie_jar=self.cookie_jar,
                 bus=self.bus,
                 permission_service=self.permission_service,
+                js_engine=self.js_engine,
             )
 
     @property

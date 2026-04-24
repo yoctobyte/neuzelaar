@@ -32,6 +32,12 @@ Run tests using the virtual environment's pytest:
 tools/check_guardrails.sh
 ```
 
+Optional JavaScript backend packages:
+
+```sh
+.venv/bin/python -m pip install -e ".[dev,js]"
+```
+
 ### Running the Browser
 
 The current Milestone 1 implementation is a headless skeleton. You can run it against local HTML fixtures:
@@ -100,3 +106,23 @@ print(shell.run_command("back"))
 
 The initial implementation is intentionally small. CI-style tests should use
 offline fixtures rather than live websites.
+
+### JavaScript Backend Evaluation
+
+The browser still defaults to the no-op JS engine. Real engines are wired as
+reference backends for evaluation work.
+
+Reference suite:
+
+- TC39 Test262: <https://github.com/tc39/test262>
+
+Local subset runner:
+
+```sh
+git clone --depth 1 https://github.com/tc39/test262 .cache/test262
+.venv/bin/python tools/run_js_test262_subset.py --engine noop
+.venv/bin/python tools/run_js_test262_subset.py --engine quickjs
+.venv/bin/python tools/run_js_test262_subset.py --engine js2py
+```
+
+See `docs/js_engines.md` for the current backend snapshot.

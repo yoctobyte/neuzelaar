@@ -51,6 +51,7 @@ Expected:
 | P8 browser state hardening | Done | Persistent cookies, multi-tab model, and per-tab history isolation implemented. |
 | P9 styling and compatibility | In progress | Same-origin stylesheet fetch, descendant selectors, local image rendering, basic margin/padding/font-size layout, passive asset budgets, and shared subresource gating are in; broader CSS/layout still open. |
 | P10 active content | In progress | Script tags become explicit execution requests; permission checks now flow through `PermissionService` and command-bus grants, with console diagnostics, shell-facing grant/deny flow, reload verification, and remembered grants in place; real JS execution remains disabled. |
+| JS backend plumbing | In progress | Swappable JS backend factory, session/browser injection points, and a narrow Test262 subset runner are in; execution remains opt-in and browser-default is still `noop`. |
 
 ## Active Backlog
 
@@ -139,6 +140,8 @@ Files:
 - `neuzelaar/core/page.py`
 - `neuzelaar/core/policy/permission_service.py`
 - `neuzelaar/core/policy/permissions.py`
+- `neuzelaar/engines/js/factory.py`
+- `neuzelaar/engines/js/test262.py`
 - `neuzelaar/shell_api/events.py`
 - `neuzelaar/shell_api/commands.py`
 - `neuzelaar/shells/console/shell.py`
@@ -147,13 +150,16 @@ Tasks:
 
 - wire shell-facing grant and deny flows end to end
 - decide whether `AllowCapabilityOnce` remains as sugar or is removed
-- keep execution blocked until a restricted JS engine exists
+- keep browser execution blocked until permission checks become real execution gates
+- expand the Test262 runner beyond the narrow sync subset
+- use `quickjs` as the current reference backend for interpreter work
 
 Acceptance:
 
 - shells can respond to `PermissionRequested` with command-bus grant/deny commands
 - remembered grants suppress duplicate permission requests
 - active-content diagnostics stay explicit and test-covered
+- JS backend comparison is repeatable through the local Test262 subset runner
 
 ## Completed Packages
 

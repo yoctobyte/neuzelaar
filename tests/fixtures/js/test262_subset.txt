@@ -1,0 +1,8 @@
+# Sync script subset for local backend comparison.
+test/language/expressions/addition/S11.6.1_A1.js
+test/language/expressions/addition/S11.6.1_A4_T3.js
+test/language/expressions/arrow-function/empty-function-body-returns-undefined.js
+test/language/expressions/arrow-function/lexical-this.js
+test/language/expressions/template-literal/tv-no-substitution.js
+test/language/global-code/return.js
+test/language/global-code/yield-strict.js

@@ -218,6 +218,8 @@ Scope:
 - permission store for remembered grants
 - `PermissionService` with command-bus grant/deny flow
 - console grant/reload path proving remembered grants without enabling execution
+- swappable JS backend factory and session/browser injection points
+- Test262 subset runner for backend comparison
 - permission events/prompts
 - restricted JS execution
 - capability bridge

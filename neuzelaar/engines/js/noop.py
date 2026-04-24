@@ -12,6 +12,8 @@ from neuzelaar.engines.js.interface import (
 
 
 class NoopJavaScriptEngine(JavaScriptEngine):
+    name = "noop"
+
     def execute(self, request: ScriptExecutionRequest) -> ScriptExecutionResult:
         return ScriptExecutionResult(
             status=ScriptExecutionStatus.BLOCKED,

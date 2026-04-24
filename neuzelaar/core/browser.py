@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from neuzelaar.core.bus import Bus
 from neuzelaar.core.fetch.cookies import PersistentCookieJar, SessionCookieJar
@@ -11,6 +12,7 @@ from neuzelaar.core.page import PageLoadResult
 from neuzelaar.core.policy.capability import PermissionScope
 from neuzelaar.core.policy.permission_service import PermissionService
 from neuzelaar.core.session import BrowserSession, SessionError
+from neuzelaar.engines.js.interface import JavaScriptEngine
 
 
 @dataclass(slots=True)
@@ -28,6 +30,7 @@ class BrowserState:
     cookie_jar: SessionCookieJar = field(default_factory=SessionCookieJar)
     bus: Bus = field(default_factory=Bus)
     permission_service: PermissionService | None = None
+    js_engine_factory: Callable[[], JavaScriptEngine] | None = None
     tabs: dict[int, BrowserTab] = field(default_factory=dict)
     active_tab_id: int | None = None
     _next_tab_id: int = 1
@@ -54,6 +57,7 @@ class BrowserState:
                 cookie_jar=self.cookie_jar,
                 bus=self.bus,
                 permission_service=self.permission_service,
+                js_engine=self.js_engine_factory() if self.js_engine_factory is not None else None,
             ),
         )
         self.tabs[tab.id] = tab

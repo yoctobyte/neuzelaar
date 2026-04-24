@@ -47,5 +47,23 @@ def required_capability_for(request: ScriptExecutionRequest) -> Capability:
 
 
 class JavaScriptEngine:
+    name = "unknown"
+
     def execute(self, request: ScriptExecutionRequest) -> ScriptExecutionResult:
         raise NotImplementedError
+
+    def evaluate_program(
+        self,
+        source: str,
+        *,
+        url: str | None = None,
+    ) -> ScriptExecutionResult:
+        return self.execute(
+            ScriptExecutionRequest(
+                source=source,
+                url=url,
+                inline=url is None,
+                same_origin=None,
+                node_id=None,
+            )
+        )
