@@ -122,3 +122,11 @@ def test_parse_class_declaration_and_new_expression() -> None:
     assert tuple(method.name for method in program.statements[0].methods) == ("constructor", "getX")
     assert isinstance(expr, NewExpr)
     assert isinstance(expr.callee, Identifier)
+
+
+def test_parse_class_extends_clause() -> None:
+    program = parse_program("class Child extends Parent { speak() { return super.speak(); } }")
+
+    assert isinstance(program.statements[0], ClassDeclaration)
+    assert isinstance(program.statements[0].superclass, Identifier)
+    assert program.statements[0].superclass.name == "Parent"

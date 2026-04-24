@@ -98,16 +98,16 @@ Status:
 Scope:
 
 - class declarations
+- `extends`
 - method declarations
 - `constructor`
 - `new`
 - prototype-based method lookup for plain JS objects
+- `super(...)` in constructors
+- `super.method(...)` in methods
 
 Out of scope:
 
-- inheritance
-- `extends`
-- `super`
 - class expressions
 - fields
 - static methods

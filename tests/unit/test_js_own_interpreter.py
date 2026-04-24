@@ -275,3 +275,45 @@ def test_class_methods_are_found_through_prototype_chain() -> None:
 def test_new_requires_constructor_value() -> None:
     with pytest.raises(TypeError):
         evaluate_program("var x = {}; new x();")
+
+
+def test_class_inheritance_uses_super_constructor() -> None:
+    result = evaluate_program(
+        "class Base { constructor(x) { this.x = x; } } "
+        "class Child extends Base { constructor(x, y) { super(x); this.y = y; } sum() { return this.x + this.y; } } "
+        "var c = new Child(2, 3); "
+        "c.sum();"
+    )
+
+    assert result == 5.0
+
+
+def test_class_inheritance_finds_parent_methods() -> None:
+    result = evaluate_program(
+        "class Base { greet() { return 7; } } "
+        "class Child extends Base { } "
+        "var c = new Child(); "
+        "c.greet();"
+    )
+
+    assert result == 7.0
+
+
+def test_super_method_call_uses_current_this() -> None:
+    result = evaluate_program(
+        "class Base { greet() { return this.value + 1; } } "
+        "class Child extends Base { constructor() { super(); this.value = 4; } greet() { return super.greet() + 2; } } "
+        "new Child().greet();"
+    )
+
+    assert result == 7.0
+
+
+def test_derived_class_without_constructor_uses_parent_constructor() -> None:
+    result = evaluate_program(
+        "class Base { constructor(x) { this.x = x; } } "
+        "class Child extends Base { } "
+        "new Child(6).x;"
+    )
+
+    assert result == 6.0

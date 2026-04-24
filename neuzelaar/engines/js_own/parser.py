@@ -31,6 +31,7 @@ from neuzelaar.engines.js_own.ast import (
     ReturnStatement,
     Stmt,
     StringLiteral,
+    SuperExpr,
     ThisExpr,
     ThrowStatement,
     TryStatement,
@@ -220,13 +221,14 @@ class Parser:
     def _parse_class_declaration(self) -> ClassDeclaration:
         self._consume("CLASS", "Expected 'class'")
         name = str(self._consume("IDENTIFIER", "Expected class name").value)
+        superclass = self.parse_expression() if self._match("EXTENDS") else None
         self._consume("LBRACE", "Expected '{' after class name")
         methods: list[ClassMethod] = []
         while not self._check("RBRACE") and not self._check("EOF"):
             methods.append(self._parse_class_method())
             self._match("SEMICOLON")
         self._consume("RBRACE", "Expected '}' after class body")
-        return ClassDeclaration(name=name, methods=tuple(methods))
+        return ClassDeclaration(name=name, superclass=superclass, methods=tuple(methods))
 
     def _parse_class_method(self) -> ClassMethod:
         name_token = self._consume("IDENTIFIER", "Expected class method name")
@@ -274,6 +276,8 @@ class Parser:
             return Identifier(name=str(token.value))
         if token.kind == "THIS":
             return ThisExpr()
+        if token.kind == "SUPER":
+            return SuperExpr()
         if token.kind == "FUNCTION":
             self.index -= 1
             return self._parse_function_expression(require_name=False)

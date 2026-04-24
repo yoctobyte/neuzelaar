@@ -44,6 +44,11 @@ class ThisExpr(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class SuperExpr(Expr):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
 class UnaryExpr(Expr):
     operator: str
     operand: Expr
@@ -144,6 +149,7 @@ class ClassMethod:
 @dataclass(frozen=True, slots=True)
 class ClassDeclaration(Stmt):
     name: str
+    superclass: Expr | None
     methods: tuple[ClassMethod, ...]
 
 

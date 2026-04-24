@@ -31,6 +31,7 @@ from neuzelaar.engines.js_own.ast import (
     ReturnStatement,
     Stmt,
     StringLiteral,
+    SuperExpr,
     ThisExpr,
     ThrowStatement,
     TryStatement,
@@ -76,15 +77,23 @@ class JavaScriptFunction:
         params: tuple[str, ...],
         body: BlockStatement,
         closure: Environment,
+        super_class: "JavaScriptClass | None" = None,
+        super_prototype: dict[str, object] | None = None,
     ) -> None:
         self.name = name
         self.params = params
         self.body = body
         self.closure = closure
+        self.super_class = super_class
+        self.super_prototype = super_prototype
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
         call_env.declare("this", this_value, kind="const")
+        if self.super_class is not None:
+            call_env.declare("__super_class__", self.super_class, kind="const")
+        if self.super_prototype is not None:
+            call_env.declare("__super_prototype__", self.super_prototype, kind="const")
         if self.name is not None:
             call_env.declare(self.name, self, kind="const")
         for index, param in enumerate(self.params):
@@ -129,11 +138,15 @@ class JavaScriptClass:
         self,
         *,
         name: str,
+        superclass: "JavaScriptClass | None",
         methods: tuple[ClassMethod, ...],
         closure: Environment,
     ) -> None:
         self.name = name
-        self.prototype: dict[str, object] = {}
+        self.superclass = superclass
+        self.prototype: dict[str, object] = (
+            {"__proto__": superclass.prototype} if superclass is not None else {}
+        )
         self.constructor: JavaScriptFunction | None = None
         for method in methods:
             function = JavaScriptFunction(
@@ -141,6 +154,8 @@ class JavaScriptClass:
                 params=method.params,
                 body=method.body,
                 closure=closure,
+                super_class=superclass,
+                super_prototype=superclass.prototype if superclass is not None else None,
             )
             if method.name == "constructor":
                 self.constructor = function
@@ -148,8 +163,14 @@ class JavaScriptClass:
                 self.prototype[method.name] = function
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
-        instance: dict[str, object] = {"__proto__": self.prototype}
+        if isinstance(this_value, dict):
+            instance = this_value
+            instance.setdefault("__proto__", self.prototype)
+        else:
+            instance = {"__proto__": self.prototype}
         if self.constructor is None:
+            if self.superclass is not None:
+                return self.superclass.call(arguments, this_value=instance)
             return instance
         result = self.constructor.call(arguments, this_value=instance)
         if isinstance(result, (dict, list)):
@@ -206,8 +227,15 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
         environment.declare(statement.name, function, kind="var")
         return function
     if isinstance(statement, ClassDeclaration):
+        superclass = None
+        if statement.superclass is not None:
+            superclass_value = evaluate_expr(statement.superclass, environment)
+            if not isinstance(superclass_value, JavaScriptClass):
+                raise TypeError("Superclass must be a class")
+            superclass = superclass_value
         js_class = JavaScriptClass(
             name=statement.name,
+            superclass=superclass,
             methods=statement.methods,
             closure=environment,
         )
@@ -271,6 +299,8 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         return environment.get(expr.name)
     if isinstance(expr, ThisExpr):
         return environment.get("this")
+    if isinstance(expr, SuperExpr):
+        return environment.get("__super_prototype__")
     if isinstance(expr, ArrowFunctionExpr):
         return JavaScriptArrowFunction(
             params=expr.params,
@@ -303,7 +333,19 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return -js_to_number(operand)
     if isinstance(expr, CallExpr):
         this_value = None
-        if isinstance(expr.callee, MemberExpr):
+        if isinstance(expr.callee, SuperExpr):
+            super_class = environment.get("__super_class__")
+            if not isinstance(super_class, JavaScriptClass):
+                raise TypeError("super() is not available here")
+            this_value = environment.get("this")
+            arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
+            result = super_class.call(arguments, this_value=this_value)
+            return this_value if result is None or result is this_value else result
+        if isinstance(expr.callee, MemberExpr) and isinstance(expr.callee.object, SuperExpr):
+            this_value = environment.get("this")
+            super_prototype = environment.get("__super_prototype__")
+            callee = read_property(super_prototype, expr.callee.property_name)
+        elif isinstance(expr.callee, MemberExpr):
             this_value = evaluate_expr(expr.callee.object, environment)
             callee = read_property(this_value, expr.callee.property_name)
         elif isinstance(expr.callee, IndexExpr):

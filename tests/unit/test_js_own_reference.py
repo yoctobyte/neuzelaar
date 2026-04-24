@@ -42,6 +42,10 @@ CASES = [
     "var outer = { value: 3, make: function () { return () => this.value; } }; var fn = outer.make(); var other = { value: 9, fn: fn }; other.fn();",
     "class Point { constructor(x, y) { this.x = x; this.y = y; } sum() { return this.x + this.y; } } var p = new Point(2, 3); p.sum();",
     "class Counter { constructor() { this.value = 1; } inc() { this.value = this.value + 1; return this.value; } } var c = new Counter(); c.inc();",
+    "class Base { constructor(x) { this.x = x; } } class Child extends Base { constructor(x, y) { super(x); this.y = y; } sum() { return this.x + this.y; } } var c = new Child(2, 3); c.sum();",
+    "class Base { greet() { return 7; } } class Child extends Base { } var c = new Child(); c.greet();",
+    "class Base { greet() { return this.value + 1; } } class Child extends Base { constructor() { super(); this.value = 4; } greet() { return super.greet() + 2; } } new Child().greet();",
+    "class Base { constructor(x) { this.x = x; } } class Child extends Base { } new Child(6).x;",
 ]
 
 
