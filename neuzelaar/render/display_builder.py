@@ -11,25 +11,39 @@ def build_display_list(
     document,
     *,
     width: int = 800,
+    zoom: float = 1.0,
     root_style: ComputedStyle | None = None,
     styles: dict | None = None,
     images: dict | None = None,
 ) -> DisplayList:
-    layout = layout_document(document, width=width, styles=styles, images=images, root_style=root_style)
+    if zoom <= 0:
+        zoom = 1.0
+    logical_width = max(int(round(width / zoom)), 120)
+    layout = layout_document(
+        document,
+        width=logical_width,
+        styles=styles,
+        images=images,
+        root_style=root_style,
+    )
+
+    def sx(value: int | float) -> int:
+        return int(round(value * zoom))
+
     style = root_style or ComputedStyle()
-    ops = [FillRect(Rect(0, 0, layout.width, layout.height), _parse_color(style.background_color))]
+    ops = [FillRect(Rect(0, 0, sx(layout.width), sx(layout.height)), _parse_color(style.background_color))]
     for item in layout.items:
         if isinstance(item, LayoutBox):
-            ops.append(FillRect(Rect(item.x, item.y, item.width, item.height), _parse_color(item.color)))
+            ops.append(FillRect(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)), _parse_color(item.color)))
         elif isinstance(item, LayoutText):
             ops.append(
                 DrawText(
-                    item.x,
-                    item.y,
+                    sx(item.x),
+                    sx(item.y),
                     item.text,
                     _parse_color(item.color),
-                    item.font_size,
-                    max_width=item.max_width,
+                    sx(item.font_size),
+                    max_width=sx(item.max_width),
                     align=item.text_align,
                 )
             )
@@ -37,8 +51,8 @@ def build_display_list(
             if item.bitmap is not None:
                 ops.append(
                     DrawImage(
-                        item.x,
-                        item.y,
+                        sx(item.x),
+                        sx(item.y),
                         Bitmap(
                             width=item.bitmap.bitmap.width,
                             height=item.bitmap.bitmap.height,
@@ -48,8 +62,8 @@ def build_display_list(
                     )
                 )
             else:
-                ops.append(Placeholder(Rect(item.x, item.y, item.width, item.height), f"image: {item.label}"))
-    return DisplayList(width=layout.width, height=layout.height, ops=tuple(ops))
+                ops.append(Placeholder(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)), f"image: {item.label}"))
+    return DisplayList(width=sx(layout.width), height=sx(layout.height), ops=tuple(ops))
 
 
 def _parse_color(value: str) -> Color:

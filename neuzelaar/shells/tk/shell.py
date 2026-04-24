@@ -20,6 +20,7 @@ from neuzelaar.document.dom import Comment, Document, Element, Node, Text
 from neuzelaar.render.display_builder import build_display_list
 from neuzelaar.render.software import rasterize
 from neuzelaar.shell_api.frame import Frame, PixelFormat
+from neuzelaar.shells.tk.settings import ALLOWED_ZOOM_LEVELS, Settings, settings_path
 
 
 @dataclass(slots=True)
@@ -28,6 +29,7 @@ class TkShell:
     width: int = 800
     height: int = 600
     log_dir: Path = field(default_factory=lambda: Path(".neuzelaar/logs"))
+    settings: Settings = field(default_factory=Settings.load)
 
     def render_url_to_frame(self, url: str, *, width: int | None = None) -> tuple[PageLoadResult, Frame]:
         result = self.session.open_url(url)
@@ -39,6 +41,7 @@ class TkShell:
         display_list = build_display_list(
             result.handler_result.value,
             width=width if width is not None else self.width,
+            zoom=self.settings.zoom,
             root_style=result.root_style,
             styles=result.styles,
             images=result.images,
@@ -57,6 +60,23 @@ class TkShell:
         result = self.session.reload()
         return result, self.frame_for_result(result, width=width)
 
+    def set_zoom(self, zoom: float) -> None:
+        self.settings.zoom = max(zoom, 0.25)
+        try:
+            self.settings.save()
+        except OSError:
+            pass
+
+    def next_zoom(self, direction: int) -> float:
+        current = self.settings.nearest_allowed_zoom()
+        levels = list(ALLOWED_ZOOM_LEVELS)
+        try:
+            index = levels.index(current)
+        except ValueError:
+            index = levels.index(1.0)
+        new_index = max(0, min(len(levels) - 1, index + direction))
+        return levels[new_index]
+
     def run(self, url: str) -> None:
         initial_url = self.normalize_address(url)
         window_width = self.width + 520
@@ -64,6 +84,16 @@ class TkShell:
         root = tk.Tk()
         root.title("Neuzelaar")
         root.geometry(f"{window_width}x{self.height + 140}")
+
+        if not settings_path().exists():
+            try:
+                scaling = float(root.tk.call("tk", "scaling"))
+            except (tk.TclError, ValueError):
+                scaling = 1.333
+            detected = scaling / 1.333
+            snapped = min(ALLOWED_ZOOM_LEVELS, key=lambda level: abs(level - detected))
+            if snapped != self.settings.zoom:
+                self.set_zoom(snapped)
 
         split = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
         split.pack(fill=tk.BOTH, expand=True)
@@ -276,10 +306,46 @@ class TkShell:
         file_menu.add_command(label="Quit", command=root.destroy, accelerator="Ctrl+Q")
         menubar.add_cascade(label="File", menu=file_menu)
 
+        zoom_var = tk.StringVar(value=f"{self.settings.zoom:g}")
+
+        def apply_zoom_value(value: float) -> None:
+            self.set_zoom(value)
+            zoom_var.set(f"{self.settings.zoom:g}")
+            reflow_at_current_width()
+
+        def zoom_from_menu() -> None:
+            try:
+                apply_zoom_value(float(zoom_var.get()))
+            except ValueError:
+                pass
+
+        def zoom_in(_event: object = None) -> None:
+            apply_zoom_value(self.next_zoom(1))
+
+        def zoom_out(_event: object = None) -> None:
+            apply_zoom_value(self.next_zoom(-1))
+
+        def zoom_reset(_event: object = None) -> None:
+            apply_zoom_value(1.0)
+
         view_menu = tk.Menu(menubar, tearoff=False)
         view_menu.add_command(label="Reload", command=reload_page, accelerator="Ctrl+R")
         view_menu.add_command(label="Back", command=go_back, accelerator="Alt+Left")
         view_menu.add_command(label="Forward", command=go_forward, accelerator="Alt+Right")
+        view_menu.add_separator()
+        zoom_menu = tk.Menu(view_menu, tearoff=False)
+        for level in ALLOWED_ZOOM_LEVELS:
+            zoom_menu.add_radiobutton(
+                label=f"{int(level * 100)}%",
+                value=f"{level:g}",
+                variable=zoom_var,
+                command=zoom_from_menu,
+            )
+        zoom_menu.add_separator()
+        zoom_menu.add_command(label="Zoom in", command=zoom_in, accelerator="Ctrl+=")
+        zoom_menu.add_command(label="Zoom out", command=zoom_out, accelerator="Ctrl+-")
+        zoom_menu.add_command(label="Reset zoom", command=zoom_reset, accelerator="Ctrl+0")
+        view_menu.add_cascade(label="Zoom", menu=zoom_menu)
         view_menu.add_separator()
         view_menu.add_command(label="Show blocked resources", command=show_blocked_popup)
         menubar.add_cascade(label="View", menu=view_menu)
@@ -299,6 +365,10 @@ class TkShell:
         root.bind_all("<Control-l>", lambda _e: (address_entry.focus_set(), address_entry.selection_range(0, tk.END)))
         root.bind_all("<Control-q>", lambda _e: root.destroy())
         root.bind_all("<Control-r>", lambda _e: reload_page())
+        root.bind_all("<Control-equal>", zoom_in)
+        root.bind_all("<Control-plus>", zoom_in)
+        root.bind_all("<Control-minus>", zoom_out)
+        root.bind_all("<Control-Key-0>", zoom_reset)
 
         back_button.configure(command=go_back)
         forward_button.configure(command=go_forward)

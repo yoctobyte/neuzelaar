@@ -37,6 +37,19 @@ def test_build_display_list_draws_decoded_images_when_provided() -> None:
     assert any(isinstance(op, DrawImage) for op in display_list.ops)
 
 
+def test_build_display_list_scales_coordinates_and_fonts_with_zoom() -> None:
+    base = build_display_list(document_from_fixture("example.html"), width=800, zoom=1.0)
+    zoomed = build_display_list(document_from_fixture("example.html"), width=800, zoom=2.0)
+
+    base_text = next(op for op in base.ops if isinstance(op, DrawText))
+    zoomed_text = next(op for op in zoomed.ops if isinstance(op, DrawText))
+
+    assert zoomed_text.font_size >= base_text.font_size * 2 - 1
+    assert zoomed_text.y >= base_text.y * 2 - 1
+    assert zoomed.width == 800
+    assert zoomed.height >= base.height * 2 - 4
+
+
 def test_build_display_list_uses_root_style_colors() -> None:
     display_list = build_display_list(
         document_from_fixture("example.html"),
