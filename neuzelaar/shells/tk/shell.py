@@ -29,33 +29,33 @@ class TkShell:
     height: int = 600
     log_dir: Path = field(default_factory=lambda: Path(".neuzelaar/logs"))
 
-    def render_url_to_frame(self, url: str) -> tuple[PageLoadResult, Frame]:
+    def render_url_to_frame(self, url: str, *, width: int | None = None) -> tuple[PageLoadResult, Frame]:
         result = self.session.open_url(url)
         if result.handler_result.kind != "document":
             raise TkShellError("Tk shell currently renders document results only")
-        return result, self.frame_for_result(result)
+        return result, self.frame_for_result(result, width=width)
 
-    def frame_for_result(self, result: PageLoadResult) -> Frame:
+    def frame_for_result(self, result: PageLoadResult, *, width: int | None = None) -> Frame:
         display_list = build_display_list(
             result.handler_result.value,
-            width=self.width,
+            width=width if width is not None else self.width,
             root_style=result.root_style,
             styles=result.styles,
             images=result.images,
         )
         return rasterize(display_list)
 
-    def back_to_frame(self) -> tuple[PageLoadResult, Frame]:
+    def back_to_frame(self, *, width: int | None = None) -> tuple[PageLoadResult, Frame]:
         result = self.session.back()
-        return result, self.frame_for_result(result)
+        return result, self.frame_for_result(result, width=width)
 
-    def forward_to_frame(self) -> tuple[PageLoadResult, Frame]:
+    def forward_to_frame(self, *, width: int | None = None) -> tuple[PageLoadResult, Frame]:
         result = self.session.forward()
-        return result, self.frame_for_result(result)
+        return result, self.frame_for_result(result, width=width)
 
-    def reload_to_frame(self) -> tuple[PageLoadResult, Frame]:
+    def reload_to_frame(self, *, width: int | None = None) -> tuple[PageLoadResult, Frame]:
         result = self.session.reload()
-        return result, self.frame_for_result(result)
+        return result, self.frame_for_result(result, width=width)
 
     def run(self, url: str) -> None:
         initial_url = self.normalize_address(url)
@@ -163,6 +163,8 @@ class TkShell:
         signal.signal(signal.SIGINT, handle_sigint)
 
         last_result: list[PageLoadResult | None] = [None]
+        current_width: list[int] = [self.width]
+        reflow_job: list[str | None] = [None]
 
         def present(result: PageLoadResult, frame: Frame) -> None:
             last_result[0] = result
@@ -194,27 +196,55 @@ class TkShell:
 
         def open_from_entry(_event=None) -> None:
             try:
-                present(*self.render_url_to_frame(self.normalize_address(address_var.get().strip())))
+                present(*self.render_url_to_frame(
+                    self.normalize_address(address_var.get().strip()),
+                    width=current_width[0],
+                ))
             except Exception as exc:
                 show_error(exc)
 
         def go_back() -> None:
             try:
-                present(*self.back_to_frame())
+                present(*self.back_to_frame(width=current_width[0]))
             except Exception as exc:
                 show_error(exc)
 
         def go_forward() -> None:
             try:
-                present(*self.forward_to_frame())
+                present(*self.forward_to_frame(width=current_width[0]))
             except Exception as exc:
                 show_error(exc)
 
         def reload_page() -> None:
             try:
-                present(*self.reload_to_frame())
+                present(*self.reload_to_frame(width=current_width[0]))
             except Exception as exc:
                 show_error(exc)
+
+        def reflow_at_current_width() -> None:
+            reflow_job[0] = None
+            result = last_result[0]
+            if result is None or result.handler_result.kind != "document":
+                return
+            try:
+                frame = self.frame_for_result(result, width=current_width[0])
+            except Exception as exc:
+                show_error(exc)
+                return
+            photo = _frame_to_photo(frame)
+            canvas.itemconfigure(canvas_image, image=photo)
+            canvas.image = photo
+            canvas.configure(scrollregion=(0, 0, frame.width, frame.height))
+
+        def on_canvas_configure(event: tk.Event) -> None:
+            if event.width <= 1 or event.width == current_width[0]:
+                return
+            current_width[0] = event.width
+            if reflow_job[0] is not None:
+                canvas.after_cancel(reflow_job[0])
+            reflow_job[0] = canvas.after(200, reflow_at_current_width)
+
+        canvas.bind("<Configure>", on_canvas_configure)
 
         def show_blocked_popup() -> None:
             self.show_blocked_popup(root, last_result[0])
@@ -276,7 +306,7 @@ class TkShell:
         address_entry.bind("<Return>", open_from_entry)
 
         try:
-            present(*self.render_url_to_frame(initial_url))
+            present(*self.render_url_to_frame(initial_url, width=current_width[0]))
             root.update_idletasks()
             split.sashpos(0, self.default_split_position(window_width))
             root.mainloop()
