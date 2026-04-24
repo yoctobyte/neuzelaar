@@ -58,10 +58,11 @@ class TkShell:
 
     def run(self, url: str) -> None:
         initial_url = self.normalize_address(url)
+        window_width = self.width + 520
 
         root = tk.Tk()
         root.title("Neuzelaar")
-        root.geometry(f"{self.width + 520}x{self.height + 140}")
+        root.geometry(f"{window_width}x{self.height + 140}")
 
         split = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
         split.pack(fill=tk.BOTH, expand=True)
@@ -85,7 +86,7 @@ class TkShell:
 
         dom_tree = ttk.Treeview(dom_frame, columns=("node",), show="tree")
         style = ttk.Style(root)
-        style.configure("Neuzelaar.Treeview", rowheight=26)
+        style.configure("Neuzelaar.Treeview", rowheight=34, font=("TkDefaultFont", 13))
         dom_tree.configure(style="Neuzelaar.Treeview")
         dom_scroll = ttk.Scrollbar(dom_frame, orient=tk.VERTICAL, command=dom_tree.yview)
         dom_tree.configure(yscrollcommand=dom_scroll.set)
@@ -213,6 +214,8 @@ class TkShell:
 
         try:
             present(*self.render_url_to_frame(initial_url))
+            root.update_idletasks()
+            split.sashpos(0, self.default_split_position(window_width))
             root.mainloop()
         finally:
             signal.signal(signal.SIGINT, previous_sigint)
@@ -236,6 +239,9 @@ class TkShell:
         if value.startswith(("/", "./", "../", "~/")) or path.exists():
             return path.resolve().as_uri()
         return f"https://{value}"
+
+    def default_split_position(self, window_width: int) -> int:
+        return max(window_width // 2, 320)
 
     def page_summary(self, result: PageLoadResult) -> str:
         parts = [result.mime_decision.kind, result.resource.final_url]

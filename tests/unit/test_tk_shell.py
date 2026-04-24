@@ -74,6 +74,13 @@ def test_tk_shell_normalize_address_defaults_blank_to_example() -> None:
     assert shell.normalize_address("") == "https://example.com"
 
 
+def test_tk_shell_default_split_position_centers_view() -> None:
+    shell = TkShell(width=640, height=480)
+
+    assert shell.default_split_position(1720) == 860
+    assert shell.default_split_position(500) == 320
+
+
 def test_tk_shell_normalize_address_defaults_web_input_to_https() -> None:
     shell = TkShell(width=640, height=480)
 
