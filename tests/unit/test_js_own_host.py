@@ -1,6 +1,7 @@
 from neuzelaar.engines.js_own.builtins import install_builtins
 from neuzelaar.engines.js_own.environment import Environment
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
+from neuzelaar.engines.js_own.host_stubs import BrowserHostStubs
 from neuzelaar.engines.js_own.interpreter import evaluate_program
 from neuzelaar.engines.js_own.values import (
     is_callable,
@@ -62,3 +63,72 @@ def test_host_object_can_be_exposed_to_program() -> None:
 
     assert evaluate_program("host.value;", env) == 7.0
     assert evaluate_program("host.bump();", env) == 8.0
+
+
+def test_browser_host_console_stub_collects_entries() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    stubs.install(env)
+
+    result = evaluate_program('console.log("a", 1); console.count("x"); console.count("x");', env)
+
+    assert result == 2.0
+    assert stubs.console.entries[0] == ("log", ("a", 1.0))
+    assert stubs.console.entries[1] == ("count", ("x", 1.0))
+    assert stubs.console.entries[2] == ("count", ("x", 2.0))
+
+
+def test_browser_host_timer_stub_records_scheduled_and_cleared() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    stubs.install(env)
+
+    result = evaluate_program(
+        "var id = setTimeout(function () { return 1; }, 250, 'a'); clearTimeout(id); id;",
+        env,
+    )
+
+    assert result == 1.0
+    assert stubs.timers.scheduled[0]["id"] == 1
+    assert stubs.timers.scheduled[0]["delay"] == 250.0
+    assert stubs.timers.scheduled[0]["arguments"] == ("a",)
+    assert 1 in stubs.timers.cleared
+
+
+def test_browser_host_document_stub_exposes_title_and_nodes() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    node = HostObject(properties={"textContent": "hello"})
+    stubs.document.nodes_by_id["hero"] = node
+    stubs.install(env)
+
+    result = evaluate_program(
+        "document.setTitle('Test Title'); document.getElementById('hero').textContent;",
+        env,
+    )
+
+    assert result == "hello"
+    assert stubs.document.title == "Test Title"
+
+
+def test_browser_host_location_and_history_stubs_hold_meaningful_state() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    stubs.install(env)
+
+    result = evaluate_program(
+        "location.assign('https://example.test/a'); "
+        "history.pushState(null, '', '/a'); "
+        "history.pushState(null, '', '/b'); "
+        "history.back();",
+        env,
+    )
+
+    assert stubs.location.href == "https://example.test/a"
+    assert stubs.history.entries == ["/a", "/b"]
+    assert stubs.history.index == 0
+    assert result == "/a"

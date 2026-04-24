@@ -117,6 +117,12 @@ Scope:
 - explicit host-object wrapper
 - host property/index bridge helpers
 - builtin installation via the host bridge
+- meaningful standalone browser-shaped stubs:
+  - `console`
+  - timers
+  - `document`
+  - `location`
+  - `history`
 
 Status:
 
