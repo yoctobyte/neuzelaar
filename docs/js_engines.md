@@ -77,5 +77,21 @@ The current execution plan is split:
 - keep `quickjs` as the reference backend and oracle
 - keep browser default on `noop`
 
-Only after the in-repo interpreter has a credible standalone core should
-`core/page.py` grow real execution gating and browser wiring.
+Current practical comparison path:
+
+- fixture-only runner in `neuzelaar/engines/js/fixture_runner.py`
+- compare `own` vs `quickjs` on observable host effects
+- keep this outside `core/page.py`
+
+Current practical fixture status:
+
+- fixture-only `own` vs `quickjs` parity checks are in place
+- current checks cover:
+  - console effects
+  - document mutations
+  - location/history effects
+  - timer registration effects
+
+Only after the in-repo interpreter has a credible standalone core and
+practical fixture parity should `core/page.py` grow real execution gating and
+browser wiring.
