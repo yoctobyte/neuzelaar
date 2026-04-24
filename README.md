@@ -37,6 +37,15 @@ tools/check_guardrails.sh
 The current Milestone 1 implementation is a headless skeleton. You can run it against local HTML fixtures:
 
 ```sh
+./neuzelaar.sh tests/fixtures/sites/example.html
+./neuzelaar.sh tests/fixtures/sites/third_party_script.html
+```
+
+The launcher will create or repair `.venv` via `tools/setup.sh` if needed, then run `python -m neuzelaar`.
+
+Direct invocation still works:
+
+```sh
 .venv/bin/python -m neuzelaar tests/fixtures/sites/example.html
 .venv/bin/python -m neuzelaar tests/fixtures/sites/third_party_script.html
 ```
