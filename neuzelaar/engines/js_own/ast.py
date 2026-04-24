@@ -63,6 +63,12 @@ class AssignmentExpr(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class NewExpr(Expr):
+    callee: Expr
+    arguments: tuple[Expr, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class FunctionExpr(Expr):
     name: str | None
     params: tuple[str, ...]
@@ -126,6 +132,19 @@ class FunctionDeclaration(Stmt):
     name: str
     params: tuple[str, ...]
     body: "BlockStatement"
+
+
+@dataclass(frozen=True, slots=True)
+class ClassMethod:
+    name: str
+    params: tuple[str, ...]
+    body: "BlockStatement"
+
+
+@dataclass(frozen=True, slots=True)
+class ClassDeclaration(Stmt):
+    name: str
+    methods: tuple[ClassMethod, ...]
 
 
 @dataclass(frozen=True, slots=True)

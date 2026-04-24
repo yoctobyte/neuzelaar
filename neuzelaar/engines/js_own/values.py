@@ -5,11 +5,20 @@ from __future__ import annotations
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
 
 
+def _read_dict_property(target: dict[str, object], property_name: str) -> object:
+    if property_name in target:
+        return target[property_name]
+    prototype = target.get("__proto__")
+    if isinstance(prototype, dict):
+        return _read_dict_property(prototype, property_name)
+    return None
+
+
 def read_property(target: object, property_name: str) -> object:
     if isinstance(target, HostObject):
         return target.get(property_name)
     if isinstance(target, dict):
-        return target.get(property_name)
+        return _read_dict_property(target, property_name)
     if isinstance(target, list) and property_name == "length":
         return float(len(target))
     raise TypeError(f"Cannot read property {property_name!r}")
@@ -22,7 +31,7 @@ def read_index(target: object, index: object) -> object:
     if isinstance(target, HostObject):
         return target.get(str(to_index(index)) if isinstance(index, (int, float)) else str(index))
     if isinstance(target, dict):
-        return target.get(str(index))
+        return _read_dict_property(target, str(index))
     raise TypeError("Cannot index value")
 
 

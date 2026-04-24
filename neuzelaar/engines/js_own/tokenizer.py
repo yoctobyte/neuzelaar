@@ -17,6 +17,8 @@ KEYWORDS = {
     "if": "IF",
     "else": "ELSE",
     "function": "FUNCTION",
+    "class": "CLASS",
+    "new": "NEW",
     "return": "RETURN",
     "this": "THIS",
     "throw": "THROW",

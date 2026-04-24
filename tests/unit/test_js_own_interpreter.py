@@ -244,3 +244,34 @@ def test_arrow_function_ignores_call_site_this() -> None:
     )
 
     assert result == 3.0
+
+
+def test_class_constructor_and_method_work() -> None:
+    result = evaluate_program(
+        "class Point { "
+        "  constructor(x, y) { this.x = x; this.y = y; } "
+        "  sum() { return this.x + this.y; } "
+        "} "
+        "var p = new Point(2, 3); "
+        "p.sum();"
+    )
+
+    assert result == 5.0
+
+
+def test_class_methods_are_found_through_prototype_chain() -> None:
+    result = evaluate_program(
+        "class Counter { "
+        "  constructor() { this.value = 1; } "
+        "  inc() { this.value = this.value + 1; return this.value; } "
+        "} "
+        "var c = new Counter(); "
+        "c.inc();"
+    )
+
+    assert result == 2.0
+
+
+def test_new_requires_constructor_value() -> None:
+    with pytest.raises(TypeError):
+        evaluate_program("var x = {}; new x();")

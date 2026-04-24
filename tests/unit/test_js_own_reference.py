@@ -40,6 +40,8 @@ CASES = [
     "var add = (x, y) => { return x + y; }; add(2, 3);",
     "var o = { value: 7, get: function () { var f = () => this.value; return f(); } }; o.get();",
     "var outer = { value: 3, make: function () { return () => this.value; } }; var fn = outer.make(); var other = { value: 9, fn: fn }; other.fn();",
+    "class Point { constructor(x, y) { this.x = x; this.y = y; } sum() { return this.x + this.y; } } var p = new Point(2, 3); p.sum();",
+    "class Counter { constructor() { this.value = 1; } inc() { this.value = this.value + 1; return this.value; } } var c = new Counter(); c.inc();",
 ]
 
 

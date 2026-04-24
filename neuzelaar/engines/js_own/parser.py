@@ -12,6 +12,8 @@ from neuzelaar.engines.js_own.ast import (
     BlockStatement,
     BooleanLiteral,
     CallExpr,
+    ClassDeclaration,
+    ClassMethod,
     Expr,
     ExpressionStatement,
     FunctionDeclaration,
@@ -20,6 +22,7 @@ from neuzelaar.engines.js_own.ast import (
     IndexExpr,
     IfStatement,
     MemberExpr,
+    NewExpr,
     NullLiteral,
     NumberLiteral,
     ObjectLiteral,
@@ -120,6 +123,8 @@ class Parser:
             return self._parse_block_statement()
         if self._check("FUNCTION"):
             return self._parse_function_declaration()
+        if self._check("CLASS"):
+            return self._parse_class_declaration()
         if self._check("IF"):
             return self._parse_if_statement()
         if self._check("RETURN"):
@@ -212,6 +217,31 @@ class Parser:
             body=function_expr.body,
         )
 
+    def _parse_class_declaration(self) -> ClassDeclaration:
+        self._consume("CLASS", "Expected 'class'")
+        name = str(self._consume("IDENTIFIER", "Expected class name").value)
+        self._consume("LBRACE", "Expected '{' after class name")
+        methods: list[ClassMethod] = []
+        while not self._check("RBRACE") and not self._check("EOF"):
+            methods.append(self._parse_class_method())
+            self._match("SEMICOLON")
+        self._consume("RBRACE", "Expected '}' after class body")
+        return ClassDeclaration(name=name, methods=tuple(methods))
+
+    def _parse_class_method(self) -> ClassMethod:
+        name_token = self._consume("IDENTIFIER", "Expected class method name")
+        self._consume("LPAREN", "Expected '(' after method name")
+        params: list[str] = []
+        if not self._check("RPAREN"):
+            while True:
+                param = self._consume("IDENTIFIER", "Expected parameter name")
+                params.append(str(param.value))
+                if not self._match("COMMA"):
+                    break
+        self._consume("RPAREN", "Expected ')' after method parameters")
+        body = self._parse_block_statement()
+        return ClassMethod(name=str(name_token.value), params=tuple(params), body=body)
+
     def _parse_function_expression(self, *, require_name: bool) -> FunctionExpr:
         self._consume("FUNCTION", "Expected 'function'")
         name: str | None = None
@@ -247,6 +277,8 @@ class Parser:
         if token.kind == "FUNCTION":
             self.index -= 1
             return self._parse_function_expression(require_name=False)
+        if token.kind == "NEW":
+            return self._parse_new_expression()
         if token.kind == "LBRACKET":
             return self._parse_array_literal()
         if token.kind == "LBRACE":
@@ -258,6 +290,20 @@ class Parser:
             self._consume("RPAREN", "Expected ')' after expression")
             return expr
         raise JavaScriptSyntaxError(f"Unexpected token {token.lexeme!r} at offset {token.offset}")
+
+    def _parse_new_expression(self) -> Expr:
+        target = self._parse_prefix(self._advance())
+        while self._check("DOT") or self._check("LBRACKET"):
+            target = self._parse_infix(target, self._advance())
+        arguments: list[Expr] = []
+        if self._match("LPAREN"):
+            if not self._check("RPAREN"):
+                while True:
+                    arguments.append(self.parse_expression())
+                    if not self._match("COMMA"):
+                        break
+            self._consume("RPAREN", "Expected ')' after constructor arguments")
+        return NewExpr(callee=target, arguments=tuple(arguments))
 
     def _parse_infix(self, left: Expr, token: Token) -> Expr:
         if token.kind == "LPAREN":

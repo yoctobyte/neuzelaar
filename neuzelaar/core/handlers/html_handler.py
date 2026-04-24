@@ -27,40 +27,45 @@ def handle_html(resource: Resource):
 
 
 def _truncate_tree(document, limit: int) -> None:
-    """Remove nodes beyond the limit and append a truncation notice.
+    """Remove nodes beyond the limit and append a truncation notice."""
 
-    Walks depth-first with an explicit stack. As soon as the node count
-    reaches the limit, the children list of the current parent is
-    truncated and a notice is appended.
-    """
-    count = [0]
-    found = [False]
-
-    def _walk_and_prune(node) -> None:
-        if found[0]:
-            return
-        count[0] += 1
-        if count[0] >= limit:
-            found[0] = True
-            return
+    def trim(node, remaining: int) -> tuple[int, bool]:
         children = getattr(node, "children", None)
         if not children:
-            return
-        i = 0
-        while i < len(children) and not found[0]:
-            _walk_and_prune(children[i])
-            if found[0]:
-                # Truncate: keep children[0..i] (the child that triggered
-                # the limit is kept but its own children were pruned by
-                # the recursive call), drop the rest.
-                del children[i + 1 :]
-                children.append(
-                    Text(
-                        id=NodeId("truncated"),
-                        data=f"[content truncated: document had more than {limit} nodes]",
-                    )
-                )
-                return
-            i += 1
+            return remaining, False
 
-    _walk_and_prune(document)
+        kept = []
+        truncated = False
+        for child in children:
+            if remaining <= 0:
+                truncated = True
+                break
+            kept.append(child)
+            remaining -= 1
+            remaining, child_truncated = trim(child, remaining)
+            if child_truncated:
+                truncated = True
+                break
+
+        node.children = kept
+        if truncated:
+            node.children.append(
+                Text(
+                    id=NodeId("truncated"),
+                    data=f"[content truncated: document had more than {limit} nodes]",
+                    parent=node,
+                )
+            )
+        return remaining, truncated
+
+    if limit <= 1:
+        document.children = [
+            Text(
+                id=NodeId("truncated"),
+                data=f"[content truncated: document had more than {limit} nodes]",
+                parent=document,
+            )
+        ]
+        return
+
+    trim(document, limit - 1)

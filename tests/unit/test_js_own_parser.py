@@ -5,12 +5,14 @@ from neuzelaar.engines.js_own.ast import (
     BinaryExpr,
     BlockStatement,
     CallExpr,
+    ClassDeclaration,
     FunctionDeclaration,
     FunctionExpr,
     Identifier,
     IndexExpr,
     IfStatement,
     MemberExpr,
+    NewExpr,
     NumberLiteral,
     ObjectLiteral,
     ReturnStatement,
@@ -107,3 +109,16 @@ def test_parse_arrow_function_expressions() -> None:
     assert expr1.params == ("x",)
     assert isinstance(expr2, ArrowFunctionExpr)
     assert expr2.params == ("x", "y")
+
+
+def test_parse_class_declaration_and_new_expression() -> None:
+    program = parse_program(
+        "class Point { constructor(x) { this.x = x; } getX() { return this.x; } }"
+    )
+    expr = parse_expression("new Point(1)")
+
+    assert isinstance(program.statements[0], ClassDeclaration)
+    assert program.statements[0].name == "Point"
+    assert tuple(method.name for method in program.statements[0].methods) == ("constructor", "getX")
+    assert isinstance(expr, NewExpr)
+    assert isinstance(expr.callee, Identifier)

@@ -93,6 +93,29 @@ Status:
 
 - implemented
 
+### Class Core
+
+Scope:
+
+- class declarations
+- method declarations
+- `constructor`
+- `new`
+- prototype-based method lookup for plain JS objects
+
+Out of scope:
+
+- inheritance
+- `extends`
+- `super`
+- class expressions
+- fields
+- static methods
+
+Status:
+
+- implemented
+
 ### JS4
 
 Scope:

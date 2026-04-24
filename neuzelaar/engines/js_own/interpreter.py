@@ -13,6 +13,8 @@ from neuzelaar.engines.js_own.ast import (
     BlockStatement,
     BooleanLiteral,
     CallExpr,
+    ClassDeclaration,
+    ClassMethod,
     Expr,
     ExpressionStatement,
     FunctionDeclaration,
@@ -21,6 +23,7 @@ from neuzelaar.engines.js_own.ast import (
     IndexExpr,
     IfStatement,
     MemberExpr,
+    NewExpr,
     NullLiteral,
     NumberLiteral,
     ObjectLiteral,
@@ -121,6 +124,39 @@ class JavaScriptArrowFunction:
         return evaluate_expr(self.body, call_env)
 
 
+class JavaScriptClass:
+    def __init__(
+        self,
+        *,
+        name: str,
+        methods: tuple[ClassMethod, ...],
+        closure: Environment,
+    ) -> None:
+        self.name = name
+        self.prototype: dict[str, object] = {}
+        self.constructor: JavaScriptFunction | None = None
+        for method in methods:
+            function = JavaScriptFunction(
+                name=method.name,
+                params=method.params,
+                body=method.body,
+                closure=closure,
+            )
+            if method.name == "constructor":
+                self.constructor = function
+            else:
+                self.prototype[method.name] = function
+
+    def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
+        instance: dict[str, object] = {"__proto__": self.prototype}
+        if self.constructor is None:
+            return instance
+        result = self.constructor.call(arguments, this_value=instance)
+        if isinstance(result, (dict, list)):
+            return result
+        return instance
+
+
 def create_global_environment() -> Environment:
     env = Environment()
     env.declare("this", None, kind="const")
@@ -169,6 +205,14 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
         )
         environment.declare(statement.name, function, kind="var")
         return function
+    if isinstance(statement, ClassDeclaration):
+        js_class = JavaScriptClass(
+            name=statement.name,
+            methods=statement.methods,
+            closure=environment,
+        )
+        environment.declare(statement.name, js_class, kind="let")
+        return js_class
     if isinstance(statement, BlockStatement):
         block_env = environment.child_block()
         value: object = None
@@ -271,6 +315,12 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             raise TypeError("Value is not callable")
         arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
         return callee.call(arguments, this_value=this_value)
+    if isinstance(expr, NewExpr):
+        callee = evaluate_expr(expr.callee, environment)
+        if not isinstance(callee, JavaScriptClass):
+            raise TypeError("Value is not a constructor")
+        arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
+        return callee.call(arguments)
     if isinstance(expr, AssignmentExpr):
         value = evaluate_expr(expr.value, environment)
         if isinstance(expr.target, Identifier):
