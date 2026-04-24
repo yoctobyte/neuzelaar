@@ -74,6 +74,13 @@ class NewExpr(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class ClassField:
+    name: str
+    initializer: Expr | None
+    is_static: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class ClassMethod:
     name: str
     params: tuple[str, ...]
@@ -86,6 +93,7 @@ class ClassExpr(Expr):
     name: str | None
     superclass: Expr | None
     methods: tuple[ClassMethod, ...]
+    fields: tuple[ClassField, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +167,7 @@ class ClassDeclaration(Stmt):
     name: str
     superclass: Expr | None
     methods: tuple[ClassMethod, ...]
+    fields: tuple[ClassField, ...]
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,6 +14,7 @@ from neuzelaar.engines.js_own.ast import (
     CallExpr,
     ClassDeclaration,
     ClassExpr,
+    ClassField,
     ClassMethod,
     Expr,
     ExpressionStatement,
@@ -226,11 +227,20 @@ class Parser:
             name=class_expr.name,
             superclass=class_expr.superclass,
             methods=class_expr.methods,
+            fields=class_expr.fields,
         )
 
-    def _parse_class_method(self) -> ClassMethod:
+    def _parse_class_member(self) -> ClassMethod | ClassField:
         is_static = self._match("STATIC")
         name_token = self._consume("IDENTIFIER", "Expected class method name")
+        if not self._check("LPAREN"):
+            initializer = self.parse_expression() if self._match("EQUAL") else None
+            self._consume_optional_semicolon()
+            return ClassField(
+                name=str(name_token.value),
+                initializer=initializer,
+                is_static=is_static,
+            )
         self._consume("LPAREN", "Expected '(' after method name")
         params: list[str] = []
         if not self._check("RPAREN"):
@@ -258,11 +268,15 @@ class Parser:
         superclass = self.parse_expression() if self._match("EXTENDS") else None
         self._consume("LBRACE", "Expected '{' after class name")
         methods: list[ClassMethod] = []
+        fields: list[ClassField] = []
         while not self._check("RBRACE") and not self._check("EOF"):
-            methods.append(self._parse_class_method())
-            self._match("SEMICOLON")
+            member = self._parse_class_member()
+            if isinstance(member, ClassMethod):
+                methods.append(member)
+            else:
+                fields.append(member)
         self._consume("RBRACE", "Expected '}' after class body")
-        return ClassExpr(name=name, superclass=superclass, methods=tuple(methods))
+        return ClassExpr(name=name, superclass=superclass, methods=tuple(methods), fields=tuple(fields))
 
     def _parse_function_expression(self, *, require_name: bool) -> FunctionExpr:
         self._consume("FUNCTION", "Expected 'function'")

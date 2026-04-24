@@ -101,6 +101,7 @@ Scope:
 - class expressions
 - `extends`
 - method declarations
+- instance fields
 - static methods
 - `constructor`
 - `new`
@@ -110,7 +111,10 @@ Scope:
 
 Out of scope:
 
-- fields
+- static fields
+- getters/setters
+- computed method or field names
+- private fields or methods
 
 Status:
 

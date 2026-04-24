@@ -49,6 +49,10 @@ CASES = [
     "var Point = class { constructor(x) { this.x = x; } getX() { return this.x; } }; new Point(4).getX();",
     "var Point = class NamedPoint { constructor(x) { this.x = x; } static make(x) { return new NamedPoint(x); } }; Point.make(5).x;",
     "class MathBox { static sum(x, y) { return x + y; } } MathBox.sum(2, 3);",
+    "class Point { x = 1; y = 2; sum() { return this.x + this.y; } } new Point().sum();",
+    "class Point { x = 1; constructor() { this.x = this.x + 4; } } new Point().x;",
+    "class Base { constructor() { this.base = 1; } } class Child extends Base { y = this.base + 1; constructor() { super(); this.z = this.y + this.base; } } new Child().z;",
+    "class Base { constructor() { this.base = 2; } } class Child extends Base { y = this.base + 1; } new Child().y;",
 ]
 
 

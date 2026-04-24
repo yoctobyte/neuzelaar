@@ -15,6 +15,7 @@ from neuzelaar.engines.js_own.ast import (
     CallExpr,
     ClassDeclaration,
     ClassExpr,
+    ClassField,
     ClassMethod,
     Expr,
     ExpressionStatement,
@@ -80,6 +81,7 @@ class JavaScriptFunction:
         closure: Environment,
         super_class: "JavaScriptClass | None" = None,
         super_prototype: dict[str, object] | None = None,
+        owner_class: "JavaScriptClass | None" = None,
     ) -> None:
         self.name = name
         self.params = params
@@ -87,6 +89,7 @@ class JavaScriptFunction:
         self.closure = closure
         self.super_class = super_class
         self.super_prototype = super_prototype
+        self.owner_class = owner_class
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
@@ -95,6 +98,8 @@ class JavaScriptFunction:
             call_env.declare("__super_class__", self.super_class, kind="const")
         if self.super_prototype is not None:
             call_env.declare("__super_prototype__", self.super_prototype, kind="const")
+        if self.owner_class is not None:
+            call_env.declare("__current_class__", self.owner_class, kind="const")
         if self.name is not None:
             call_env.declare(self.name, self, kind="const")
         for index, param in enumerate(self.params):
@@ -145,14 +150,26 @@ class JavaScriptClass:
     ) -> None:
         self.name = name
         self.superclass = superclass
+        self.closure = closure
         self.prototype: dict[str, object] = (
             {"__proto__": superclass.prototype} if superclass is not None else {}
         )
         self.static_properties: dict[str, object] = {}
+        self.fields: tuple[ClassField, ...] = ()
         self.constructor: JavaScriptFunction | None = None
-        self.install_methods(methods, closure=closure)
+        self.install_members(methods=methods, fields=(), closure=closure)
 
-    def install_methods(self, methods: tuple[ClassMethod, ...], *, closure: Environment) -> None:
+    def install_members(
+        self,
+        *,
+        methods: tuple[ClassMethod, ...],
+        fields: tuple[ClassField, ...],
+        closure: Environment,
+    ) -> None:
+        self.fields = tuple(field for field in fields if not field.is_static)
+        for field in fields:
+            if field.is_static:
+                self.static_properties[field.name] = None
         for method in methods:
             function = JavaScriptFunction(
                 name=method.name,
@@ -161,6 +178,7 @@ class JavaScriptClass:
                 closure=closure,
                 super_class=self.superclass,
                 super_prototype=self.superclass.prototype if self.superclass is not None else None,
+                owner_class=self,
             )
             if method.name == "constructor" and not method.is_static:
                 self.constructor = function
@@ -168,6 +186,22 @@ class JavaScriptClass:
                 self.static_properties[method.name] = function
             else:
                 self.prototype[method.name] = function
+
+    def initialize_instance_fields(self, instance: dict[str, object]) -> None:
+        marker = f"__fields_initialized_{id(self)}"
+        if instance.get(marker):
+            return
+        field_env = Environment(parent=self.closure)
+        field_env.declare("this", instance, kind="const")
+        if self.superclass is not None:
+            field_env.declare("__super_class__", self.superclass, kind="const")
+            field_env.declare("__super_prototype__", self.superclass.prototype, kind="const")
+        if self.name:
+            field_env.declare(self.name, self, kind="const")
+        for field in self.fields:
+            value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
+            instance[field.name] = value
+        instance[marker] = True
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         if isinstance(this_value, dict):
@@ -177,9 +211,13 @@ class JavaScriptClass:
             instance = {"__proto__": self.prototype}
         if self.constructor is None:
             if self.superclass is not None:
-                return self.superclass.call(arguments, this_value=instance)
+                self.superclass.call(arguments, this_value=instance)
+            self.initialize_instance_fields(instance)
             return instance
+        if self.superclass is None:
+            self.initialize_instance_fields(instance)
         result = self.constructor.call(arguments, this_value=instance)
+        self.initialize_instance_fields(instance)
         if isinstance(result, (dict, list)):
             return result
         return instance
@@ -209,7 +247,7 @@ def evaluate_class_expr(expr: ClassExpr, environment: Environment) -> JavaScript
     )
     if expr.name is not None:
         class_scope.declare(expr.name, class_object, kind="const")
-    class_object.install_methods(expr.methods, closure=class_scope)
+    class_object.install_members(methods=expr.methods, fields=expr.fields, closure=class_scope)
     return class_object
 
 
@@ -260,6 +298,7 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
                 name=statement.name,
                 superclass=statement.superclass,
                 methods=statement.methods,
+                fields=statement.fields,
             ),
             environment,
         )
@@ -366,6 +405,9 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             this_value = environment.get("this")
             arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
             result = super_class.call(arguments, this_value=this_value)
+            current_class = environment.get("__current_class__")
+            if isinstance(current_class, JavaScriptClass):
+                current_class.initialize_instance_fields(this_value)
             return this_value if result is None or result is this_value else result
         if isinstance(expr.callee, MemberExpr) and isinstance(expr.callee.object, SuperExpr):
             this_value = environment.get("this")

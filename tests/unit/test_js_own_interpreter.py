@@ -355,3 +355,41 @@ def test_static_method_is_not_on_instance() -> None:
             "class MathBox { static sum(x, y) { return x + y; } } "
             "new MathBox().sum(2, 3);"
         )
+
+
+def test_instance_fields_initialize_on_construction() -> None:
+    result = evaluate_program(
+        "class Point { x = 1; y = 2; sum() { return this.x + this.y; } } "
+        "new Point().sum();"
+    )
+
+    assert result == 3.0
+
+
+def test_instance_fields_initialize_before_base_constructor_body() -> None:
+    result = evaluate_program(
+        "class Point { x = 1; constructor() { this.x = this.x + 4; } } "
+        "new Point().x;"
+    )
+
+    assert result == 5.0
+
+
+def test_instance_fields_initialize_after_super_in_derived_constructor() -> None:
+    result = evaluate_program(
+        "class Base { constructor() { this.base = 1; } } "
+        "class Child extends Base { y = this.base + 1; constructor() { super(); this.z = this.y + this.base; } } "
+        "new Child().z;"
+    )
+
+    assert result == 3.0
+
+
+def test_derived_class_without_constructor_initializes_own_fields_after_super() -> None:
+    result = evaluate_program(
+        "class Base { constructor() { this.base = 2; } } "
+        "class Child extends Base { y = this.base + 1; } "
+        "new Child().y;"
+    )
+
+    assert result == 3.0

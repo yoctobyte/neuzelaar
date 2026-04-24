@@ -139,3 +139,10 @@ def test_parse_class_expression_and_static_method() -> None:
     assert isinstance(expr, ClassExpr)
     assert expr.name == "Named"
     assert expr.methods[0].is_static is True
+
+
+def test_parse_class_field() -> None:
+    program = parse_program("class Point { x = 1; y; }")
+
+    assert isinstance(program.statements[0], ClassDeclaration)
+    assert tuple(field.name for field in program.statements[0].fields) == ("x", "y")
