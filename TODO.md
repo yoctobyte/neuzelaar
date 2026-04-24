@@ -2,8 +2,9 @@
 
 Day-to-day execution tracker. `PLAN.md` is the architecture reference;
 `docs/projects.md` is the work-package view; `docs/deferred_details.md`
-captures later details; `*_TASKS.md` files define agent roles; `chat/` is
-async agent messaging.
+captures later details; `docs/layout_plan.md` is the current layout /
+positioning sweep plan (what is in scope, what is explicitly deferred);
+`*_TASKS.md` files define agent roles; `chat/` is async agent messaging.
 
 ## Start Here
 
