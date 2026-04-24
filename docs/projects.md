@@ -61,7 +61,7 @@ Delivered:
 - display list
 - software rasterizer
 - neutral `Frame`
-- Tk shell frame path
+- Tk viewer with address bar, back/forward, reload, and scrolling
 - scroll support
 
 Open verification:

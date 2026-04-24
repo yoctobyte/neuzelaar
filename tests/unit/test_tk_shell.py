@@ -40,3 +40,29 @@ def test_tk_shell_uses_linked_styles_in_frame_path() -> None:
     assert result.root_style.color == "blue"
     assert result.root_style.background_color == "#dddddd"
     assert frame.width == 640
+
+
+def test_tk_shell_supports_back_forward_and_reload_without_window() -> None:
+    shell = TkShell(width=640, height=480)
+
+    first, _ = shell.render_url_to_frame(Path("tests/fixtures/sites/basic_links.html").resolve().as_uri())
+    second, _ = shell.render_url_to_frame(Path("tests/fixtures/sites/example.html").resolve().as_uri())
+    back, _ = shell.back_to_frame()
+    forward, _ = shell.forward_to_frame()
+    reloaded, _ = shell.reload_to_frame()
+
+    assert "Links Test" in first.rendered_text
+    assert "Example Domain" in second.rendered_text
+    assert "Links Test" in back.rendered_text
+    assert "Example Domain" in forward.rendered_text
+    assert reloaded.resource.final_url == forward.resource.final_url
+
+
+def test_tk_shell_page_summary_reports_navigation_and_requests() -> None:
+    shell = TkShell(width=640, height=480)
+
+    result, _frame = shell.render_url_to_frame(Path("tests/fixtures/sites/basic_links.html").resolve().as_uri())
+    summary = shell.page_summary(result)
+
+    assert "html" in summary
+    assert "3 link(s)" in summary

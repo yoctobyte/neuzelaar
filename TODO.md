@@ -45,7 +45,7 @@ Expected:
 | Guardrails | Done | pytest invokes `tools/check_guardrails.sh`. |
 | M1 docs verification | Done | See `workdone-gemini-flash.md`. |
 | M2 minimal document browser | Done | Session/history/link listing/console commands/cookies/events implemented. |
-| M3 rendering foundation | In progress | Display list, software rasterizer, and Tk shell frame path implemented; GUI smoke pending. |
+| M3 rendering foundation | In progress | Display list, software rasterizer, and a basic Tk viewer with address bar/back-forward-reload are implemented; GUI smoke pending. |
 | M4a forms | Done | Form extraction, GET/POST submission, and fixture-server flow implemented. |
 | MVP code path | Done | Headless/console/Tk frame path, forms, cookies, policy, basic CSS, and tests implemented. |
 | P8 browser state hardening | Done | Persistent cookies, multi-tab model, and per-tab history isolation implemented. |
