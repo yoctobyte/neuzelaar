@@ -22,7 +22,17 @@ def build_display_list(
         if isinstance(item, LayoutBox):
             ops.append(FillRect(Rect(item.x, item.y, item.width, item.height), _parse_color(item.color)))
         elif isinstance(item, LayoutText):
-            ops.append(DrawText(item.x, item.y, item.text, _parse_color(item.color), item.font_size))
+            ops.append(
+                DrawText(
+                    item.x,
+                    item.y,
+                    item.text,
+                    _parse_color(item.color),
+                    item.font_size,
+                    max_width=item.max_width,
+                    align=item.text_align,
+                )
+            )
         elif isinstance(item, LayoutImage):
             if item.bitmap is not None:
                 ops.append(

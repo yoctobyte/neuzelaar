@@ -22,6 +22,7 @@ class ComputedStyle:
     display: str = "block"
     margin: str = "0"
     padding: str = "0"
+    text_align: str = "left"
 
 
 SUPPORTED_PROPERTIES = {
@@ -32,6 +33,7 @@ SUPPORTED_PROPERTIES = {
     "font-weight",
     "margin",
     "padding",
+    "text-align",
 }
 
 # Properties that inherit from parent by default in CSS. Non-listed
@@ -40,6 +42,7 @@ INHERITED_PROPERTIES = {
     "color",
     "font-size",
     "font-weight",
+    "text-align",
 }
 
 DEFAULT_COLOR = "#141414"
@@ -160,7 +163,17 @@ def _style_from_declarations(
         display=declarations.get("display", DEFAULT_DISPLAY),
         margin=declarations.get("margin", "0"),
         padding=declarations.get("padding", "0"),
+        text_align=_normalize_text_align(declarations.get("text-align"), parent_style.text_align),
     )
+
+
+def _normalize_text_align(value: str | None, parent_value: str) -> str:
+    if value is None:
+        return parent_value
+    normalized = value.strip().lower()
+    if normalized in {"left", "right", "center", "justify"}:
+        return normalized
+    return parent_value
 
 
 def _split_selector_group(selector: str) -> list[str]:

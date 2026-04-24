@@ -26,6 +26,26 @@ def test_layout_uses_margin_padding_and_font_size() -> None:
     assert text_item.y > 50
 
 
+def test_layout_propagates_text_align_and_max_width_to_text_items() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, body)
+    append_child(body, paragraph)
+    append_child(paragraph, Text(id=NodeId("t"), data="hello"))
+
+    styles = {
+        NodeId("body"): ComputedStyle(text_align="center"),
+        NodeId("p"): ComputedStyle(text_align="center"),
+    }
+
+    layout = layout_document(document, width=400, styles=styles, root_style=ComputedStyle(text_align="center"))
+
+    text_item = next(item for item in layout.items if isinstance(item, LayoutText) and item.text == "hello")
+    assert text_item.text_align == "center"
+    assert text_item.max_width > 0
+
+
 def test_layout_uses_image_width_and_height_attributes() -> None:
     document = Document(id=NodeId("doc"))
     body = Element(id=NodeId("body"), tag="body")

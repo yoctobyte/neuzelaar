@@ -35,6 +35,8 @@ class DrawText:
     text: str
     color: Color
     font_size: int
+    max_width: int = 0
+    align: str = "left"
 
 
 @dataclass(frozen=True, slots=True)

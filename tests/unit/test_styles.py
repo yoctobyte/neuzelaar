@@ -174,6 +174,29 @@ def test_ua_stylesheet_sizes_headings_without_author_rules() -> None:
     assert styles[NodeId("h3")].font_size == "19px"
 
 
+def test_compute_styles_inherits_text_align() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, body)
+    append_child(body, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("body { text-align: center }"))
+
+    assert styles[NodeId("body")].text_align == "center"
+    assert styles[NodeId("p")].text_align == "center"
+
+
+def test_compute_styles_ignores_invalid_text_align_values() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("p { text-align: nonsense }"))
+
+    assert styles[NodeId("p")].text_align == "left"
+
+
 def test_compute_styles_handles_grouped_selectors() -> None:
     document = Document(id=NodeId("doc"))
     h1 = Element(id=NodeId("h1"), tag="h1")

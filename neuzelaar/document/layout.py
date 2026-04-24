@@ -16,6 +16,8 @@ class LayoutText:
     text: str
     color: str
     font_size: int
+    max_width: int = 0
+    text_align: str = "left"
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,15 +60,26 @@ def layout_document(
     cursor_y = 16
     items: list[LayoutItem] = []
     base_style = root_style or ComputedStyle()
+    content_width = max(width - 32, 120)
     if document.title:
-        items.append(LayoutText(16, cursor_y, document.title, base_style.color, max(_font_size_px(base_style), 24)))
+        items.append(
+            LayoutText(
+                16,
+                cursor_y,
+                document.title,
+                base_style.color,
+                max(_font_size_px(base_style), 24),
+                max_width=content_width,
+                text_align=base_style.text_align,
+            )
+        )
         cursor_y += 28
     cursor_y = _layout_node(
         document,
         items,
         x=16,
         y=cursor_y,
-        content_width=max(width - 32, 120),
+        content_width=content_width,
         styles=styles or {},
         images=images or {},
         inherited_style=base_style,
@@ -88,7 +101,17 @@ def _layout_node(
     if isinstance(node, Text):
         text = " ".join(node.data.split())
         if text:
-            items.append(LayoutText(x, y, text, inherited_style.color, _font_size_px(inherited_style)))
+            items.append(
+                LayoutText(
+                    x,
+                    y,
+                    text,
+                    inherited_style.color,
+                    _font_size_px(inherited_style),
+                    max_width=content_width,
+                    text_align=inherited_style.text_align,
+                )
+            )
             return y + _line_height(inherited_style)
         return y
 
@@ -106,7 +129,17 @@ def _layout_node(
         if tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
             text = _collect_text(node)
             if text:
-                items.append(LayoutText(x, y, text, style.color, _font_size_px(style)))
+                items.append(
+                    LayoutText(
+                        x,
+                        y,
+                        text,
+                        style.color,
+                        _font_size_px(style),
+                        max_width=content_width,
+                        text_align=style.text_align,
+                    )
+                )
                 return y + _line_height(style) + margin
             return y
         if tag == "img":
@@ -130,7 +163,17 @@ def _layout_node(
         if tag == "li":
             text = _collect_text(node)
             if text:
-                items.append(LayoutText(x, y, f"- {text}", style.color, _font_size_px(style)))
+                items.append(
+                    LayoutText(
+                        x,
+                        y,
+                        f"- {text}",
+                        style.color,
+                        _font_size_px(style),
+                        max_width=content_width,
+                        text_align=style.text_align,
+                    )
+                )
                 return y + _line_height(style) + margin
             return y
         y += padding

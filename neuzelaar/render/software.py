@@ -18,7 +18,9 @@ def rasterize(display_list: DisplayList) -> Frame:
         if isinstance(op, FillRect):
             draw.rectangle(_rect_tuple(op.rect), fill=_color_tuple(op.color))
         elif isinstance(op, DrawText):
-            draw.text((op.x, op.y), op.text, fill=_color_tuple(op.color), font=_load_font(op.font_size))
+            font = _load_font(op.font_size)
+            x = _aligned_text_x(op, font)
+            draw.text((x, op.y), op.text, fill=_color_tuple(op.color), font=font)
         elif isinstance(op, DrawImage):
             bitmap = Image.frombytes("RGBA", (op.bitmap.width, op.bitmap.height), op.bitmap.pixels)
             image.alpha_composite(bitmap, (op.x, op.y))
@@ -42,6 +44,17 @@ def _rect_tuple(rect) -> tuple[int, int, int, int]:
 
 def _color_tuple(color: Color) -> tuple[int, int, int, int]:
     return (color.r, color.g, color.b, color.a)
+
+
+def _aligned_text_x(op: DrawText, font) -> int:
+    if op.align == "left" or op.max_width <= 0:
+        return op.x
+    text_width = int(font.getlength(op.text))
+    if op.align == "center":
+        return op.x + max((op.max_width - text_width) // 2, 0)
+    if op.align == "right":
+        return op.x + max(op.max_width - text_width, 0)
+    return op.x
 
 
 @lru_cache(maxsize=16)
