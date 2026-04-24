@@ -73,15 +73,15 @@ def test_session_submits_get_form_with_overrides() -> None:
     assert "Form Result" in result.rendered_text
 
 
-def test_session_defaults_to_strict_profile_and_can_switch() -> None:
+def test_session_defaults_to_balanced_profile_and_can_switch() -> None:
     session = BrowserSession()
 
+    assert session.policy_profile is PolicyProfile.BALANCED
+
+    session.set_policy_profile(PolicyProfile.STRICT)
+
     assert session.policy_profile is PolicyProfile.STRICT
-
-    session.set_policy_profile(PolicyProfile.COMPATIBILITY)
-
-    assert session.policy_profile is PolicyProfile.COMPATIBILITY
-    assert session.loader.policy_engine.profile is PolicyProfile.COMPATIBILITY
+    assert session.loader.policy_engine.profile is PolicyProfile.STRICT
 
 
 def test_session_grant_script_permission_updates_shared_permission_state() -> None:

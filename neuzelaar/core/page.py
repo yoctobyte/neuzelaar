@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 from neuzelaar.core.bus import Bus
-from neuzelaar.core.fetch.client import FetchClient
+from neuzelaar.core.fetch.client import FetchClient, FetchError
 from neuzelaar.core.fetch.cookies import SessionCookieJar
 from neuzelaar.core.fetch.gateway import GateDecision, SubresourceGateway
 from neuzelaar.core.fetch.resource import FetchReason, Request, Resource
@@ -249,7 +249,11 @@ class PageLoader:
             gate = gates[planned]
             if not gate.allowed:
                 continue
-            stylesheet_resource = self.fetch_client.fetch(gate.request)
+            try:
+                stylesheet_resource = self.fetch_client.fetch(gate.request)
+            except FetchError as exc:
+                self._publish(ResourceBlocked(gate.normalized_url, f"stylesheet fetch failed: {exc}"))
+                continue
             if used_bytes + len(stylesheet_resource.body) > self.passive_budget.max_bytes:
                 self._publish(ResourceBlocked(stylesheet_resource.final_url, "passive resource byte budget exceeded"))
                 continue
@@ -298,7 +302,11 @@ class PageLoader:
             gate = gates[planned]
             if not gate.allowed:
                 continue
-            image_resource = self.fetch_client.fetch(gate.request)
+            try:
+                image_resource = self.fetch_client.fetch(gate.request)
+            except FetchError as exc:
+                self._publish(ResourceBlocked(gate.normalized_url, f"image fetch failed: {exc}"))
+                continue
             if used_bytes + len(image_resource.body) > self.passive_budget.max_bytes:
                 self._publish(ResourceBlocked(image_resource.final_url, "passive resource byte budget exceeded"))
                 continue

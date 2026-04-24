@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from neuzelaar.core.page import PageLoader, PassiveResourceBudget
-from neuzelaar.core.policy.rules import PolicyAction
+from neuzelaar.core.policy.profile import PolicyProfile
+from neuzelaar.core.policy.rules import PolicyAction, PolicyEngine
 
 
 def test_page_loader_returns_structured_document_result() -> None:
@@ -83,7 +84,8 @@ def test_page_loader_plans_same_origin_external_scripts_through_js_engine() -> N
 
 
 def test_page_loader_blocks_third_party_images_in_strict_mode() -> None:
-    result = PageLoader().load(Path("tests/fixtures/sites/basic_images.html").resolve().as_uri())
+    loader = PageLoader(policy_engine=PolicyEngine(PolicyProfile.STRICT))
+    result = loader.load(Path("tests/fixtures/sites/basic_images.html").resolve().as_uri())
 
     external = [
         planned

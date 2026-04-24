@@ -35,7 +35,7 @@ class PolicyDecision:
 
 
 class PolicyEngine:
-    def __init__(self, profile: PolicyProfile = PolicyProfile.STRICT) -> None:
+    def __init__(self, profile: PolicyProfile = PolicyProfile.BALANCED) -> None:
         self.profile = profile
 
     def evaluate_fetch(self, request: Request) -> PolicyDecision:
