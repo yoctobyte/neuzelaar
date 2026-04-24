@@ -201,18 +201,7 @@ def _effective_style(
     styles: dict[NodeId, ComputedStyle],
     inherited_style: ComputedStyle,
 ) -> ComputedStyle:
-    style = styles.get(node.id)
-    if style is None:
-        return inherited_style
-    return ComputedStyle(
-        color=style.color or inherited_style.color,
-        background_color=style.background_color,
-        font_weight=style.font_weight or inherited_style.font_weight,
-        font_size=style.font_size or inherited_style.font_size,
-        display=style.display or inherited_style.display,
-        margin=style.margin or inherited_style.margin,
-        padding=style.padding or inherited_style.padding,
-    )
+    return styles.get(node.id, inherited_style)
 
 
 def _line_height(style: ComputedStyle) -> int:

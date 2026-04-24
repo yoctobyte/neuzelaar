@@ -34,6 +34,14 @@ SUPPORTED_PROPERTIES = {
     "padding",
 }
 
+# Properties that inherit from parent by default in CSS. Non-listed
+# supported properties fall back to the initial value instead.
+INHERITED_PROPERTIES = {
+    "color",
+    "font-size",
+    "font-weight",
+}
+
 DEFAULT_COLOR = "#141414"
 DEFAULT_BACKGROUND_COLOR = "#ffffff"
 DEFAULT_FONT_WEIGHT = "normal"
@@ -46,14 +54,9 @@ def compute_styles(document: Document, rules: tuple[StyleRule, ...] = ()) -> dic
     for node in walk(document):
         if not isinstance(node, Element):
             continue
-        declarations: dict[str, str] = {}
-        for rule in rules:
-            if _matches_selector(node, rule.selector):
-                declarations.update(_supported(rule.declarations))
-        inline_style = node.attr("style")
-        if inline_style:
-            declarations.update(parse_declarations(inline_style))
-        styles[node.id] = _style_from_declarations(declarations)
+        parent_style = _parent_style(node, styles)
+        declarations = _cascade_declarations(node, rules)
+        styles[node.id] = _style_from_declarations(declarations, parent_style)
     return styles
 
 
@@ -90,24 +93,79 @@ def _supported(declarations: dict[str, str]) -> dict[str, str]:
     return {name: value for name, value in declarations.items() if name in SUPPORTED_PROPERTIES}
 
 
-def _style_from_declarations(declarations: dict[str, str]) -> ComputedStyle:
+def _cascade_declarations(node: Element, rules: tuple[StyleRule, ...]) -> dict[str, str]:
+    matches: list[tuple[tuple[int, int, int], int, dict[str, str]]] = []
+    order = 0
+    for rule in rules:
+        for selector in _split_selector_group(rule.selector):
+            if _matches_selector(node, selector):
+                matches.append((_selector_specificity(selector), order, _supported(rule.declarations)))
+                order += 1
+    # Sort ascending so later (higher-specificity / later document order)
+    # entries overwrite earlier ones via dict.update.
+    matches.sort(key=lambda item: (item[0], item[1]))
+    declarations: dict[str, str] = {}
+    for _, _, decls in matches:
+        declarations.update(decls)
+    inline_style = node.attr("style")
+    if inline_style:
+        # Inline declarations beat all selector-matched rules.
+        declarations.update(parse_declarations(inline_style))
+    return declarations
+
+
+def _parent_style(node: Element, styles: dict[NodeId, ComputedStyle]) -> ComputedStyle:
+    parent: Node | None = node.parent
+    while parent is not None and not isinstance(parent, Element):
+        parent = parent.parent
+    if parent is None:
+        return ComputedStyle()
+    return styles.get(parent.id, ComputedStyle())
+
+
+def _style_from_declarations(
+    declarations: dict[str, str],
+    parent_style: ComputedStyle,
+) -> ComputedStyle:
     return ComputedStyle(
-        color=declarations.get("color", DEFAULT_COLOR),
+        color=declarations.get("color", parent_style.color),
         background_color=declarations.get("background-color", DEFAULT_BACKGROUND_COLOR),
-        font_weight=declarations.get("font-weight", DEFAULT_FONT_WEIGHT),
-        font_size=declarations.get("font-size", DEFAULT_FONT_SIZE),
+        font_weight=declarations.get("font-weight", parent_style.font_weight),
+        font_size=declarations.get("font-size", parent_style.font_size),
         display=declarations.get("display", DEFAULT_DISPLAY),
         margin=declarations.get("margin", "0"),
         padding=declarations.get("padding", "0"),
     )
 
 
+def _split_selector_group(selector: str) -> list[str]:
+    return [part.strip() for part in selector.split(",") if part.strip()]
+
+
+def _selector_specificity(selector: str) -> tuple[int, int, int]:
+    ids = classes = tags = 0
+    for part in selector.split():
+        if not part:
+            continue
+        if part.startswith("#"):
+            ids += 1
+        elif part.startswith("."):
+            classes += 1
+        else:
+            tags += 1
+    return (ids, classes, tags)
+
+
 def _matches_selector(node: Element, selector: str) -> bool:
     parts = [part for part in selector.strip().split() if part]
     if not parts:
         return False
-    current: Element | None = node
-    for part in reversed(parts):
+    # The rightmost simple selector must match the node itself.
+    if not _matches_simple_selector(node, parts[-1]):
+        return False
+    parent = node.parent
+    current: Element | None = parent if isinstance(parent, Element) else None
+    for part in reversed(parts[:-1]):
         while current is not None and not _matches_simple_selector(current, part):
             parent = current.parent
             current = parent if isinstance(parent, Element) else None

@@ -64,3 +64,70 @@ def test_compute_styles_keeps_spacing_properties() -> None:
     assert styles[NodeId("p")].margin == "12px"
     assert styles[NodeId("p")].padding == "8px"
     assert styles[NodeId("p")].font_size == "20px"
+
+
+def test_compute_styles_inherits_color_from_parent() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, body)
+    append_child(body, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("body { color: blue; font-size: 20px }"))
+
+    assert styles[NodeId("p")].color == "blue"
+    assert styles[NodeId("p")].font_size == "20px"
+
+
+def test_compute_styles_does_not_inherit_background_color() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, body)
+    append_child(body, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("body { background-color: #eeeeee }"))
+
+    assert styles[NodeId("body")].background_color == "#eeeeee"
+    assert styles[NodeId("p")].background_color == "#ffffff"
+
+
+def test_compute_styles_respects_specificity() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"id": "lead", "class": "note"})
+    append_child(document, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet("p { color: red } .note { color: green } #lead { color: blue }"),
+    )
+
+    assert styles[NodeId("p")].color == "blue"
+
+
+def test_compute_styles_specificity_ties_break_by_order() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"class": "note"})
+    append_child(document, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet(".note { color: green } .note { color: orange }"),
+    )
+
+    assert styles[NodeId("p")].color == "orange"
+
+
+def test_compute_styles_handles_grouped_selectors() -> None:
+    document = Document(id=NodeId("doc"))
+    h1 = Element(id=NodeId("h1"), tag="h1")
+    h2 = Element(id=NodeId("h2"), tag="h2")
+    p = Element(id=NodeId("p"), tag="p")
+    for child in (h1, h2, p):
+        append_child(document, child)
+
+    styles = compute_styles(document, parse_stylesheet("h1, h2 { color: green }"))
+
+    assert styles[NodeId("h1")].color == "green"
+    assert styles[NodeId("h2")].color == "green"
+    assert styles[NodeId("p")].color != "green"
