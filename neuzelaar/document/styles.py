@@ -49,13 +49,38 @@ DEFAULT_FONT_SIZE = "16px"
 DEFAULT_DISPLAY = "block"
 
 
+# Minimal user-agent stylesheet. Prepended before author rules so that
+# author rules with equal specificity win via the stable document-order
+# tiebreak.
+UA_STYLESHEET: tuple[StyleRule, ...] = (
+    StyleRule("h1", {"font-size": "2em", "font-weight": "bold"}),
+    StyleRule("h2", {"font-size": "1.5em", "font-weight": "bold"}),
+    StyleRule("h3", {"font-size": "1.17em", "font-weight": "bold"}),
+    StyleRule("h4", {"font-size": "1em", "font-weight": "bold"}),
+    StyleRule("h5", {"font-size": "0.83em", "font-weight": "bold"}),
+    StyleRule("h6", {"font-size": "0.67em", "font-weight": "bold"}),
+    StyleRule("b, strong", {"font-weight": "bold"}),
+)
+
+
 def compute_styles(document: Document, rules: tuple[StyleRule, ...] = ()) -> dict[NodeId, ComputedStyle]:
     styles: dict[NodeId, ComputedStyle] = {}
+    root_px: int | None = None
+    all_rules = UA_STYLESHEET + tuple(rules)
     for node in walk(document):
         if not isinstance(node, Element):
             continue
         parent_style = _parent_style(node, styles)
-        declarations = _cascade_declarations(node, rules)
+        declarations = _cascade_declarations(node, all_rules)
+        parent_px = _font_size_to_px(parent_style.font_size, fallback=16)
+        resolved_px = _resolve_font_size(
+            declarations.get("font-size"),
+            parent_px=parent_px,
+            root_px=root_px if root_px is not None else parent_px,
+        )
+        declarations["font-size"] = f"{resolved_px}px"
+        if root_px is None:
+            root_px = resolved_px
         styles[node.id] = _style_from_declarations(declarations, parent_style)
     return styles
 
@@ -174,6 +199,60 @@ def _matches_selector(node: Element, selector: str) -> bool:
         parent = current.parent
         current = parent if isinstance(parent, Element) else None
     return True
+
+
+_FONT_SIZE_KEYWORDS: dict[str, int] = {
+    "xx-small": 9,
+    "x-small": 10,
+    "small": 13,
+    "medium": 16,
+    "large": 18,
+    "x-large": 24,
+    "xx-large": 32,
+}
+
+
+def _resolve_font_size(raw: str | None, *, parent_px: int, root_px: int) -> int:
+    if raw is None:
+        return parent_px
+    value = raw.strip().lower()
+    if not value:
+        return parent_px
+    if value in _FONT_SIZE_KEYWORDS:
+        return _FONT_SIZE_KEYWORDS[value]
+    if value == "smaller":
+        return max(int(round(parent_px * 5 / 6)), 1)
+    if value == "larger":
+        return max(int(round(parent_px * 6 / 5)), 1)
+    for suffix, scale in (
+        ("rem", root_px),
+        ("em", parent_px),
+        ("px", 1),
+        ("pt", 4 / 3),
+        ("%", parent_px / 100),
+    ):
+        if value.endswith(suffix):
+            try:
+                number = float(value[: -len(suffix)])
+            except ValueError:
+                return parent_px
+            return max(int(round(number * scale)), 1)
+    try:
+        # Unitless values are not CSS-conformant for font-size, but some
+        # stylesheets rely on them being treated as pixels.
+        return max(int(round(float(value))), 1)
+    except ValueError:
+        return parent_px
+
+
+def _font_size_to_px(value: str, *, fallback: int) -> int:
+    text = value.strip().lower()
+    if text.endswith("px"):
+        try:
+            return max(int(round(float(text[:-2]))), 1)
+        except ValueError:
+            return fallback
+    return fallback
 
 
 def _matches_simple_selector(node: Element, selector: str) -> bool:

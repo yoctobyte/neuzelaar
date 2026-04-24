@@ -103,11 +103,11 @@ def _layout_node(
         padding = _size_px(style.padding)
         if tag in {"body", "div", "section", "article", "p", "ul", "ol", "li"}:
             y += margin
-        if tag in {"h1", "h2", "h3"}:
+        if tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
             text = _collect_text(node)
             if text:
-                items.append(LayoutText(x, y, text, style.color, max(_font_size_px(style), 26)))
-                return y + max(_line_height(style), 30) + margin
+                items.append(LayoutText(x, y, text, style.color, _font_size_px(style)))
+                return y + _line_height(style) + margin
             return y
         if tag == "img":
             label = node.attr("alt") or node.attr("src") or "image"
@@ -205,16 +205,17 @@ def _effective_style(
 
 
 def _line_height(style: ComputedStyle) -> int:
-    return max(_font_size_px(style) + 8, 24)
+    return max(int(round(_font_size_px(style) * 1.3)), 10)
 
 
 def _font_size_px(style: ComputedStyle) -> int:
-    try:
-        if style.font_size.endswith("px"):
-            return max(int(float(style.font_size[:-2])), 18)
-    except ValueError:
-        pass
-    return 18
+    value = style.font_size.strip()
+    if value.endswith("px"):
+        try:
+            return max(int(round(float(value[:-2]))), 1)
+        except ValueError:
+            pass
+    return 16
 
 
 def _size_px(value: str) -> int:

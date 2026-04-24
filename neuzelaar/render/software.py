@@ -47,6 +47,6 @@ def _color_tuple(color: Color) -> tuple[int, int, int, int]:
 @lru_cache(maxsize=16)
 def _load_font(size: int):
     try:
-        return ImageFont.truetype("DejaVuSans.ttf", size=max(size, 12))
+        return ImageFont.truetype("DejaVuSans.ttf", size=max(size, 1))
     except OSError:
         return ImageFont.load_default()
