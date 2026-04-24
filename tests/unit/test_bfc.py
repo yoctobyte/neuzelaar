@@ -122,7 +122,7 @@ def test_bfc_anonymous_block_wraps_inline_siblings_when_mixed() -> None:
 
     text_placements = [p for p in placements if isinstance(p, TextPlacement)]
     loose = next(p for p in text_placements if p.text == "loose")
-    inside = next(p for p in text_placements if p.text == "in paragraph")
+    inside = next(p for p in text_placements if p.text == "paragraph")
     # Anonymous-block-wrapped "loose" text should come before the
     # paragraph's inner text.
     assert loose.y < inside.y

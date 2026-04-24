@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Inline Flow Demo</title>
+  <style>
+    body { font-size: 18px; color: #222; }
+    h1 { color: #003366; }
+    strong { color: #880000; }
+    em { color: #006600; }
+    a { color: #0044cc; }
+    p { margin: 12px 0; }
+  </style>
+</head>
+<body>
+  <h1>Inline formatting context</h1>
+  <p>
+    A paragraph mixes <strong>bold</strong> and <em>italic</em> fragments
+    and still flows as one line when the viewport is wide enough. When
+    the window narrows, words wrap at the content-box edge instead of
+    each inline element starting a new line.
+  </p>
+  <p>
+    Links like <a href="#">this link</a> and inline <code>snippets of
+    code</code> flow the same way: every word becomes a fragment on the
+    current line box, with per-inline color and weight preserved.
+  </p>
+  <p>
+    Try resizing the window &mdash; the same paragraph re-flows at the
+    new width without reloading.
+  </p>
+</body>
+</html>

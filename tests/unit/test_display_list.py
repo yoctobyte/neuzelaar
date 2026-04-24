@@ -15,7 +15,10 @@ def test_build_display_list_contains_background_and_text() -> None:
     display_list = build_display_list(document_from_fixture("example.html"))
 
     assert isinstance(display_list.ops[0], FillRect)
-    assert any(isinstance(op, DrawText) and op.text == "Example Domain" for op in display_list.ops)
+    # Real IFC splits text into word fragments, so the h1 "Example
+    # Domain" emits separate Example / Domain DrawText ops on one line.
+    assert any(isinstance(op, DrawText) and op.text == "Example" for op in display_list.ops)
+    assert any(isinstance(op, DrawText) and op.text == "Domain" for op in display_list.ops)
     assert display_list.width == 800
     assert display_list.height > 0
 

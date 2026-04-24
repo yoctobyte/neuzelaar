@@ -67,6 +67,14 @@ UA_STYLESHEET: tuple[StyleRule, ...] = (
     StyleRule("h5", {"font-size": "0.83em", "font-weight": "bold"}),
     StyleRule("h6", {"font-size": "0.67em", "font-weight": "bold"}),
     StyleRule("b, strong", {"font-weight": "bold"}),
+    # Inline flow defaults: these elements participate in the parent's
+    # inline formatting context rather than starting a new block line.
+    StyleRule(
+        "a, span, strong, em, b, i, u, code, small, mark, cite, abbr, q,"
+        " sub, sup, tt, kbd, samp, var, time, dfn, s, del, ins",
+        {"display": "inline"},
+    ),
+    StyleRule("i, em, cite, dfn, var", {"font-weight": "normal"}),
 )
 
 
