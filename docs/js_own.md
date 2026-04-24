@@ -111,8 +111,17 @@ Status:
 
 ### JS5
 
-- host bridge
-- browser integration experiments on fixtures only
+Scope:
+
+- explicit host-callable wrapper
+- explicit host-object wrapper
+- host property/index bridge helpers
+- builtin installation via the host bridge
+
+Status:
+
+- in progress
+- initial host bridge implemented
 
 ## Current Reference
 
