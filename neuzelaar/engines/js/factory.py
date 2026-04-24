@@ -31,6 +31,11 @@ _ENGINE_SPECS = {
         import_target="quickjs",
         description="QuickJS backend via the Python quickjs package.",
     ),
+    "own": JavaScriptEngineSpec(
+        name="own",
+        import_target=None,
+        description="In-repo standalone interpreter wrapped behind JavaScriptEngine.",
+    ),
     "js2py": JavaScriptEngineSpec(
         name="js2py",
         import_target="js2py",
@@ -51,6 +56,12 @@ def create_javascript_engine(name: str) -> JavaScriptEngine:
         try:
             engine_module = import_module("neuzelaar.engines.js.quickjs_engine")
             return engine_module.QuickJsJavaScriptEngine()
+        except Exception as exc:
+            raise EngineUnavailableError(f"{type(exc).__name__}: {exc}") from exc
+    if normalized == "own":
+        try:
+            engine_module = import_module("neuzelaar.engines.js.own_engine")
+            return engine_module.OwnJavaScriptEngine()
         except Exception as exc:
             raise EngineUnavailableError(f"{type(exc).__name__}: {exc}") from exc
     if normalized == "js2py":

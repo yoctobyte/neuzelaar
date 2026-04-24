@@ -18,6 +18,7 @@ Current backend names:
 
 - `noop`
 - `quickjs`
+- `own`
 - `js2py`
 
 ## Reference Suite
@@ -58,11 +59,13 @@ Results:
 
 - `noop`: `0 passed, 7 failed`
 - `quickjs`: `7 passed, 0 failed`
+- `own`: separate standalone interpreter track, not yet measured through Test262 subset
 - `js2py`: unavailable on Python 3.12 import path, currently fails with `KeyError: 3`
 
 Current read:
 
 - `quickjs` is the strongest reference backend for now
+- `own` is now available behind the `JavaScriptEngine` contract for isolated testing
 - `js2py` is not a viable baseline in this environment
 - `noop` remains the safe browser default while active-content policy stays under construction
 

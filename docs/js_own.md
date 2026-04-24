@@ -129,6 +129,7 @@ Status:
 
 - in progress
 - initial host bridge implemented
+- thin `JavaScriptEngine` adapter implemented for isolated tests
 
 ## Current Reference
 

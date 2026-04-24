@@ -23,7 +23,7 @@ class FakeEngine(JavaScriptEngine):
 def test_engine_specs_include_supported_backends() -> None:
     names = {spec.name for spec in engine_specs()}
 
-    assert {"noop", "quickjs", "js2py"} <= names
+    assert {"noop", "quickjs", "own", "js2py"} <= names
 
 
 def test_factory_creates_noop_engine() -> None:
