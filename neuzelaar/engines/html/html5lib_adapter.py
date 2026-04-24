@@ -24,9 +24,12 @@ def parse_html(html: str, *, url: str) -> Document:
 
 
 def _convert_element(source: ElementTree.Element, parent: Document | Element, ids) -> Element:
+    tag = _strip_namespace(source.tag)
+    if not isinstance(tag, str):
+        tag = "unknown"
     element = Element(
         id=_node_id(ids),
-        tag=_strip_namespace(source.tag).lower(),
+        tag=tag.lower(),
         attrs={_strip_namespace(key).lower(): value for key, value in source.attrib.items()},
     )
     append_child(parent, element)
@@ -58,7 +61,9 @@ def _text_content(node: Node) -> list[str]:
     return result
 
 
-def _strip_namespace(value: str) -> str:
+def _strip_namespace(value) -> str | object:
+    if not isinstance(value, str):
+        return value
     return value.rsplit("}", 1)[-1] if "}" in value else value
 
 
