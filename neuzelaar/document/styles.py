@@ -23,6 +23,8 @@ class ComputedStyle:
     margin: str = "0"
     padding: str = "0"
     text_align: str = "left"
+    width: str = "auto"
+    height: str = "auto"
 
 
 SUPPORTED_PROPERTIES = {
@@ -31,9 +33,11 @@ SUPPORTED_PROPERTIES = {
     "display",
     "font-size",
     "font-weight",
+    "height",
     "margin",
     "padding",
     "text-align",
+    "width",
 }
 
 # Properties that inherit from parent by default in CSS. Non-listed
@@ -164,6 +168,8 @@ def _style_from_declarations(
         margin=declarations.get("margin", "0"),
         padding=declarations.get("padding", "0"),
         text_align=_normalize_text_align(declarations.get("text-align"), parent_style.text_align),
+        width=declarations.get("width", "auto"),
+        height=declarations.get("height", "auto"),
     )
 
 

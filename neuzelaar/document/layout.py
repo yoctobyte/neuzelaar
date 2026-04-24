@@ -1,12 +1,38 @@
-"""Minimal block text layout for early visual rendering."""
+"""Visual layout: document + styles -> positioned primitives.
+
+The layout is produced in two steps:
+
+1. `build_box_tree` converts DOM + computed styles into a box tree.
+2. `bfc.layout_block` walks that tree and populates geometry for
+   every box, emitting TextPlacement / ImagePlacement / BoxPlacement
+   records.
+
+This module is the thin boundary that translates the box-tree
+placements into the LayoutText / LayoutImage / LayoutBox primitives
+the display builder consumes. A small 16px outer frame is applied
+around the rendered document, and the document `<title>` (if any)
+is rendered at the top for headless / debug utility.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from neuzelaar.document.dom import Document, Element, Node, NodeId, Text
-from neuzelaar.document.styles import ComputedStyle
 from neuzelaar.core.page import ImageAsset
+from neuzelaar.document.bfc import (
+    BoxPlacement,
+    ImagePlacement,
+    TextPlacement,
+    finalize_backgrounds,
+    layout_block,
+)
+from neuzelaar.document.box import build_box_tree
+from neuzelaar.document.dom import Document, NodeId
+from neuzelaar.document.styles import ComputedStyle
+
+
+OUTER_MARGIN = 16
+TITLE_ADVANCE = 28
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,198 +83,85 @@ def layout_document(
     images: dict[NodeId, ImageAsset] | None = None,
     root_style: ComputedStyle | None = None,
 ) -> LayoutResult:
-    cursor_y = 16
-    items: list[LayoutItem] = []
     base_style = root_style or ComputedStyle()
-    content_width = max(width - 32, 120)
+    viewport_width = max(width - OUTER_MARGIN * 2, 120)
+
+    items: list[LayoutItem] = []
+    cursor_y = OUTER_MARGIN
     if document.title:
+        title_font_size = max(_font_size_px(base_style), 24)
         items.append(
             LayoutText(
-                16,
-                cursor_y,
-                document.title,
-                base_style.color,
-                max(_font_size_px(base_style), 24),
-                max_width=content_width,
+                x=OUTER_MARGIN,
+                y=cursor_y,
+                text=document.title,
+                color=base_style.color,
+                font_size=title_font_size,
+                max_width=viewport_width,
                 text_align=base_style.text_align,
             )
         )
-        cursor_y += 28
-    cursor_y = _layout_node(
-        document,
-        items,
-        x=16,
-        y=cursor_y,
-        content_width=content_width,
-        styles=styles or {},
-        images=images or {},
-        inherited_style=base_style,
-    )
-    return LayoutResult(width=width, height=max(cursor_y + 16, 64), items=tuple(items))
+        cursor_y += TITLE_ADVANCE
 
-
-def _layout_node(
-    node: Node,
-    items: list[LayoutItem],
-    *,
-    x: int,
-    y: int,
-    content_width: int,
-    styles: dict[NodeId, ComputedStyle],
-    images: dict[NodeId, ImageAsset],
-    inherited_style: ComputedStyle,
-) -> int:
-    if isinstance(node, Text):
-        text = " ".join(node.data.split())
-        if text:
-            items.append(
-                LayoutText(
-                    x,
-                    y,
-                    text,
-                    inherited_style.color,
-                    _font_size_px(inherited_style),
-                    max_width=content_width,
-                    text_align=inherited_style.text_align,
-                )
-            )
-            return y + _line_height(inherited_style)
-        return y
-
-    if isinstance(node, Element):
-        tag = node.tag.lower()
-        style = _effective_style(node, styles, inherited_style)
-        if style.display == "none":
-            return y
-        if tag in {"script", "style", "head", "title"}:
-            return y
-        margin = _size_px(style.margin)
-        padding = _size_px(style.padding)
-        if tag in {"body", "div", "section", "article", "p", "ul", "ol", "li"}:
-            y += margin
-        if tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
-            text = _collect_text(node)
-            if text:
-                items.append(
-                    LayoutText(
-                        x,
-                        y,
-                        text,
-                        style.color,
-                        _font_size_px(style),
-                        max_width=content_width,
-                        text_align=style.text_align,
-                    )
-                )
-                return y + _line_height(style) + margin
-            return y
-        if tag == "img":
-            label = node.attr("alt") or node.attr("src") or "image"
-            image_width, image_height = _image_dimensions(node, images.get(node.id))
-            image = images.get(node.id)
-            if image is not None:
-                items.append(
-                    LayoutImage(
-                        x,
-                        y,
-                        image_width,
-                        image_height,
-                        label,
-                        image,
-                    )
-                )
-                return y + image_height + margin + 12
-            items.append(LayoutImage(x, y, image_width, image_height, label, None))
-            return y + image_height + margin + 12
-        if tag == "li":
-            text = _collect_text(node)
-            if text:
-                items.append(
-                    LayoutText(
-                        x,
-                        y,
-                        f"- {text}",
-                        style.color,
-                        _font_size_px(style),
-                        max_width=content_width,
-                        text_align=style.text_align,
-                    )
-                )
-                return y + _line_height(style) + margin
-            return y
-        y += padding
-        start_y = y
-        insert_at = len(items)
-        child_x = x + padding
-        child_width = max(content_width - (padding * 2), 40)
-        for child in node.children:
-            y = _layout_node(
-                child,
-                items,
-                x=child_x,
-                y=y,
-                content_width=child_width,
-                styles=styles,
-                images=images,
-                inherited_style=style,
-            )
-        if (
-            style.background_color != "#ffffff"
-            and y > start_y
-            and tag in {"body", "div", "section", "article", "p", "ul", "ol"}
-        ):
-            items.insert(
-                insert_at,
-                LayoutBox(
-                    x=max(0, x),
-                    y=max(0, start_y - padding),
-                    width=max(content_width, 40),
-                    height=max((y - start_y) + (padding * 2), 8),
-                    color=style.background_color,
-                ),
-            )
-        y += padding
-        if tag in {"p", "div", "section", "ul", "ol", "article"}:
-            y += 8
-        y += margin
-        return y
-
-    children = getattr(node, "children", None)
-    if not children:
-        return y
-    for child in children:
-        y = _layout_node(
-            child,
-            items,
-            x=x,
-            y=y,
-            content_width=content_width,
-            styles=styles,
-            images=images,
-            inherited_style=inherited_style,
+    content_height = 0
+    root_box = build_box_tree(document, styles or {})
+    if root_box is not None:
+        bfc_height, placements = layout_block(
+            root_box,
+            viewport_width=viewport_width,
+            images=images or {},
         )
-    return y
+        placements = finalize_backgrounds(root_box, placements)
+        for placement in placements:
+            items.append(_to_layout_item(placement, dx=OUTER_MARGIN, dy=cursor_y))
+        content_height = bfc_height
+
+    total_height = max(cursor_y + content_height + OUTER_MARGIN, 64)
+    items = _sort_backgrounds_behind(items)
+    return LayoutResult(width=width, height=total_height, items=tuple(items))
 
 
-def _collect_text(node: Node) -> str:
-    if isinstance(node, Text):
-        return " ".join(node.data.split())
-    children = getattr(node, "children", None)
-    if not children:
-        return ""
-    return " ".join(part for child in children if (part := _collect_text(child)))
+def _to_layout_item(placement, *, dx: int, dy: int) -> LayoutItem:
+    if isinstance(placement, TextPlacement):
+        return LayoutText(
+            x=placement.x + dx,
+            y=placement.y + dy,
+            text=placement.text,
+            color=placement.color,
+            font_size=placement.font_size,
+            max_width=placement.max_width,
+            text_align=placement.text_align,
+        )
+    if isinstance(placement, ImagePlacement):
+        return LayoutImage(
+            x=placement.x + dx,
+            y=placement.y + dy,
+            width=placement.width,
+            height=placement.height,
+            label=placement.label,
+            bitmap=placement.bitmap,
+        )
+    if isinstance(placement, BoxPlacement):
+        return LayoutBox(
+            x=placement.x + dx,
+            y=placement.y + dy,
+            width=placement.width,
+            height=placement.height,
+            color=placement.color,
+        )
+    raise TypeError(f"Unknown placement type: {type(placement).__name__}")
 
 
-def _effective_style(
-    node: Element,
-    styles: dict[NodeId, ComputedStyle],
-    inherited_style: ComputedStyle,
-) -> ComputedStyle:
-    return styles.get(node.id, inherited_style)
-
-
-def _line_height(style: ComputedStyle) -> int:
-    return max(int(round(_font_size_px(style) * 1.3)), 10)
+def _sort_backgrounds_behind(items: list[LayoutItem]) -> list[LayoutItem]:
+    """Background rects must render before overlapping text/images so
+    the painter order is correct. BFC emits backgrounds as it enters
+    a block, so they already precede their children in document order;
+    this function is a safety net for cases where the title is
+    inserted before BFC output.
+    """
+    boxes = [item for item in items if isinstance(item, LayoutBox)]
+    others = [item for item in items if not isinstance(item, LayoutBox)]
+    return boxes + others
 
 
 def _font_size_px(style: ComputedStyle) -> int:
@@ -259,33 +172,3 @@ def _font_size_px(style: ComputedStyle) -> int:
         except ValueError:
             pass
     return 16
-
-
-def _size_px(value: str) -> int:
-    token = value.strip().split()[0] if value.strip() else "0"
-    if token.endswith("px"):
-        token = token[:-2]
-    try:
-        return max(int(float(token)), 0)
-    except ValueError:
-        return 0
-
-
-def _image_dimensions(node: Element, image: ImageAsset | None) -> tuple[int, int]:
-    intrinsic_width = image.bitmap.width if image is not None else 240
-    intrinsic_height = image.bitmap.height if image is not None else 32
-    attr_width = _attr_px(node.attr("width"))
-    attr_height = _attr_px(node.attr("height"))
-    return (
-        attr_width if attr_width is not None else intrinsic_width,
-        attr_height if attr_height is not None else intrinsic_height,
-    )
-
-
-def _attr_px(value: str | None) -> int | None:
-    if value is None:
-        return None
-    try:
-        return max(int(value), 1)
-    except ValueError:
-        return None
