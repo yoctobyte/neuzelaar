@@ -232,6 +232,15 @@ class Parser:
 
     def _parse_class_member(self) -> ClassMethod | ClassField:
         is_static = self._match("STATIC")
+        accessor_kind: str | None = None
+        if (
+            self._check("IDENTIFIER")
+            and str(self._peek().value) in {"get", "set"}
+            and self.index + 2 < len(self.tokens)
+            and self.tokens[self.index + 1].kind == "IDENTIFIER"
+            and self.tokens[self.index + 2].kind == "LPAREN"
+        ):
+            accessor_kind = str(self._advance().value)
         name_token = self._consume("IDENTIFIER", "Expected class method name")
         if not self._check("LPAREN"):
             initializer = self.parse_expression() if self._match("EQUAL") else None
@@ -256,6 +265,7 @@ class Parser:
             params=tuple(params),
             body=body,
             is_static=is_static,
+            accessor_kind=accessor_kind,
         )
 
     def _parse_class_expression(self, *, require_name: bool) -> ClassExpr:

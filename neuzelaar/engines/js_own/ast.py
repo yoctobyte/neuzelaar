@@ -86,6 +86,7 @@ class ClassMethod:
     params: tuple[str, ...]
     body: "BlockStatement"
     is_static: bool = False
+    accessor_kind: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

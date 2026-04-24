@@ -5,24 +5,39 @@ from __future__ import annotations
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
 
 
-def _read_dict_property(target: dict[str, object], property_name: str) -> object:
+def _lookup_dict_property(target: dict[str, object], property_name: str) -> object:
     if property_name in target:
         return target[property_name]
     prototype = target.get("__proto__")
     if isinstance(prototype, dict):
-        return _read_dict_property(prototype, property_name)
+        return _lookup_dict_property(prototype, property_name)
     return None
 
 
-def read_property(target: object, property_name: str) -> object:
+def _resolve_descriptor(value: object, receiver: object) -> object:
+    if isinstance(value, dict) and ("get" in value or "set" in value):
+        getter = value.get("get")
+        if getter is None:
+            return None
+        return getter.call((), this_value=receiver)
+    return value
+
+
+def read_property(target: object, property_name: str, *, receiver: object | None = None) -> object:
     if isinstance(target, HostObject):
         return target.get(property_name)
     if hasattr(target, "static_properties") and hasattr(target, "prototype"):
         if property_name == "prototype":
             return target.prototype
-        return target.static_properties.get(property_name)
+        return _resolve_descriptor(
+            target.static_properties.get(property_name),
+            target if receiver is None else receiver,
+        )
     if isinstance(target, dict):
-        return _read_dict_property(target, property_name)
+        return _resolve_descriptor(
+            _lookup_dict_property(target, property_name),
+            target if receiver is None else receiver,
+        )
     if isinstance(target, list) and property_name == "length":
         return float(len(target))
     raise TypeError(f"Cannot read property {property_name!r}")
@@ -35,19 +50,43 @@ def read_index(target: object, index: object) -> object:
     if isinstance(target, HostObject):
         return target.get(str(to_index(index)) if isinstance(index, (int, float)) else str(index))
     if isinstance(target, dict):
-        return _read_dict_property(target, str(index))
+        return _resolve_descriptor(_lookup_dict_property(target, str(index)), target)
     raise TypeError("Cannot index value")
 
 
-def write_property(target: object, property_name: str, value: object) -> object:
+def _find_descriptor_holder(target: dict[str, object], property_name: str) -> dict[str, object] | None:
+    if property_name in target:
+        return target
+    prototype = target.get("__proto__")
+    if isinstance(prototype, dict):
+        return _find_descriptor_holder(prototype, property_name)
+    return None
+
+
+def write_property(target: object, property_name: str, value: object, *, receiver: object | None = None) -> object:
     if isinstance(target, HostObject):
         return target.set(property_name, value)
     if hasattr(target, "static_properties") and hasattr(target, "prototype"):
         if property_name == "prototype":
             raise TypeError("Cannot assign to class prototype")
+        existing = target.static_properties.get(property_name)
+        if isinstance(existing, dict) and ("get" in existing or "set" in existing):
+            setter = existing.get("set")
+            if setter is None:
+                raise TypeError(f"Cannot set property {property_name!r}")
+            setter.call((value,), this_value=target if receiver is None else receiver)
+            return value
         target.static_properties[property_name] = value
         return value
     if isinstance(target, dict):
+        holder = _find_descriptor_holder(target, property_name)
+        descriptor = holder.get(property_name) if holder is not None else None
+        if isinstance(descriptor, dict) and ("get" in descriptor or "set" in descriptor):
+            setter = descriptor.get("set")
+            if setter is None:
+                raise TypeError(f"Cannot set property {property_name!r}")
+            setter.call((value,), this_value=target if receiver is None else receiver)
+            return value
         target[property_name] = value
         return value
     raise TypeError(f"Cannot write property {property_name!r}")

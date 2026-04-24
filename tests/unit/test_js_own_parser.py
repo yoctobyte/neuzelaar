@@ -146,3 +146,10 @@ def test_parse_class_field() -> None:
 
     assert isinstance(program.statements[0], ClassDeclaration)
     assert tuple(field.name for field in program.statements[0].fields) == ("x", "y")
+
+
+def test_parse_class_getter_and_setter() -> None:
+    program = parse_program("class Box { get value() { return 1; } set value(x) { this.x = x; } }")
+
+    assert isinstance(program.statements[0], ClassDeclaration)
+    assert [method.accessor_kind for method in program.statements[0].methods] == ["get", "set"]

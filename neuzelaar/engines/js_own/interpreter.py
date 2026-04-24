@@ -180,6 +180,14 @@ class JavaScriptClass:
                 super_prototype=self.superclass.prototype if self.superclass is not None else None,
                 owner_class=self,
             )
+            if method.accessor_kind is not None:
+                target = self.static_properties if method.is_static else self.prototype
+                descriptor = target.get(method.name)
+                if not isinstance(descriptor, dict) or ("get" not in descriptor and "set" not in descriptor):
+                    descriptor = {"get": None, "set": None}
+                descriptor[method.accessor_kind] = function
+                target[method.name] = descriptor
+                continue
             if method.name == "constructor" and not method.is_static:
                 self.constructor = function
             elif method.is_static:
@@ -412,10 +420,10 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         if isinstance(expr.callee, MemberExpr) and isinstance(expr.callee.object, SuperExpr):
             this_value = environment.get("this")
             super_prototype = environment.get("__super_prototype__")
-            callee = read_property(super_prototype, expr.callee.property_name)
+            callee = read_property(super_prototype, expr.callee.property_name, receiver=this_value)
         elif isinstance(expr.callee, MemberExpr):
             this_value = evaluate_expr(expr.callee.object, environment)
-            callee = read_property(this_value, expr.callee.property_name)
+            callee = read_property(this_value, expr.callee.property_name, receiver=this_value)
         elif isinstance(expr.callee, IndexExpr):
             this_value = evaluate_expr(expr.callee.object, environment)
             callee = read_index(this_value, evaluate_expr(expr.callee.index, environment))
@@ -436,8 +444,13 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         if isinstance(expr.target, Identifier):
             return environment.assign(expr.target.name, value)
         if isinstance(expr.target, MemberExpr):
+            if isinstance(expr.target.object, SuperExpr):
+                target_object = environment.get("__super_prototype__")
+                receiver = environment.get("this")
+                write_property(target_object, expr.target.property_name, value, receiver=receiver)
+                return value
             target_object = evaluate_expr(expr.target.object, environment)
-            write_property(target_object, expr.target.property_name, value)
+            write_property(target_object, expr.target.property_name, value, receiver=target_object)
             return value
         if isinstance(expr.target, IndexExpr):
             target_object = evaluate_expr(expr.target.object, environment)
@@ -446,7 +459,12 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return value
         raise RuntimeError(f"Unsupported assignment target: {type(expr.target).__name__}")
     if isinstance(expr, MemberExpr):
-        return read_property(evaluate_expr(expr.object, environment), expr.property_name)
+        if isinstance(expr.object, SuperExpr):
+            receiver = environment.get("this")
+            target = environment.get("__super_prototype__")
+            return read_property(target, expr.property_name, receiver=receiver)
+        target = evaluate_expr(expr.object, environment)
+        return read_property(target, expr.property_name, receiver=target)
     if isinstance(expr, IndexExpr):
         return read_index(
             evaluate_expr(expr.object, environment),

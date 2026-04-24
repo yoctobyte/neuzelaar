@@ -53,6 +53,11 @@ CASES = [
     "class Point { x = 1; constructor() { this.x = this.x + 4; } } new Point().x;",
     "class Base { constructor() { this.base = 1; } } class Child extends Base { y = this.base + 1; constructor() { super(); this.z = this.y + this.base; } } new Child().z;",
     "class Base { constructor() { this.base = 2; } } class Child extends Base { y = this.base + 1; } new Child().y;",
+    "class Box { get value() { return 7; } } new Box().value;",
+    "class Box { set value(x) { this.stored = x + 1; } } var b = new Box(); b.value = 4; b.stored;",
+    "class Box { static get answer() { return 42; } } Box.answer;",
+    "class Base { get value() { return this.x + 1; } } class Child extends Base { constructor() { super(); this.x = 4; } get value() { return super.value + 2; } } new Child().value;",
+    "class Base { set value(x) { this.stored = x + 1; } } class Child extends Base { set value(x) { super.value = x + 2; } } var c = new Child(); c.value = 4; c.stored;",
 ]
 
 
