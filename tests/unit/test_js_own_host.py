@@ -1,6 +1,13 @@
 from neuzelaar.engines.js_own.builtins import install_builtins
 from neuzelaar.engines.js_own.environment import Environment
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
+from neuzelaar.engines.js_own.host_scenarios import (
+    BrowserScenarioFixture,
+    DocumentNodeFixture,
+    article_reader_scenario,
+    build_browser_scenario,
+    settings_page_scenario,
+)
 from neuzelaar.engines.js_own.host_stubs import BrowserHostStubs
 from neuzelaar.engines.js_own.interpreter import evaluate_program
 from neuzelaar.engines.js_own.values import (
@@ -132,3 +139,53 @@ def test_browser_host_location_and_history_stubs_hold_meaningful_state() -> None
     assert stubs.history.entries == ["/a", "/b"]
     assert stubs.history.index == 0
     assert result == "/a"
+
+
+def test_browser_scenario_fixture_builds_meaningful_page_state() -> None:
+    env, stubs = build_browser_scenario(
+        BrowserScenarioFixture(
+            url="https://example.test/post/1",
+            title="Post 1",
+            history_entries=("/home", "/post/1"),
+            history_index=1,
+            nodes=(
+                DocumentNodeFixture(id="headline", text_content="Post 1"),
+                DocumentNodeFixture(id="body", text_content="Hello world"),
+            ),
+        )
+    )
+
+    result = evaluate_program(
+        "document.title + '|' + location.href + '|' + document.getElementById('headline').textContent;",
+        env,
+    )
+
+    assert result == "Post 1|https://example.test/post/1|Post 1"
+    assert stubs.history.entries == ["/home", "/post/1"]
+
+
+def test_article_reader_scenario_is_useful_as_ready_fixture() -> None:
+    env, stubs = article_reader_scenario()
+
+    result = evaluate_program(
+        "console.log(document.title); "
+        "document.getElementById('lead').textContent + ' @ ' + location.href;",
+        env,
+    )
+
+    assert result == "A concise fixture article. @ https://example.test/articles/intro"
+    assert stubs.console.entries == [("log", ("Intro Article",))]
+
+
+def test_settings_page_scenario_can_be_mutated_by_script() -> None:
+    env, stubs = settings_page_scenario()
+
+    result = evaluate_program(
+        "document.getElementById('status').textContent = 'saved'; "
+        "history.pushState(null, '', '/settings?saved=1'); "
+        "document.getElementById('status').textContent;",
+        env,
+    )
+
+    assert result == "saved"
+    assert stubs.history.entries == ["/home", "/settings", "/settings?saved=1"]

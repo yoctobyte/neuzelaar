@@ -123,6 +123,7 @@ Scope:
   - `document`
   - `location`
   - `history`
+- fixture-driven host scenarios that assemble coherent fake page state
 
 Status:
 
