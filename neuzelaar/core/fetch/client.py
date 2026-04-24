@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urlsplit
 from urllib.request import Request as UrlLibRequest
-from urllib.request import urlopen
+from urllib.request import build_opener, HTTPRedirectHandler, urlopen
 
 from neuzelaar.core.fetch.resource import Request, Resource
 
@@ -68,7 +68,8 @@ class FetchClient:
             method=method,
         )
         try:
-            with urlopen(urllib_request, timeout=self.timeout) as response:
+            opener = _build_opener(self.limits.max_redirects)
+            with opener.open(urllib_request, timeout=self.timeout) as response:
                 body = response.read(self.max_bytes + 1)
                 if len(body) > self.max_bytes:
                     raise FetchError(
@@ -96,6 +97,7 @@ class FetchClient:
             raise FetchError("url_error", str(exc), url=request.url) from exc
         except OSError as exc:
             raise FetchError("network_error", str(exc), url=request.url) from exc
+
 
     def redirect_cap(self) -> int:
         """Return the configured redirect cap until custom redirect handling lands."""
@@ -132,3 +134,25 @@ class FetchClient:
             encoding="utf-8",
             claimed_mime=None,
         )
+
+
+class _LimitedRedirectHandler(HTTPRedirectHandler):
+    """HTTPRedirectHandler that enforces a redirect count limit."""
+
+    def __init__(self, max_redirects: int) -> None:
+        self.max_redirects = max_redirects
+        self.redirect_count = 0
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        self.redirect_count += 1
+        if self.redirect_count > self.max_redirects:
+            raise FetchError(
+                "redirect_limit",
+                f"Too many redirects (limit: {self.max_redirects})",
+                url=newurl,
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _build_opener(max_redirects: int):
+    return build_opener(_LimitedRedirectHandler(max_redirects))

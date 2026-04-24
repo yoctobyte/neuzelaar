@@ -198,9 +198,12 @@ class TkShell:
 
         def present(result: PageLoadResult, frame: Frame) -> None:
             last_result[0] = result
+            # Release old X11 pixmap before allocating a new one.
+            old = getattr(canvas, 'image', None)
             photo = _frame_to_photo(frame)
             canvas.itemconfigure(canvas_image, image=photo)
             canvas.image = photo
+            del old
             canvas.configure(scrollregion=(0, 0, frame.width, frame.height))
             root.title(result.handler_result.value.title or "Neuzelaar")
             address_var.set(result.resource.final_url)
@@ -261,9 +264,12 @@ class TkShell:
             except Exception as exc:
                 show_error(exc)
                 return
+            # Release old X11 pixmap before allocating a new one.
+            old = getattr(canvas, 'image', None)
             photo = _frame_to_photo(frame)
             canvas.itemconfigure(canvas_image, image=photo)
             canvas.image = photo
+            del old
             canvas.configure(scrollregion=(0, 0, frame.width, frame.height))
 
         def on_canvas_configure(event: tk.Event) -> None:

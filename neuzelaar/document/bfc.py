@@ -81,6 +81,12 @@ class LayoutState:
     viewport_width: int
     images: dict[NodeId, ImageAsset]
     items: list[Placement]
+    budget_exceeded: bool = False
+
+
+# Safety cap: stop emitting layout items after this many to prevent
+# runaway computation on huge DOMs.
+MAX_LAYOUT_ITEMS = 10_000
 
 
 def layout_block(
@@ -103,6 +109,7 @@ def layout_block(
     _place_block(root, state, x=0, y=0, containing_width=viewport_width)
     total_height = root.geometry.y + root.geometry.border_box_height + root.geometry.margin.bottom
     return total_height, state.items
+
 
 
 def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_width: int) -> int:
@@ -135,6 +142,9 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     cursor_y = child_y
     previous_margin_bottom = 0  # for sibling margin collapse
     for child in box.children:
+        if state.budget_exceeded or len(state.items) >= MAX_LAYOUT_ITEMS:
+            state.budget_exceeded = True
+            break
         if child.is_block_level:
             # Collapse this child's top margin with the previous
             # sibling's bottom margin (or with the parent's top edge
@@ -175,6 +185,9 @@ def _place_inline_or_text(
     Commit B.
     """
     style = box.style if box.kind != BoxKind.TEXT else parent_style
+    if state.budget_exceeded or len(state.items) >= MAX_LAYOUT_ITEMS:
+        state.budget_exceeded = True
+        return y
     if box.kind == BoxKind.TEXT:
         text = box.text or ""
         if not text.strip():

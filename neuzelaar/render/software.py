@@ -10,21 +10,38 @@ from neuzelaar.render.display_list import Color, DisplayList, DrawImage, DrawTex
 from neuzelaar.shell_api.frame import Frame, PixelFormat
 
 
+# Safety cap: prevent X11 BadAlloc by limiting the rasterized bitmap.
+# At 800px wide × 16384px tall × 4 bytes/pixel = ~50 MB — well within
+# X server limits on any reasonable system.
+MAX_RASTER_HEIGHT = 16_384
+MAX_RASTER_PIXELS = 800 * MAX_RASTER_HEIGHT  # ~52 million pixels
+
+
 def rasterize(display_list: DisplayList) -> Frame:
-    image = Image.new("RGBA", (display_list.width, display_list.height), (255, 255, 255, 255))
+    clamped_height = min(display_list.height, MAX_RASTER_HEIGHT)
+    clamped_height = max(clamped_height, 1)
+    image = Image.new("RGBA", (display_list.width, clamped_height), (255, 255, 255, 255))
     draw = ImageDraw.Draw(image)
 
     for op in display_list.ops:
         if isinstance(op, FillRect):
+            if op.rect.y >= clamped_height:
+                continue
             draw.rectangle(_rect_tuple(op.rect), fill=_color_tuple(op.color))
         elif isinstance(op, DrawText):
+            if op.y >= clamped_height:
+                continue
             font = _load_font(op.font_size)
             x = _aligned_text_x(op, font)
             draw.text((x, op.y), op.text, fill=_color_tuple(op.color), font=font)
         elif isinstance(op, DrawImage):
+            if op.y >= clamped_height:
+                continue
             bitmap = Image.frombytes("RGBA", (op.bitmap.width, op.bitmap.height), op.bitmap.pixels)
             image.alpha_composite(bitmap, (op.x, op.y))
         elif isinstance(op, Placeholder):
+            if op.rect.y >= clamped_height:
+                continue
             draw.rectangle(_rect_tuple(op.rect), outline=(120, 120, 120, 255), fill=(245, 245, 245, 255))
             draw.text((op.rect.x + 6, op.rect.y + 9), op.label, fill=(60, 60, 60, 255), font=_load_font(16))
 
@@ -36,6 +53,7 @@ def rasterize(display_list: DisplayList) -> Frame:
         pixels=pixels,
         stride=image.width * 4,
     )
+
 
 
 def _rect_tuple(rect) -> tuple[int, int, int, int]:
