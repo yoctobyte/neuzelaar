@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from neuzelaar.engines.js_own.errors import JavaScriptThrownValue
 from neuzelaar.engines.js_own.ast import (
     ArrayLiteral,
     AssignmentExpr,
@@ -25,6 +26,8 @@ from neuzelaar.engines.js_own.ast import (
     Stmt,
     StringLiteral,
     ThisExpr,
+    ThrowStatement,
+    TryStatement,
     UnaryExpr,
     VariableDeclaration,
 )
@@ -33,9 +36,11 @@ from neuzelaar.engines.js_own.parser import parse_expression as parse_expression
 from neuzelaar.engines.js_own.parser import parse_program as parse_program_ast
 from neuzelaar.engines.js_own.runtime import (
     js_add,
+    js_error_object,
     js_loose_equal,
     js_strict_equal,
     js_to_number,
+    js_to_string,
     js_truthy,
 )
 
@@ -44,6 +49,21 @@ class ReturnSignal(Exception):
     def __init__(self, value: object) -> None:
         super().__init__("return")
         self.value = value
+
+
+class ThrowSignal(Exception):
+    def __init__(self, value: object) -> None:
+        super().__init__("throw")
+        self.value = value
+
+
+class NativeFunction:
+    def __init__(self, name: str, impl) -> None:
+        self.name = name
+        self.impl = impl
+
+    def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
+        return self.impl(arguments, this_value)
 
 
 class JavaScriptFunction:
@@ -74,15 +94,52 @@ class JavaScriptFunction:
             return signal.value
 
 
+def create_global_environment() -> Environment:
+    env = Environment()
+    env.declare(
+        "Math",
+        {
+            "abs": NativeFunction("Math.abs", lambda args, _this: abs(js_to_number(args[0] if args else 0.0))),
+            "max": NativeFunction(
+                "Math.max",
+                lambda args, _this: max((js_to_number(arg) for arg in args), default=float("-inf")),
+            ),
+        },
+        kind="const",
+    )
+    env.declare(
+        "Number",
+        NativeFunction("Number", lambda args, _this: js_to_number(args[0] if args else 0.0)),
+        kind="const",
+    )
+    env.declare(
+        "String",
+        NativeFunction("String", lambda args, _this: js_to_string(args[0] if args else "")),
+        kind="const",
+    )
+    env.declare(
+        "Error",
+        NativeFunction("Error", lambda args, _this: js_error_object(args[0] if args else "")),
+        kind="const",
+    )
+    return env
+
+
 def evaluate_expression(source: str, environment: Environment | None = None) -> object:
-    env = environment or Environment()
-    return evaluate_expr(parse_expression_ast(source), env)
+    env = environment or create_global_environment()
+    try:
+        return evaluate_expr(parse_expression_ast(source), env)
+    except ThrowSignal as signal:
+        raise JavaScriptThrownValue(signal.value) from None
 
 
 def evaluate_program(source: str, environment: Environment | None = None) -> object:
-    env = environment or Environment()
+    env = environment or create_global_environment()
     program = parse_program_ast(source)
-    return evaluate_ast_program(program, env)
+    try:
+        return evaluate_ast_program(program, env)
+    except ThrowSignal as signal:
+        raise JavaScriptThrownValue(signal.value) from None
 
 
 def evaluate_ast_program(program: Program, environment: Environment | None = None) -> object:
@@ -124,6 +181,33 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
     if isinstance(statement, ReturnStatement):
         value = None if statement.value is None else evaluate_expr(statement.value, environment)
         raise ReturnSignal(value)
+    if isinstance(statement, ThrowStatement):
+        raise ThrowSignal(evaluate_expr(statement.value, environment))
+    if isinstance(statement, TryStatement):
+        pending_return: ReturnSignal | None = None
+        pending_throw: ThrowSignal | None = None
+        value: object = None
+        try:
+            try:
+                value = evaluate_statement(statement.body, environment)
+            except ThrowSignal as thrown:
+                if statement.catch_body is None:
+                    pending_throw = thrown
+                else:
+                    catch_env = environment.child_block()
+                    assert statement.catch_name is not None
+                    catch_env.declare(statement.catch_name, thrown.value, kind="let")
+                    value = evaluate_statement(statement.catch_body, catch_env)
+        except ReturnSignal as signal:
+            pending_return = signal
+        finally:
+            if statement.finally_body is not None:
+                value = evaluate_statement(statement.finally_body, environment)
+        if pending_return is not None:
+            raise pending_return
+        if pending_throw is not None:
+            raise pending_throw
+        return value
     raise RuntimeError(f"Unsupported statement node: {type(statement).__name__}")
 
 
@@ -173,7 +257,7 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             callee = _read_index(this_value, evaluate_expr(expr.callee.index, environment))
         else:
             callee = evaluate_expr(expr.callee, environment)
-        if not isinstance(callee, JavaScriptFunction):
+        if not isinstance(callee, (JavaScriptFunction, NativeFunction)):
             raise TypeError("Value is not callable")
         arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
         return callee.call(arguments, this_value=this_value)

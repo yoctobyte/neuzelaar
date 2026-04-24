@@ -94,9 +94,20 @@ Status:
 
 ### JS4
 
-- exceptions
-- selected builtins
-- selected Test262 expansion
+Scope:
+
+- `throw`
+- `try` / `catch` / `finally`
+- small builtin surface:
+  - `Math.abs`
+  - `Math.max`
+  - `Number`
+- `String`
+- `Error`
+
+Status:
+
+- implemented
 
 ### JS5
 

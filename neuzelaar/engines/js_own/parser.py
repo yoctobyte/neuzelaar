@@ -28,6 +28,8 @@ from neuzelaar.engines.js_own.ast import (
     Stmt,
     StringLiteral,
     ThisExpr,
+    ThrowStatement,
+    TryStatement,
     UnaryExpr,
     VariableDeclaration,
 )
@@ -87,6 +89,10 @@ class Parser:
             return self._parse_if_statement()
         if self._check("RETURN"):
             return self._parse_return_statement()
+        if self._check("THROW"):
+            return self._parse_throw_statement()
+        if self._check("TRY"):
+            return self._parse_try_statement()
         if self._check("VAR") or self._check("LET") or self._check("CONST"):
             return self._parse_variable_declaration()
         expression = self.parse_expression()
@@ -111,13 +117,41 @@ class Parser:
         return IfStatement(test=test, consequent=consequent, alternate=alternate)
 
     def _parse_return_statement(self) -> ReturnStatement:
-        keyword = self._advance()
+        self._advance()
         if self._check("SEMICOLON") or self._check("RBRACE") or self._check("EOF"):
             self._consume_optional_semicolon()
             return ReturnStatement(value=None)
         value = self.parse_expression()
         self._consume_optional_semicolon()
         return ReturnStatement(value=value)
+
+    def _parse_throw_statement(self) -> ThrowStatement:
+        self._consume("THROW", "Expected 'throw'")
+        value = self.parse_expression()
+        self._consume_optional_semicolon()
+        return ThrowStatement(value=value)
+
+    def _parse_try_statement(self) -> TryStatement:
+        self._consume("TRY", "Expected 'try'")
+        body = self._parse_block_statement()
+        catch_name: str | None = None
+        catch_body: BlockStatement | None = None
+        finally_body: BlockStatement | None = None
+        if self._match("CATCH"):
+            self._consume("LPAREN", "Expected '(' after catch")
+            catch_name = str(self._consume("IDENTIFIER", "Expected catch binding").value)
+            self._consume("RPAREN", "Expected ')' after catch binding")
+            catch_body = self._parse_block_statement()
+        if self._match("FINALLY"):
+            finally_body = self._parse_block_statement()
+        if catch_body is None and finally_body is None:
+            raise JavaScriptSyntaxError(f"Expected catch or finally after try at offset {self._peek().offset}")
+        return TryStatement(
+            body=body,
+            catch_name=catch_name,
+            catch_body=catch_body,
+            finally_body=finally_body,
+        )
 
     def _parse_variable_declaration(self) -> VariableDeclaration:
         kind_token = self._advance()

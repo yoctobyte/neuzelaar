@@ -29,6 +29,13 @@ CASES = [
     "var a = [1, 2, 3]; a.length;",
     "var o = { value: 7, get: function () { return this.value; } }; o.get();",
     'var o = { value: 8, get: function () { return this["value"]; } }; o["get"]();',
+    'try { throw "x"; } catch (e) { e; }',
+    "function f() { try { return 1; } finally { return 2; } } f();",
+    "Math.abs(-3);",
+    "Math.max(1, 5, 2);",
+    'Number("12");',
+    "String(12);",
+    'Error("x").message;',
 ]
 
 

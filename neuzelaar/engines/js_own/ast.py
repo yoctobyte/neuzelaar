@@ -140,5 +140,18 @@ class ReturnStatement(Stmt):
 
 
 @dataclass(frozen=True, slots=True)
+class ThrowStatement(Stmt):
+    value: Expr
+
+
+@dataclass(frozen=True, slots=True)
+class TryStatement(Stmt):
+    body: BlockStatement
+    catch_name: str | None
+    catch_body: BlockStatement | None
+    finally_body: BlockStatement | None
+
+
+@dataclass(frozen=True, slots=True)
 class Program:
     statements: tuple[Stmt, ...]

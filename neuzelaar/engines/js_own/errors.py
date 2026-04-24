@@ -9,3 +9,11 @@ class JavaScriptSyntaxError(Exception):
 
 class JavaScriptReferenceError(Exception):
     """Raised when an identifier lookup fails."""
+
+
+class JavaScriptThrownValue(Exception):
+    """Raised when a JS `throw` escapes the current evaluation."""
+
+    def __init__(self, value: object) -> None:
+        super().__init__(repr(value))
+        self.value = value

@@ -75,6 +75,13 @@ def js_to_string(value: object) -> str:
     return str(value)
 
 
+def js_error_object(message: object) -> dict[str, object]:
+    return {
+        "name": "Error",
+        "message": js_to_string(message),
+    }
+
+
 def _js_type_name(value: object) -> str:
     if value is None:
         return "null"

@@ -3,7 +3,11 @@ import math
 import pytest
 
 from neuzelaar.engines.js_own.environment import Environment
-from neuzelaar.engines.js_own.errors import JavaScriptReferenceError, JavaScriptSyntaxError
+from neuzelaar.engines.js_own.errors import (
+    JavaScriptReferenceError,
+    JavaScriptSyntaxError,
+    JavaScriptThrownValue,
+)
 from neuzelaar.engines.js_own.interpreter import evaluate_expression, evaluate_program
 
 
@@ -174,3 +178,42 @@ def test_method_call_via_index_binds_this() -> None:
     )
 
     assert result == 8.0
+
+
+def test_throw_and_catch_work() -> None:
+    result = evaluate_program('try { throw "x"; } catch (e) { e; }')
+
+    assert result == "x"
+
+
+def test_try_finally_runs_before_return() -> None:
+    result = evaluate_program(
+        "function f() { var x = 1; try { return x; } finally { x = 9; } } f();"
+    )
+
+    assert result == 1.0
+
+
+def test_finally_can_override_return() -> None:
+    result = evaluate_program(
+        "function f() { try { return 1; } finally { return 2; } } f();"
+    )
+
+    assert result == 2.0
+
+
+def test_uncaught_throw_raises_python_wrapper() -> None:
+    with pytest.raises(JavaScriptThrownValue) as exc:
+        evaluate_program('throw "boom";')
+
+    assert exc.value.value == "boom"
+
+
+def test_math_and_primitive_builtins_work() -> None:
+    assert evaluate_program("Math.abs(-3);") == 3.0
+    assert evaluate_program("Math.max(1, 5, 2);") == 5.0
+    assert evaluate_program('Number("12");') == 12.0
+    assert evaluate_program("String(12);") == "12"
+    error = evaluate_program('Error("x");')
+    assert error["name"] == "Error"
+    assert error["message"] == "x"

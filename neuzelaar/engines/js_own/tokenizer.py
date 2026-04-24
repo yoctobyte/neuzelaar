@@ -19,6 +19,10 @@ KEYWORDS = {
     "function": "FUNCTION",
     "return": "RETURN",
     "this": "THIS",
+    "throw": "THROW",
+    "try": "TRY",
+    "catch": "CATCH",
+    "finally": "FINALLY",
 }
 
 MULTI_CHAR_OPERATORS = (

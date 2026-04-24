@@ -13,7 +13,9 @@ from neuzelaar.engines.js_own.ast import (
     NumberLiteral,
     ObjectLiteral,
     ReturnStatement,
+    ThrowStatement,
     ThisExpr,
+    TryStatement,
     UnaryExpr,
     VariableDeclaration,
 )
@@ -87,3 +89,10 @@ def test_parse_array_object_member_and_index_expressions() -> None:
     assert isinstance(member_expr, MemberExpr)
     assert isinstance(index_expr, IndexExpr)
     assert isinstance(this_expr, ThisExpr)
+
+
+def test_parse_throw_and_try_statement() -> None:
+    program = parse_program('try { throw "x"; } catch (e) { e; } finally { 1; }')
+
+    assert isinstance(program.statements[0], TryStatement)
+    assert isinstance(program.statements[0].body.statements[0], ThrowStatement)
