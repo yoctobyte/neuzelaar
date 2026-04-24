@@ -104,3 +104,30 @@ def test_tk_shell_source_text_returns_html_source() -> None:
     source = shell.source_text(result)
 
     assert "<title>Example Fixture</title>" in source
+
+
+def test_tk_shell_error_report_includes_context() -> None:
+    shell = TkShell(width=640, height=480)
+    shell.render_url_to_frame(Path("tests/fixtures/sites/example.html").resolve().as_uri())
+
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError as exc:
+        report = shell.error_report(exc)
+
+    assert "current_url:" in report
+    assert "error_type: RuntimeError" in report
+    assert "error: boom" in report
+    assert "RuntimeError: boom" in report
+
+
+def test_tk_shell_write_error_report_creates_latest_and_timestamped_log(tmp_path: Path) -> None:
+    shell = TkShell(width=640, height=480, log_dir=tmp_path)
+
+    path = shell.write_error_report("sample report")
+
+    assert path.exists()
+    assert path.read_text(encoding="utf-8") == "sample report\n"
+    latest = tmp_path / "latest.log"
+    assert latest.exists()
+    assert latest.read_text(encoding="utf-8") == "sample report\n"

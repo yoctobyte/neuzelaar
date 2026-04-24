@@ -65,11 +65,20 @@ The viewer currently has:
 
 - a browser pane with one tab, address bar, back/forward, reload, and scrolling
 - a debug pane with DOM tree, HTML source, and request diagnostics
+- automatic UI error capture in the debug pane and on disk
 
 Address bar behavior:
 
 - plain hostnames like `msn.com` default to `https://`
 - local paths still open as local files
+
+Error handling:
+
+- viewer errors still print to stderr
+- the latest UI error is also written to:
+  - `.neuzelaar/logs/latest.log`
+  - `.neuzelaar/logs/ui-error-*.log`
+- the left-side `Errors` tab shows the latest captured report
 
 The M2 console shell can also be used from Python:
 

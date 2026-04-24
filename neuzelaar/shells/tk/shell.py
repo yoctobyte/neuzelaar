@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import sys
 import traceback
 import tkinter as tk
@@ -24,6 +25,7 @@ class TkShell:
     session: BrowserSession = field(default_factory=BrowserSession)
     width: int = 800
     height: int = 600
+    log_dir: Path = field(default_factory=lambda: Path(".neuzelaar/logs"))
 
     def render_url_to_frame(self, url: str) -> tuple[PageLoadResult, Frame]:
         result = self.session.open_url(url)
@@ -74,9 +76,11 @@ class TkShell:
         dom_frame = ttk.Frame(debug_tabs)
         source_frame = ttk.Frame(debug_tabs)
         requests_frame = ttk.Frame(debug_tabs)
+        errors_frame = ttk.Frame(debug_tabs)
         debug_tabs.add(dom_frame, text="DOM")
         debug_tabs.add(source_frame, text="Source")
         debug_tabs.add(requests_frame, text="Requests")
+        debug_tabs.add(errors_frame, text="Errors")
 
         dom_tree = ttk.Treeview(dom_frame, columns=("node",), show="tree")
         dom_scroll = ttk.Scrollbar(dom_frame, orient=tk.VERTICAL, command=dom_tree.yview)
@@ -95,6 +99,12 @@ class TkShell:
         request_text.configure(yscrollcommand=request_scroll.set)
         request_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         request_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        error_text = tk.Text(errors_frame, wrap=tk.WORD)
+        error_scroll = ttk.Scrollbar(errors_frame, orient=tk.VERTICAL, command=error_text.yview)
+        error_text.configure(yscrollcommand=error_scroll.set)
+        error_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        error_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         browser_tabs = ttk.Notebook(browser_panel)
         browser_tabs.pack(fill=tk.BOTH, expand=True)
@@ -147,12 +157,17 @@ class TkShell:
             self.populate_dom_tree(dom_tree, result)
             self.populate_text_widget(source_text, self.source_text(result))
             self.populate_text_widget(request_text, self.requests_text(result))
+            self.populate_text_widget(error_text, "no captured errors")
 
         def show_error(exc: Exception) -> None:
             message = f"error: {exc}"
-            status_var.set(message)
+            report = self.error_report(exc)
+            report_path = self.write_error_report(report)
+            status_var.set(f"{message} | log: {report_path}")
             print(message, file=sys.stderr)
-            traceback.print_exc()
+            print(f"[neuzelaar-ui] wrote error report to {report_path}", file=sys.stderr)
+            print(report, file=sys.stderr)
+            self.populate_text_widget(error_text, report)
 
         def open_from_entry(_event=None) -> None:
             try:
@@ -230,6 +245,28 @@ class TkShell:
                 f"[{script.result.status.value}] script {source} ({node_id}) capability={capability}: {script.result.reason}"
             )
         return "\n".join(lines) if lines else "no planned requests"
+
+    def error_report(self, exc: Exception) -> str:
+        current_url = self.session.current.resource.final_url if self.session.current is not None else "no page loaded"
+        return "\n".join(
+            [
+                f"time: {datetime.now(UTC).isoformat()}",
+                f"current_url: {current_url}",
+                f"error_type: {type(exc).__name__}",
+                f"error: {exc}",
+                "",
+                traceback.format_exc().rstrip(),
+            ]
+        )
+
+    def write_error_report(self, report: str) -> Path:
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        path = self.log_dir / f"ui-error-{timestamp}.log"
+        path.write_text(report + "\n", encoding="utf-8")
+        latest = self.log_dir / "latest.log"
+        latest.write_text(report + "\n", encoding="utf-8")
+        return path
 
     def populate_text_widget(self, widget: tk.Text, value: str) -> None:
         widget.configure(state=tk.NORMAL)
