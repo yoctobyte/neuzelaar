@@ -8,6 +8,7 @@ import traceback
 import tkinter as tk
 from dataclasses import dataclass, field
 from pathlib import Path
+import signal
 from tkinter import ttk
 
 from PIL import Image, ImageTk
@@ -83,24 +84,27 @@ class TkShell:
         debug_tabs.add(errors_frame, text="Errors")
 
         dom_tree = ttk.Treeview(dom_frame, columns=("node",), show="tree")
+        style = ttk.Style(root)
+        style.configure("Neuzelaar.Treeview", rowheight=26)
+        dom_tree.configure(style="Neuzelaar.Treeview")
         dom_scroll = ttk.Scrollbar(dom_frame, orient=tk.VERTICAL, command=dom_tree.yview)
         dom_tree.configure(yscrollcommand=dom_scroll.set)
         dom_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         dom_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        source_text = tk.Text(source_frame, wrap=tk.NONE)
+        source_text = tk.Text(source_frame, wrap=tk.NONE, font=("TkFixedFont", 13))
         source_scroll = ttk.Scrollbar(source_frame, orient=tk.VERTICAL, command=source_text.yview)
         source_text.configure(yscrollcommand=source_scroll.set)
         source_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         source_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        request_text = tk.Text(requests_frame, wrap=tk.WORD)
+        request_text = tk.Text(requests_frame, wrap=tk.WORD, font=("TkFixedFont", 13))
         request_scroll = ttk.Scrollbar(requests_frame, orient=tk.VERTICAL, command=request_text.yview)
         request_text.configure(yscrollcommand=request_scroll.set)
         request_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         request_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        error_text = tk.Text(errors_frame, wrap=tk.WORD)
+        error_text = tk.Text(errors_frame, wrap=tk.WORD, font=("TkFixedFont", 13))
         error_scroll = ttk.Scrollbar(errors_frame, orient=tk.VERTICAL, command=error_text.yview)
         error_text.configure(yscrollcommand=error_scroll.set)
         error_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -118,7 +122,7 @@ class TkShell:
         forward_button = ttk.Button(toolbar, text="Forward", width=8)
         reload_button = ttk.Button(toolbar, text="Reload", width=8)
         address_var = tk.StringVar(value=initial_url)
-        address_entry = ttk.Entry(toolbar, textvariable=address_var)
+        address_entry = ttk.Entry(toolbar, textvariable=address_var, font=("TkDefaultFont", 13))
         status_var = tk.StringVar(value="")
 
         back_button.pack(side=tk.LEFT, padx=4, pady=4)
@@ -143,6 +147,15 @@ class TkShell:
             "<MouseWheel>",
             lambda event: canvas.yview_scroll(int(-event.delta / 120), "units"),
         )
+
+        def handle_sigint(_signum, _frame) -> None:
+            message = "Ctrl-C received. Shutting down Neuzelaar UI..."
+            status_var.set(message)
+            print(message, file=sys.stderr)
+            root.after(0, root.destroy)
+
+        previous_sigint = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, handle_sigint)
 
         def present(result: PageLoadResult, frame: Frame) -> None:
             photo = _frame_to_photo(frame)
@@ -198,8 +211,11 @@ class TkShell:
         reload_button.configure(command=reload_page)
         address_entry.bind("<Return>", open_from_entry)
 
-        present(*self.render_url_to_frame(initial_url))
-        root.mainloop()
+        try:
+            present(*self.render_url_to_frame(initial_url))
+            root.mainloop()
+        finally:
+            signal.signal(signal.SIGINT, previous_sigint)
 
     def needs_vertical_scroll(self, frame: Frame) -> bool:
         return frame.height > self.height

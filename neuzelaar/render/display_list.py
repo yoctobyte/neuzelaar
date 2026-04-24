@@ -34,6 +34,7 @@ class DrawText:
     y: int
     text: str
     color: Color
+    font_size: int
 
 
 @dataclass(frozen=True, slots=True)

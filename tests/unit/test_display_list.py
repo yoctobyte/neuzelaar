@@ -46,3 +46,4 @@ def test_build_display_list_uses_root_style_colors() -> None:
     assert isinstance(display_list.ops[0], FillRect)
     assert display_list.ops[0].color == Color(238, 238, 238)
     assert any(isinstance(op, DrawText) and op.color == Color(0, 0, 180) for op in display_list.ops)
+    assert any(isinstance(op, DrawText) and op.font_size >= 18 for op in display_list.ops)

@@ -15,6 +15,7 @@ class LayoutText:
     y: int
     text: str
     color: str
+    font_size: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +59,7 @@ def layout_document(
     items: list[LayoutItem] = []
     base_style = root_style or ComputedStyle()
     if document.title:
-        items.append(LayoutText(16, cursor_y, document.title, base_style.color))
+        items.append(LayoutText(16, cursor_y, document.title, base_style.color, max(_font_size_px(base_style), 24)))
         cursor_y += 28
     cursor_y = _layout_node(
         document,
@@ -87,7 +88,7 @@ def _layout_node(
     if isinstance(node, Text):
         text = " ".join(node.data.split())
         if text:
-            items.append(LayoutText(x, y, text, inherited_style.color))
+            items.append(LayoutText(x, y, text, inherited_style.color, _font_size_px(inherited_style)))
             return y + _line_height(inherited_style)
         return y
 
@@ -105,7 +106,7 @@ def _layout_node(
         if tag in {"h1", "h2", "h3"}:
             text = _collect_text(node)
             if text:
-                items.append(LayoutText(x, y, text, style.color))
+                items.append(LayoutText(x, y, text, style.color, max(_font_size_px(style), 26)))
                 return y + max(_line_height(style), 30) + margin
             return y
         if tag == "img":
@@ -129,7 +130,7 @@ def _layout_node(
         if tag == "li":
             text = _collect_text(node)
             if text:
-                items.append(LayoutText(x, y, f"- {text}", style.color))
+                items.append(LayoutText(x, y, f"- {text}", style.color, _font_size_px(style)))
                 return y + _line_height(style) + margin
             return y
         y += padding
@@ -215,12 +216,16 @@ def _effective_style(
 
 
 def _line_height(style: ComputedStyle) -> int:
+    return max(_font_size_px(style) + 8, 24)
+
+
+def _font_size_px(style: ComputedStyle) -> int:
     try:
         if style.font_size.endswith("px"):
-            return max(int(style.font_size[:-2]) + 6, 16)
+            return max(int(float(style.font_size[:-2])), 18)
     except ValueError:
         pass
-    return 22
+    return 18
 
 
 def _size_px(value: str) -> int:

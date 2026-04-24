@@ -68,6 +68,12 @@ def test_tk_shell_page_summary_reports_navigation_and_requests() -> None:
     assert "3 link(s)" in summary
 
 
+def test_tk_shell_normalize_address_defaults_blank_to_example() -> None:
+    shell = TkShell(width=640, height=480)
+
+    assert shell.normalize_address("") == "https://example.com"
+
+
 def test_tk_shell_normalize_address_defaults_web_input_to_https() -> None:
     shell = TkShell(width=640, height=480)
 

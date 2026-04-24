@@ -66,6 +66,7 @@ The viewer currently has:
 - a browser pane with one tab, address bar, back/forward, reload, and scrolling
 - a debug pane with DOM tree, HTML source, and request diagnostics
 - automatic UI error capture in the debug pane and on disk
+- larger default viewer/debug text for high-resolution displays
 
 Address bar behavior:
 
@@ -79,6 +80,7 @@ Error handling:
   - `.neuzelaar/logs/latest.log`
   - `.neuzelaar/logs/ui-error-*.log`
 - the left-side `Errors` tab shows the latest captured report
+- `Ctrl-C` from the launching terminal now requests a graceful UI shutdown
 
 The M2 console shell can also be used from Python:
 
