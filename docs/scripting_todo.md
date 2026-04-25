@@ -10,6 +10,7 @@ Implemented on the standalone `js_own` path:
 - language core:
   - expressions
   - variables / blocks / `if`
+  - `while`
   - functions / closures / `return`
   - objects / arrays / property access / indexing
   - exceptions
@@ -38,12 +39,19 @@ Implemented on the standalone `js_own` path:
   - `run_until_idle()` helper
   - timer dispatch for `setTimeout(...)`
   - `clearTimeout(...)`
+  - `setInterval(...)`
+  - `clearInterval(...)`
 
 Current verification baseline:
 
 - `.venv/bin/pytest -q`
 - `tools/check_guardrails.sh`
 - `tools/run_js_test262_subset.py --engine own`
+- `tools/run_js_test262_subset.py --engine quickjs`
+- `tools/run_js_wpt_subset.py --engine own`
+- `tools/run_js_wpt_subset.py --engine quickjs`
+- `tools/run_js_wpt_subset.py --engine own --manifest tests/fixtures/js/wpt_upstream_subset.txt`
+- `tools/run_js_wpt_subset.py --engine quickjs --manifest tests/fixtures/js/wpt_upstream_subset.txt`
 
 Related strategy docs:
 
@@ -56,7 +64,6 @@ Related strategy docs:
 ### Formal conformance
 
 - broader Test262 coverage
-- better compatibility with Test262 source/harness forms
 - larger async/promise-oriented formal subset
 
 ### Runtime semantics
@@ -79,8 +86,6 @@ Related strategy docs:
 
 ### Timers and tasks
 
-- `setInterval(...)`
-- interval cancellation semantics
 - more explicit timer/task inspection for debug UI
 - optional per-task budget overrides
 
@@ -101,7 +106,7 @@ Related strategy docs:
 
 - modules
 - generators
-- `for` / `while` / `switch`
+- `for` / `switch`
 - destructuring
 - classes beyond current supported slice if needed
 - private static methods/fields edge-case hardening
@@ -127,6 +132,10 @@ Related strategy docs:
      - async functions
      - await
      - microtask ordering
+   - widen the imported upstream WPT subset around:
+     - more `queueMicrotask`
+     - timer error behavior
+     - promise rejection behavior
 
 5. Host/DOM expansion
    - only after the runtime behavior is easier to observe and trust
