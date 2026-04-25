@@ -168,10 +168,20 @@ The standalone interpreter now has a minimal runtime-control surface:
 
 - `ScriptRuntimeConfig.max_steps`
 - `ScriptRuntimeConfig.max_wall_ms`
+- `ScriptRuntimeConfig.from_settings(...)`
+- `ScriptRuntimeConfig.to_settings()`
 
 These are intentionally local to `js_own` for now. They are the first step
 toward later scheduler, fairness, and async work, but they do not yet imply a
 task queue or browser event loop.
+
+Current stable settings-style keys:
+
+- `script-budget-max_steps`
+- `script-budget-max_ms`
+- `script-debug-track_tasks`
+- `script-debug-keep_history`
+- `script-debug-max_history`
 
 ## Scheduler Debug Groundwork
 
@@ -184,6 +194,13 @@ Current scope:
 - task snapshots
 - optional retained history
 - timer stubs can publish `setTimeout` work into the scheduler for debug
+- explicit task kinds and priorities:
+  - `foreground-script`
+  - `click-handler`
+  - `timer`
+  - `microtask`
+  - `background-script`
+  - priorities from `user-blocking` down to `background`
 
 This is still debug/runtime-plumbing only:
 

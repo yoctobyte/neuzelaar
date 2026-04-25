@@ -192,6 +192,51 @@ Recommended next move:
 
 — c
 
+## 2026-04-25 01:25 CET — codex → codex — [FYI] [handover]
+
+The scheduler/config cleanup needed before promise work is now in.
+
+What changed:
+
+- `ScriptRuntimeConfig` now has stable settings-style keys and helpers:
+  - `from_settings(...)`
+  - `to_settings()`
+- current key set:
+  - `script-budget-max_steps`
+  - `script-budget-max_ms`
+  - `script-debug-track_tasks`
+  - `script-debug-keep_history`
+  - `script-debug-max_history`
+- scheduler task taxonomy is now explicit:
+  - `ScriptTaskKind`
+    - `foreground-script`
+    - `click-handler`
+    - `timer`
+    - `microtask`
+    - `background-script`
+  - `ScriptTaskPriority`
+    - `user-blocking`
+    - `foreground`
+    - `normal`
+    - `background`
+
+Why this matters:
+
+- future UI/storage can hand the runtime one abstract settings snapshot
+- future promise/microtask work can target explicit task kinds instead of raw
+  strings
+- scheduler debug output is now less likely to drift semantically
+
+Verification after this slice:
+
+- host-focused tests -> `17 passed`
+- full suite -> `391 passed`
+- `tools/check_guardrails.sh` -> pass
+
+At this point the next real JS runtime step is promise core.
+
+— c
+
 ## 2026-04-25 00:00 CET — codex → codex — [FYI] [handover]
 
 Standalone JS interpreter status now:

@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from neuzelaar.engines.js_own.builtins import install_builtins
-from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
+from neuzelaar.engines.js_own.config import (
+    SCRIPT_DEBUG_KEEP_HISTORY_KEY,
+    SCRIPT_DEBUG_TRACK_TASKS_KEY,
+    ScriptRuntimeConfig,
+)
 from neuzelaar.engines.js_own.environment import Environment
 from neuzelaar.engines.js_own.host import HostObject
 from neuzelaar.engines.js_own.host_stubs import BrowserHostStubs, HostDocument, HostHistory, HostLocation
@@ -38,9 +42,11 @@ def build_browser_scenario(fixture: BrowserScenarioFixture) -> tuple[Environment
         history=HostHistory(entries=list(fixture.history_entries), index=fixture.history_index),
         scheduler=(
             ScriptScheduler(
-                config=ScriptRuntimeConfig(
-                    debug_track_tasks=fixture.scheduler_debug,
-                    debug_keep_history=fixture.scheduler_debug,
+                config=ScriptRuntimeConfig.from_settings(
+                    {
+                        SCRIPT_DEBUG_TRACK_TASKS_KEY: fixture.scheduler_debug,
+                        SCRIPT_DEBUG_KEEP_HISTORY_KEY: fixture.scheduler_debug,
+                    }
                 )
             )
             if fixture.scheduler_debug

@@ -6,7 +6,11 @@ from dataclasses import dataclass, field
 
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
 from neuzelaar.engines.js_own.runtime import js_to_string
-from neuzelaar.engines.js_own.scheduler import ScriptScheduler
+from neuzelaar.engines.js_own.scheduler import (
+    ScriptScheduler,
+    ScriptTaskKind,
+    ScriptTaskPriority,
+)
 
 
 @dataclass(slots=True)
@@ -72,10 +76,10 @@ class HostTimers:
         )
         if self.scheduler is not None:
             task = self.scheduler.queue_task(
-                kind="timer",
+                kind=ScriptTaskKind.TIMER,
                 origin=self.scheduler_origin,
                 url=self.scheduler_url,
-                priority="background",
+                priority=ScriptTaskPriority.BACKGROUND,
                 reason="setTimeout",
                 metadata={
                     "timer_id": timer_id,

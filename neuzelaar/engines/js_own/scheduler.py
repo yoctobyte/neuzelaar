@@ -20,6 +20,21 @@ class ScriptTaskState(Enum):
     FAILED = "failed"
 
 
+class ScriptTaskKind(Enum):
+    FOREGROUND_SCRIPT = "foreground-script"
+    CLICK_HANDLER = "click-handler"
+    TIMER = "timer"
+    MICROTASK = "microtask"
+    BACKGROUND_SCRIPT = "background-script"
+
+
+class ScriptTaskPriority(Enum):
+    USER_BLOCKING = "user-blocking"
+    FOREGROUND = "foreground"
+    NORMAL = "normal"
+    BACKGROUND = "background"
+
+
 @dataclass(frozen=True, slots=True)
 class ScriptTaskSnapshot:
     task_id: int
@@ -42,10 +57,10 @@ class ScriptTaskSnapshot:
 @dataclass(slots=True)
 class ScriptTask:
     task_id: int
-    kind: str
+    kind: ScriptTaskKind
     origin: str | None
     url: str | None
-    priority: str
+    priority: ScriptTaskPriority
     created_at: float
     state: ScriptTaskState = ScriptTaskState.QUEUED
     last_started_at: float | None = None
@@ -60,11 +75,11 @@ class ScriptTask:
     def snapshot(self) -> ScriptTaskSnapshot:
         return ScriptTaskSnapshot(
             task_id=self.task_id,
-            kind=self.kind,
+            kind=self.kind.value,
             origin=self.origin,
             url=self.url,
             state=self.state.value,
-            priority=self.priority,
+            priority=self.priority.value,
             created_at=self.created_at,
             last_started_at=self.last_started_at,
             run_slices=self.run_slices,
@@ -88,10 +103,10 @@ class ScriptScheduler:
     def queue_task(
         self,
         *,
-        kind: str,
+        kind: ScriptTaskKind,
         origin: str | None = None,
         url: str | None = None,
-        priority: str = "normal",
+        priority: ScriptTaskPriority = ScriptTaskPriority.NORMAL,
         reason: str | None = None,
         metadata: dict[str, object] | None = None,
         budget_steps: int | None = None,
