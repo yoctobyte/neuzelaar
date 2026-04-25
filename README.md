@@ -4,6 +4,10 @@ Neuzelaar 2 is a policy-first modular browser experiment. Milestone 1 is the
 headless skeleton: fetch a local page, classify it, parse it, render semantic
 text, and report blocked planned subresources.
 
+## License Status
+
+There is no final formal repository license yet. See [LICENSE-NOTE.md](LICENSE-NOTE.md).
+
 ## Development
 
 ### Setup
