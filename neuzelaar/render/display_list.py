@@ -60,7 +60,17 @@ class DrawImage:
     bitmap: Bitmap
 
 
-DisplayOp = Union[FillRect, DrawText, Placeholder, DrawImage]
+@dataclass(frozen=True, slots=True)
+class PushClip:
+    rect: Rect
+
+
+@dataclass(frozen=True, slots=True)
+class PopClip:
+    pass
+
+
+DisplayOp = Union[FillRect, DrawText, Placeholder, DrawImage, PushClip, PopClip]
 
 
 @dataclass(frozen=True, slots=True)

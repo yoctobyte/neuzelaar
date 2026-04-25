@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from neuzelaar.core.page import ImageAsset
 from neuzelaar.document.bfc import (
     BoxPlacement,
+    ClipPopPlacement,
+    ClipPushPlacement,
     ImagePlacement,
     TextPlacement,
     finalize_backgrounds,
@@ -65,7 +67,20 @@ class LayoutBox:
     color: str
 
 
-LayoutItem = LayoutText | LayoutImage | LayoutBox
+@dataclass(frozen=True, slots=True)
+class LayoutClipPush:
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+@dataclass(frozen=True, slots=True)
+class LayoutClipPop:
+    pass
+
+
+LayoutItem = LayoutText | LayoutImage | LayoutBox | LayoutClipPush | LayoutClipPop
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,7 +132,8 @@ def layout_document(
         content_height = bfc_height
 
     total_height = max(cursor_y + content_height + OUTER_MARGIN, 64)
-    items = _sort_backgrounds_behind(items)
+    # Preserve emission order so clip push / pop pairs stay paired and
+    # background-before-content order from BFC is honoured.
     return LayoutResult(width=width, height=total_height, items=tuple(items))
 
 
@@ -149,6 +165,15 @@ def _to_layout_item(placement, *, dx: int, dy: int) -> LayoutItem:
             height=placement.height,
             color=placement.color,
         )
+    if isinstance(placement, ClipPushPlacement):
+        return LayoutClipPush(
+            x=placement.x + dx,
+            y=placement.y + dy,
+            width=placement.width,
+            height=placement.height,
+        )
+    if isinstance(placement, ClipPopPlacement):
+        return LayoutClipPop()
     raise TypeError(f"Unknown placement type: {type(placement).__name__}")
 
 

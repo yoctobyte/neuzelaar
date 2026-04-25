@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Overflow Demo</title>
+  <style>
+    body { font-size: 18px; color: #222; padding: 20px; }
+    h1 { color: #003366; }
+    .clipped {
+      width: 240px;
+      height: 80px;
+      overflow: hidden;
+      background-color: #eef3fa;
+      padding: 8px;
+      margin: 12px 0;
+    }
+    .visible {
+      width: 240px;
+      height: 80px;
+      background-color: #faf3ee;
+      padding: 8px;
+      margin: 12px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Overflow</h1>
+  <div class="clipped">
+    A clipped box keeps its declared height of 80 pixels and hides any
+    content that would extend below or beside the padding edge. The
+    rest of this paragraph is invisible because the box clips at its
+    border.
+  </div>
+  <div class="visible">
+    A visible box of the same height shows its declared height in CSS
+    but allows content to flow past the bottom edge into the surrounding
+    layout. Compare with the clipped box above.
+  </div>
+  <p>Trailing paragraph in normal flow.</p>
+</body>
+</html>

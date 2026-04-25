@@ -75,7 +75,28 @@ class BoxPlacement:
     node_id: NodeId | None = None
 
 
-Placement = TextPlacement | ImagePlacement | BoxPlacement
+@dataclass(frozen=True, slots=True)
+class ClipPushPlacement:
+    """Begin a clipping region. All subsequent placements (until the
+    matching ClipPopPlacement) are constrained to the rectangle. The
+    rectangle is the box's padding edge; box-shadows, outlines, and
+    overflow:visible content are not yet handled.
+    """
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+@dataclass(frozen=True, slots=True)
+class ClipPopPlacement:
+    """End the most recently pushed clipping region."""
+
+
+Placement = (
+    TextPlacement | ImagePlacement | BoxPlacement | ClipPushPlacement | ClipPopPlacement
+)
 
 
 @dataclass(slots=True)
@@ -246,6 +267,21 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     box.geometry.x = x + margin.left
     box.geometry.y = y + margin.top
 
+    # If overflow is non-visible, wrap the box's children in a clip
+    # region. The clip rect's height isn't known yet — use a sentinel
+    # patched in finalize_clips, mirroring the background flow.
+    clip_open_index: int | None = None
+    if style.overflow == "hidden":
+        clip_open_index = len(state.items)
+        state.items.append(
+            ClipPushPlacement(
+                x=box.geometry.x + border.left + state.relative_offset_x,
+                y=box.geometry.y + border.top + state.relative_offset_y,
+                width=padding.left + content_width + padding.right,
+                height=_BACKGROUND_PLACEHOLDER,
+            )
+        )
+
     # Apply relative-position offset for this box and its descendants.
     saved_offset = (state.relative_offset_x, state.relative_offset_y)
     pushed_cb = False
@@ -349,6 +385,17 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     if pushed_cb:
         state.cb_stack.pop()
     state.relative_offset_x, state.relative_offset_y = saved_offset
+
+    # Close the clip region opened above, with the now-known content
+    # height and a matching pop.
+    if clip_open_index is not None:
+        clip = state.items[clip_open_index]
+        assert isinstance(clip, ClipPushPlacement)
+        clip_height = padding.top + content_height + padding.bottom
+        state.items[clip_open_index] = ClipPushPlacement(
+            x=clip.x, y=clip.y, width=clip.width, height=clip_height,
+        )
+        state.items.append(ClipPopPlacement())
 
     box_bottom = box.geometry.y + border.top + padding.top + content_height + padding.bottom + border.bottom
     return box_bottom + margin.bottom

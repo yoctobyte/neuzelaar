@@ -32,6 +32,7 @@ class ComputedStyle:
     right: str = "auto"
     bottom: str = "auto"
     left: str = "auto"
+    overflow: str = "visible"
 
 
 SUPPORTED_PROPERTIES = {
@@ -46,6 +47,7 @@ SUPPORTED_PROPERTIES = {
     "height",
     "left",
     "margin",
+    "overflow",
     "padding",
     "position",
     "right",
@@ -199,6 +201,7 @@ def _style_from_declarations(
         right=declarations.get("right", "auto"),
         bottom=declarations.get("bottom", "auto"),
         left=declarations.get("left", "auto"),
+        overflow=_normalize_overflow(declarations.get("overflow")),
     )
 
 
@@ -209,6 +212,19 @@ def _normalize_position(value: str | None) -> str:
     if normalized in {"static", "relative", "absolute", "fixed"}:
         return normalized
     return "static"
+
+
+def _normalize_overflow(value: str | None) -> str:
+    if value is None:
+        return "visible"
+    normalized = value.strip().lower()
+    if normalized in {"visible", "hidden", "clip", "scroll", "auto"}:
+        # We treat scroll/auto/clip as hidden for visual purposes since
+        # we have no scrollbar UI yet.
+        if normalized in {"scroll", "auto", "clip"}:
+            return "hidden"
+        return normalized
+    return "visible"
 
 
 def _normalize_float(value: str | None) -> str:

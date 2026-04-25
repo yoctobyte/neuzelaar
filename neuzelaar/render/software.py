@@ -6,7 +6,17 @@ from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFont
 
-from neuzelaar.render.display_list import Color, DisplayList, DrawImage, DrawText, FillRect, Placeholder
+from neuzelaar.render.display_list import (
+    Color,
+    DisplayList,
+    DrawImage,
+    DrawText,
+    FillRect,
+    Placeholder,
+    PopClip,
+    PushClip,
+    Rect,
+)
 from neuzelaar.shell_api.frame import Frame, PixelFormat
 from neuzelaar.core.watchdog import check_resources
 
@@ -25,9 +35,49 @@ def rasterize(display_list: DisplayList) -> Frame:
     image = Image.new("RGBA", (display_list.width, clamped_height), (255, 255, 255, 255))
     draw = ImageDraw.Draw(image)
 
+    # Active clip stack: each entry is the intersection of all clips
+    # pushed so far. None means "no clip"; a Rect means subsequent ops
+    # whose bounding box is fully outside are skipped.
+    clip_stack: list[Rect | None] = [None]
+
+    def active_clip() -> Rect | None:
+        return clip_stack[-1]
+
+    def fully_outside(item_x: int, item_y: int, item_w: int, item_h: int) -> bool:
+        clip = active_clip()
+        if clip is None:
+            return False
+        if item_y + item_h <= clip.y or item_y >= clip.y + clip.height:
+            return True
+        if item_x + item_w <= clip.x or item_x >= clip.x + clip.width:
+            return True
+        return False
+
     for op in display_list.ops:
+        if isinstance(op, PushClip):
+            existing = active_clip()
+            new_clip = op.rect
+            if existing is not None:
+                # Intersect with existing clip.
+                left = max(existing.x, new_clip.x)
+                top = max(existing.y, new_clip.y)
+                right = min(existing.x + existing.width, new_clip.x + new_clip.width)
+                bottom = min(existing.y + existing.height, new_clip.y + new_clip.height)
+                if right <= left or bottom <= top:
+                    new_clip = Rect(left, top, 0, 0)
+                else:
+                    new_clip = Rect(left, top, right - left, bottom - top)
+            clip_stack.append(new_clip)
+            continue
+        if isinstance(op, PopClip):
+            if len(clip_stack) > 1:
+                clip_stack.pop()
+            continue
+
         if isinstance(op, FillRect):
             if op.rect.y >= clamped_height:
+                continue
+            if fully_outside(op.rect.x, op.rect.y, op.rect.width, op.rect.height):
                 continue
             draw.rectangle(_rect_tuple(op.rect), fill=_color_tuple(op.color))
         elif isinstance(op, DrawText):
@@ -35,14 +85,21 @@ def rasterize(display_list: DisplayList) -> Frame:
                 continue
             font = _load_font(op.font_size)
             x = _aligned_text_x(op, font)
+            est_w = max(op.max_width or len(op.text) * op.font_size, op.font_size)
+            if fully_outside(x, op.y, est_w, op.font_size + 4):
+                continue
             draw.text((x, op.y), op.text, fill=_color_tuple(op.color), font=font)
         elif isinstance(op, DrawImage):
             if op.y >= clamped_height:
+                continue
+            if fully_outside(op.x, op.y, op.bitmap.width, op.bitmap.height):
                 continue
             bitmap = Image.frombytes("RGBA", (op.bitmap.width, op.bitmap.height), op.bitmap.pixels)
             image.alpha_composite(bitmap, (op.x, op.y))
         elif isinstance(op, Placeholder):
             if op.rect.y >= clamped_height:
+                continue
+            if fully_outside(op.rect.x, op.rect.y, op.rect.width, op.rect.height):
                 continue
             draw.rectangle(_rect_tuple(op.rect), outline=(120, 120, 120, 255), fill=(245, 245, 245, 255))
             draw.text((op.rect.x + 6, op.rect.y + 9), op.label, fill=(60, 60, 60, 255), font=_load_font(16))

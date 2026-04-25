@@ -2,9 +2,27 @@
 
 from __future__ import annotations
 
-from neuzelaar.document.layout import LayoutBox, LayoutImage, LayoutText, layout_document
+from neuzelaar.document.layout import (
+    LayoutBox,
+    LayoutClipPop,
+    LayoutClipPush,
+    LayoutImage,
+    LayoutText,
+    layout_document,
+)
 from neuzelaar.document.styles import ComputedStyle
-from neuzelaar.render.display_list import Bitmap, Color, DisplayList, DrawImage, DrawText, FillRect, Placeholder, Rect
+from neuzelaar.render.display_list import (
+    Bitmap,
+    Color,
+    DisplayList,
+    DrawImage,
+    DrawText,
+    FillRect,
+    Placeholder,
+    PopClip,
+    PushClip,
+    Rect,
+)
 
 
 def build_display_list(
@@ -63,6 +81,10 @@ def build_display_list(
                 )
             else:
                 ops.append(Placeholder(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)), f"image: {item.label}"))
+        elif isinstance(item, LayoutClipPush):
+            ops.append(PushClip(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height))))
+        elif isinstance(item, LayoutClipPop):
+            ops.append(PopClip())
     return DisplayList(width=sx(layout.width), height=sx(layout.height), ops=tuple(ops))
 
 
