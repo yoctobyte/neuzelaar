@@ -11,6 +11,7 @@ from neuzelaar.document.dom import Document, Element, Node, NodeId, Text, walk
 class StyleRule:
     selector: str
     declarations: dict[str, str]
+    important: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,8 +49,16 @@ SUPPORTED_PROPERTIES = {
     "height",
     "left",
     "margin",
+    "margin-bottom",
+    "margin-left",
+    "margin-right",
+    "margin-top",
     "overflow",
     "padding",
+    "padding-bottom",
+    "padding-left",
+    "padding-right",
+    "padding-top",
     "position",
     "right",
     "text-align",
@@ -150,7 +159,7 @@ def parse_declarations(text: str) -> dict[str, str]:
         name, value = raw.split(":", 1)
         name = name.strip().lower()
         if name in SUPPORTED_PROPERTIES:
-            declarations[name] = value.strip()
+            declarations[name] = value.replace("!important", "").strip()
     return declarations
 
 
@@ -159,22 +168,23 @@ def _supported(declarations: dict[str, str]) -> dict[str, str]:
 
 
 def _cascade_declarations(node: Element, rules: tuple[StyleRule, ...]) -> dict[str, str]:
-    matches: list[tuple[tuple[int, int, int], int, dict[str, str]]] = []
+    matches: list[tuple[tuple[int, int, int], int, dict[str, str], frozenset[str]]] = []
     order = 0
     for rule in rules:
         for selector in _split_selector_group(rule.selector):
             if _matches_selector(node, selector):
-                matches.append((_selector_specificity(selector), order, _supported(rule.declarations)))
+                matches.append(
+                    (
+                        _selector_specificity(selector),
+                        order,
+                        _supported(rule.declarations),
+                        rule.important,
+                    )
+                )
                 order += 1
-    # Sort ascending so later (higher-specificity / later document order)
-    # entries overwrite earlier ones via dict.update.
-    matches.sort(key=lambda item: (item[0], item[1]))
-    declarations: dict[str, str] = {}
-    for _, _, decls in matches:
-        declarations.update(decls)
+    declarations = _flatten_cascade_matches(matches)
     inline_style = node.attr("style")
     if inline_style:
-        # Inline declarations beat all selector-matched rules.
         declarations.update(parse_declarations(inline_style))
     return declarations
 
@@ -212,12 +222,8 @@ def _style_from_declarations(
         display=_normalize_display(
             _resolve_property_value("display", declarations, parent_style, initial_values)
         ),
-        margin=_normalize_box_shorthand(
-            _resolve_property_value("margin", declarations, parent_style, initial_values)
-        ),
-        padding=_normalize_box_shorthand(
-            _resolve_property_value("padding", declarations, parent_style, initial_values)
-        ),
+        margin=_resolve_box_property("margin", declarations, parent_style, initial_values),
+        padding=_resolve_box_property("padding", declarations, parent_style, initial_values),
         text_align=_normalize_text_align(
             _resolve_property_value("text-align", declarations, parent_style, initial_values),
             parent_style.text_align,
@@ -271,8 +277,16 @@ def _initial_style_values() -> dict[str, str]:
         "height": "auto",
         "left": "auto",
         "margin": "0",
+        "margin-bottom": "0",
+        "margin-left": "0",
+        "margin-right": "0",
+        "margin-top": "0",
         "overflow": "visible",
         "padding": "0",
+        "padding-bottom": "0",
+        "padding-left": "0",
+        "padding-right": "0",
+        "padding-top": "0",
         "position": "static",
         "right": "auto",
         "text-align": "left",
@@ -300,6 +314,72 @@ def _resolve_property_value(
     if lowered == "initial":
         return initial_values[name]
     return normalized
+
+
+def _flatten_cascade_matches(
+    matches: list[tuple[tuple[int, int, int], int, dict[str, str], frozenset[str]]]
+) -> dict[str, str]:
+    resolved: dict[str, tuple[int, tuple[int, int, int], int, str]] = {}
+    for specificity, order, declarations, important in matches:
+        for name, value in declarations.items():
+            weight = 1 if name in important else 0
+            current = resolved.get(name)
+            candidate = (weight, specificity, order, value)
+            if current is None or candidate[:3] >= current[:3]:
+                resolved[name] = candidate
+    return {name: value for name, (_, _, _, value) in resolved.items()}
+
+
+def _resolve_box_property(
+    prefix: str,
+    declarations: dict[str, str],
+    parent_style: ComputedStyle,
+    initial_values: dict[str, str],
+) -> str:
+    shorthand = _resolve_property_value(prefix, declarations, parent_style, initial_values)
+    top, right, bottom, left = _expand_box_tokens(shorthand)
+    edges = {
+        "top": top,
+        "right": right,
+        "bottom": bottom,
+        "left": left,
+    }
+    for side in ("top", "right", "bottom", "left"):
+        longhand_name = f"{prefix}-{side}"
+        if longhand_name in declarations:
+            edges[side] = _resolve_property_value(
+                longhand_name,
+                declarations,
+                parent_style,
+                initial_values,
+            )
+    return _compress_box_edges(edges["top"], edges["right"], edges["bottom"], edges["left"])
+
+
+def _expand_box_tokens(value: str) -> tuple[str, str, str, str]:
+    tokens = value.strip().split()
+    if not tokens:
+        return ("0", "0", "0", "0")
+    if len(tokens) == 1:
+        token = tokens[0]
+        return (token, token, token, token)
+    if len(tokens) == 2:
+        top_bottom, right_left = tokens
+        return (top_bottom, right_left, top_bottom, right_left)
+    if len(tokens) == 3:
+        top, right_left, bottom = tokens
+        return (top, right_left, bottom, right_left)
+    return (tokens[0], tokens[1], tokens[2], tokens[3])
+
+
+def _compress_box_edges(top: str, right: str, bottom: str, left: str) -> str:
+    if top == right == bottom == left:
+        return top
+    if top == bottom and right == left:
+        return f"{top} {right}"
+    if right == left:
+        return f"{top} {right} {bottom}"
+    return f"{top} {right} {bottom} {left}"
 
 
 def _normalize_color(value: str, fallback: str) -> str:
@@ -410,33 +490,41 @@ def _split_selector_group(selector: str) -> list[str]:
 
 def _selector_specificity(selector: str) -> tuple[int, int, int]:
     ids = classes = tags = 0
-    for part in selector.split():
-        if not part:
+    for combinator, part in _parse_selector_steps(selector):
+        if combinator not in {" ", ">"}:
             continue
         parsed = _parse_simple_selector(part)
+        if parsed is None:
+            continue
         ids += 1 if parsed.id_name is not None else 0
         classes += len(parsed.classes)
-        tags += 1 if parsed.tag is not None else 0
+        tags += 1 if parsed.tag not in (None, "*") else 0
     return (ids, classes, tags)
 
 
 def _matches_selector(node: Element, selector: str) -> bool:
-    parts = [part for part in selector.strip().split() if part]
-    if not parts:
+    steps = _parse_selector_steps(selector)
+    if not steps:
         return False
-    # The rightmost simple selector must match the node itself.
-    if not _matches_simple_selector(node, parts[-1]):
+    if not _matches_simple_selector(node, steps[-1][1]):
         return False
-    parent = node.parent
-    current: Element | None = parent if isinstance(parent, Element) else None
-    for part in reversed(parts[:-1]):
-        while current is not None and not _matches_simple_selector(current, part):
+    current: Element = node
+    for index in range(len(steps) - 1, 0, -1):
+        combinator = steps[index][0]
+        expected = steps[index - 1][1]
+        if combinator == ">":
+            parent = current.parent
+            current = parent if isinstance(parent, Element) else None
+            if current is None or not _matches_simple_selector(current, expected):
+                return False
+            continue
+        parent = current.parent
+        current = parent if isinstance(parent, Element) else None
+        while current is not None and not _matches_simple_selector(current, expected):
             parent = current.parent
             current = parent if isinstance(parent, Element) else None
         if current is None:
             return False
-        parent = current.parent
-        current = parent if isinstance(parent, Element) else None
     return True
 
 
@@ -498,7 +586,7 @@ def _matches_simple_selector(node: Element, selector: str) -> bool:
     parsed = _parse_simple_selector(selector)
     if parsed is None:
         return False
-    if parsed.tag is not None and node.tag.lower() != parsed.tag:
+    if parsed.tag not in (None, "*") and node.tag.lower() != parsed.tag:
         return False
     if parsed.id_name is not None and node.attr("id") != parsed.id_name:
         return False
@@ -507,6 +595,36 @@ def _matches_simple_selector(node: Element, selector: str) -> bool:
         if not all(name in classes for name in parsed.classes):
             return False
     return parsed.tag is not None or parsed.id_name is not None or bool(parsed.classes)
+
+
+def _parse_selector_steps(selector: str) -> list[tuple[str, str]]:
+    steps: list[tuple[str, str]] = []
+    current = ""
+    pending_combinator = " "
+    in_whitespace = False
+    for char in selector.strip():
+        if char == ">":
+            if current.strip():
+                steps.append((pending_combinator, current.strip()))
+                current = ""
+            pending_combinator = ">"
+            in_whitespace = False
+            continue
+        if char.isspace():
+            if current.strip():
+                steps.append((pending_combinator, current.strip()))
+                current = ""
+            if pending_combinator != ">":
+                pending_combinator = " "
+            in_whitespace = True
+            continue
+        if in_whitespace and pending_combinator != ">":
+            pending_combinator = " "
+            in_whitespace = False
+        current += char
+    if current.strip():
+        steps.append((pending_combinator, current.strip()))
+    return steps
 
 
 @dataclass(frozen=True, slots=True)

@@ -15,6 +15,7 @@ def test_parse_stylesheet_returns_internal_rules() -> None:
     assert len(rules) == 1
     assert rules[0].selector == "p"
     assert rules[0].declarations == {"color": "blue", "margin": "4px"}
+    assert rules[0].important == frozenset()
 
 
 def test_compute_styles_applies_rule_and_inline_override() -> None:
@@ -274,3 +275,77 @@ def test_compute_styles_resolves_font_size_keywords_through_cascade_keywords() -
     )
 
     assert styles[NodeId("p")].font_size == "20px"
+
+
+def test_parse_stylesheet_preserves_important_declarations() -> None:
+    rules = parse_stylesheet("p { color: blue !important; margin-top: 4px }")
+
+    assert rules[0].declarations == {"color": "blue", "margin-top": "4px"}
+    assert rules[0].important == frozenset({"color"})
+
+
+def test_compute_styles_supports_child_combinator() -> None:
+    document = Document(id=NodeId("doc"))
+    section = Element(id=NodeId("section"), tag="section")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    span = Element(id=NodeId("span"), tag="span")
+    append_child(document, section)
+    append_child(section, paragraph)
+    append_child(paragraph, span)
+
+    styles = compute_styles(document, parse_stylesheet("section > p { color: navy } section > span { color: red }"))
+
+    assert styles[NodeId("p")].color == "navy"
+    assert styles[NodeId("span")].color != "red"
+
+
+def test_compute_styles_supports_universal_selector() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, body)
+    append_child(body, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("* { color: olive }"))
+
+    assert styles[NodeId("body")].color == "olive"
+    assert styles[NodeId("p")].color == "olive"
+
+
+def test_compute_styles_resolves_margin_longhands_over_shorthand() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet("p { margin: 1px 2px; margin-left: 9px; margin-top: 4px }"),
+    )
+
+    assert styles[NodeId("p")].margin == "4px 2px 1px 9px"
+
+
+def test_compute_styles_resolves_padding_longhands_over_shorthand() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet("p { padding: 3px; padding-bottom: 8px; padding-right: 5px }"),
+    )
+
+    assert styles[NodeId("p")].padding == "3px 5px 8px 3px"
+
+
+def test_compute_styles_respects_important_over_higher_specificity() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"id": "lead"})
+    append_child(document, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet("p { color: green !important } #lead { color: blue }"),
+    )
+
+    assert styles[NodeId("p")].color == "green"

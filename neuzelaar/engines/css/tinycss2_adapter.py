@@ -14,6 +14,7 @@ def parse_stylesheet(css: str) -> tuple[StyleRule, ...]:
             continue
         selector = tinycss2.serialize(rule.prelude).strip()
         declarations = {}
+        important: set[str] = set()
         for declaration in tinycss2.parse_declaration_list(
             rule.content,
             skip_comments=True,
@@ -24,6 +25,14 @@ def parse_stylesheet(css: str) -> tuple[StyleRule, ...]:
             name = declaration.name.lower()
             if name in SUPPORTED_PROPERTIES:
                 declarations[name] = tinycss2.serialize(declaration.value).strip()
+                if declaration.important:
+                    important.add(name)
         if declarations:
-            rules.append(StyleRule(selector=selector, declarations=declarations))
+            rules.append(
+                StyleRule(
+                    selector=selector,
+                    declarations=declarations,
+                    important=frozenset(important),
+                )
+            )
     return tuple(rules)
