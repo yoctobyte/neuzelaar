@@ -42,6 +42,10 @@ It does not yet support:
 - harness includes
 - agent-based or realm-heavy cases
 
+Related verification strategy:
+
+- `docs/js_test_strategy.md`
+
 ## Current Snapshot
 
 Measured on April 24, 2026 with Python 3.12 in the local `.venv`.

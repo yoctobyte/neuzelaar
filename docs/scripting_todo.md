@@ -45,6 +45,12 @@ Current verification baseline:
 - `tools/check_guardrails.sh`
 - `tools/run_js_test262_subset.py --engine own`
 
+Related strategy docs:
+
+- `docs/js_own.md`
+- `docs/js_engines.md`
+- `docs/js_test_strategy.md`
+
 ## What Is Still Missing
 
 ### Formal conformance
