@@ -349,3 +349,79 @@ def test_compute_styles_respects_important_over_higher_specificity() -> None:
     )
 
     assert styles[NodeId("p")].color == "green"
+
+
+def test_compute_styles_supports_adjacent_sibling_combinator() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    h1 = Element(id=NodeId("h1"), tag="h1")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    trailing = Element(id=NodeId("span"), tag="span")
+    append_child(document, body)
+    append_child(body, h1)
+    append_child(body, paragraph)
+    append_child(body, trailing)
+
+    styles = compute_styles(document, parse_stylesheet("h1 + p { color: maroon }"))
+
+    assert styles[NodeId("p")].color == "maroon"
+    assert styles[NodeId("span")].color != "maroon"
+
+
+def test_compute_styles_supports_general_sibling_combinator() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    h1 = Element(id=NodeId("h1"), tag="h1")
+    divider = Element(id=NodeId("divider"), tag="hr")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, body)
+    append_child(body, h1)
+    append_child(body, divider)
+    append_child(body, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("h1 ~ p { color: brown }"))
+
+    assert styles[NodeId("p")].color == "brown"
+
+
+def test_compute_styles_supports_attribute_presence_selector() -> None:
+    document = Document(id=NodeId("doc"))
+    form = Element(id=NodeId("form"), tag="form")
+    enabled = Element(id=NodeId("enabled"), tag="input", attrs={"name": "q"})
+    disabled = Element(id=NodeId("disabled"), tag="input")
+    append_child(document, form)
+    append_child(form, enabled)
+    append_child(form, disabled)
+
+    styles = compute_styles(document, parse_stylesheet("input[name] { color: darkgreen }"))
+
+    assert styles[NodeId("enabled")].color == "darkgreen"
+    assert styles[NodeId("disabled")].color != "darkgreen"
+
+
+def test_compute_styles_supports_attribute_value_selector() -> None:
+    document = Document(id=NodeId("doc"))
+    form = Element(id=NodeId("form"), tag="form")
+    text_input = Element(id=NodeId("text"), tag="input", attrs={"type": "text"})
+    button = Element(id=NodeId("button"), tag="input", attrs={"type": "submit"})
+    append_child(document, form)
+    append_child(form, text_input)
+    append_child(form, button)
+
+    styles = compute_styles(document, parse_stylesheet('input[type="text"] { color: purple }'))
+
+    assert styles[NodeId("text")].color == "purple"
+    assert styles[NodeId("button")].color != "purple"
+
+
+def test_compute_styles_supports_compound_attribute_selector() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"class": "lead", "data-kind": "hero"})
+    append_child(document, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet('p.lead[data-kind="hero"] { color: crimson }'),
+    )
+
+    assert styles[NodeId("p")].color == "crimson"

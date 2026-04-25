@@ -491,13 +491,13 @@ def _split_selector_group(selector: str) -> list[str]:
 def _selector_specificity(selector: str) -> tuple[int, int, int]:
     ids = classes = tags = 0
     for combinator, part in _parse_selector_steps(selector):
-        if combinator not in {" ", ">"}:
+        if combinator not in {" ", ">", "+", "~"}:
             continue
         parsed = _parse_simple_selector(part)
         if parsed is None:
             continue
         ids += 1 if parsed.id_name is not None else 0
-        classes += len(parsed.classes)
+        classes += len(parsed.classes) + len(parsed.attributes)
         tags += 1 if parsed.tag not in (None, "*") else 0
     return (ids, classes, tags)
 
@@ -516,6 +516,19 @@ def _matches_selector(node: Element, selector: str) -> bool:
             parent = current.parent
             current = parent if isinstance(parent, Element) else None
             if current is None or not _matches_simple_selector(current, expected):
+                return False
+            continue
+        if combinator in {"+", "~"}:
+            sibling = _previous_element_sibling(current)
+            if combinator == "+":
+                current = sibling
+                if current is None or not _matches_simple_selector(current, expected):
+                    return False
+                continue
+            while sibling is not None and not _matches_simple_selector(sibling, expected):
+                sibling = _previous_element_sibling(sibling)
+            current = sibling
+            if current is None:
                 return False
             continue
         parent = current.parent
@@ -594,7 +607,19 @@ def _matches_simple_selector(node: Element, selector: str) -> bool:
         classes = set((node.attr("class") or "").split())
         if not all(name in classes for name in parsed.classes):
             return False
-    return parsed.tag is not None or parsed.id_name is not None or bool(parsed.classes)
+    if parsed.attributes:
+        for name, expected in parsed.attributes:
+            actual = node.attr(name)
+            if actual is None:
+                return False
+            if expected is not None and actual != expected:
+                return False
+    return (
+        parsed.tag is not None
+        or parsed.id_name is not None
+        or bool(parsed.classes)
+        or bool(parsed.attributes)
+    )
 
 
 def _parse_selector_steps(selector: str) -> list[tuple[str, str]]:
@@ -602,7 +627,29 @@ def _parse_selector_steps(selector: str) -> list[tuple[str, str]]:
     current = ""
     pending_combinator = " "
     in_whitespace = False
+    bracket_depth = 0
+    quote_char: str | None = None
     for char in selector.strip():
+        if quote_char is not None:
+            current += char
+            if char == quote_char:
+                quote_char = None
+            continue
+        if char in {'"', "'"}:
+            current += char
+            quote_char = char
+            continue
+        if char == "[":
+            bracket_depth += 1
+            current += char
+            continue
+        if char == "]":
+            bracket_depth = max(bracket_depth - 1, 0)
+            current += char
+            continue
+        if bracket_depth > 0:
+            current += char
+            continue
         if char == ">":
             if current.strip():
                 steps.append((pending_combinator, current.strip()))
@@ -610,15 +657,22 @@ def _parse_selector_steps(selector: str) -> list[tuple[str, str]]:
             pending_combinator = ">"
             in_whitespace = False
             continue
+        if char in {"+", "~"}:
+            if current.strip():
+                steps.append((pending_combinator, current.strip()))
+                current = ""
+            pending_combinator = char
+            in_whitespace = False
+            continue
         if char.isspace():
             if current.strip():
                 steps.append((pending_combinator, current.strip()))
                 current = ""
-            if pending_combinator != ">":
+            if pending_combinator not in {">", "+", "~"}:
                 pending_combinator = " "
             in_whitespace = True
             continue
-        if in_whitespace and pending_combinator != ">":
+        if in_whitespace and pending_combinator not in {">", "+", "~"}:
             pending_combinator = " "
             in_whitespace = False
         current += char
@@ -632,6 +686,7 @@ class _SimpleSelector:
     tag: str | None
     id_name: str | None
     classes: tuple[str, ...]
+    attributes: tuple[tuple[str, str | None], ...]
 
 
 def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
@@ -641,9 +696,35 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
     tag: str | None = None
     id_name: str | None = None
     classes: list[str] = []
+    attributes: list[tuple[str, str | None]] = []
     token = ""
     mode = "tag"
-    for char in text:
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "[":
+            if token:
+                if mode == "tag":
+                    if tag is not None:
+                        return None
+                    tag = token.lower()
+                elif mode == "id":
+                    if id_name is not None:
+                        return None
+                    id_name = token
+                else:
+                    classes.append(token)
+            token = ""
+            end = _find_attribute_selector_end(text, index)
+            if end is None:
+                return None
+            attribute = _parse_attribute_selector(text[index + 1 : end])
+            if attribute is None:
+                return None
+            attributes.append(attribute)
+            mode = "tag"
+            index = end + 1
+            continue
         if char in {"#", "."}:
             if token:
                 if mode == "tag":
@@ -658,8 +739,10 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
                     classes.append(token)
             token = ""
             mode = "id" if char == "#" else "class"
+            index += 1
             continue
         token += char
+        index += 1
     if token:
         if mode == "tag":
             if tag is not None:
@@ -671,7 +754,61 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
             id_name = token
         else:
             classes.append(token)
-    return _SimpleSelector(tag=tag, id_name=id_name, classes=tuple(classes))
+    return _SimpleSelector(
+        tag=tag,
+        id_name=id_name,
+        classes=tuple(classes),
+        attributes=tuple(attributes),
+    )
+
+
+def _find_attribute_selector_end(text: str, start: int) -> int | None:
+    quote_char: str | None = None
+    for index in range(start + 1, len(text)):
+        char = text[index]
+        if quote_char is not None:
+            if char == quote_char:
+                quote_char = None
+            continue
+        if char in {'"', "'"}:
+            quote_char = char
+            continue
+        if char == "]":
+            return index
+    return None
+
+
+def _parse_attribute_selector(text: str) -> tuple[str, str | None] | None:
+    content = text.strip()
+    if not content:
+        return None
+    if "=" not in content:
+        return (content.lower(), None)
+    name, value = content.split("=", 1)
+    normalized_name = name.strip().lower()
+    normalized_value = value.strip()
+    if not normalized_name:
+        return None
+    if (
+        len(normalized_value) >= 2
+        and normalized_value[0] == normalized_value[-1]
+        and normalized_value[0] in {'"', "'"}
+    ):
+        normalized_value = normalized_value[1:-1]
+    return (normalized_name, normalized_value)
+
+
+def _previous_element_sibling(node: Element) -> Element | None:
+    parent = node.parent
+    if not isinstance(parent, (Document, Element)):
+        return None
+    previous: Element | None = None
+    for child in parent.children:
+        if child is node:
+            return previous
+        if isinstance(child, Element):
+            previous = child
+    return None
 
 
 def _text_content(node: Node) -> str:
