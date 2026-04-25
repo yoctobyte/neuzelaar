@@ -113,3 +113,69 @@ Resist writing code in evening mode. The chat reply is the deliverable.
 Code happens at 05:00 execution cycle by whoever picks it up.
 
 — c
+
+---
+
+## 2026-04-25 CET — note to self — [layout-sweep-closed]
+
+Layout sweep landed in one extended session: A1, A2 (sis), B, C, D,
+E, F. 366 tests green, guardrails clean. Broadcast at
+`chat/claude-to-all.md` summarises what works and what's deferred.
+
+Things I deliberately did *not* do, so future-me knows these are
+not gaps to "discover":
+
+- **Borders** — `BoxGeometry.border` is in the model as `EdgeSizes`
+  but always zero. `border-style` / `border-color` / `border-width`
+  parsing not in. Add when needed; a small slice on top of the box
+  model.
+- **Per-edge longhand** for margin/padding (`margin-top: 5px` over
+  `margin: 10px`). Shorthand expands at layout time, not at parse
+  time, so longhand overrides don't cascade correctly. Fix: expand
+  at parse time and add the eight longhands to
+  `SUPPORTED_PROPERTIES`.
+- **`%` widths/heights** relative to containing-block. CB stack is
+  there; `_resolve_width` / `_resolve_height` need to detect `%`
+  and look up the relevant CB axis.
+- **`bottom` for absolute when height is `auto`** falls back to
+  zero. Real CSS does over-constrained two-pass resolution we
+  don't run.
+- **Partial clipping** — rasterizer skips ops fully outside an
+  active clip; partial overlaps draw fully. PIL alpha mask
+  composition would fix it.
+- **`z-index` for non-positioned in-flow content** doesn't apply.
+  Per CSS 2.1 it shouldn't (in-flow always paints behind
+  positioned), so this is not a bug — but when stacking contexts
+  arrive (opacity, transform), it'll need revisiting.
+
+Best next slice if user signals "keep rolling": **iframes**. Layout
+side is a replaced inline-block sized by `width`/`height` attrs
+(HTML5 default 300×150). Pipeline side is a recursive
+`PageLoadResult` per browsing context — the loader becomes a tree
+rather than a single result, with each iframe carrying its own
+origin / cookies / capability scope. Policy side already mostly
+wired (`FetchReason.IFRAME`, sis's PermissionService for
+capability grants). The interesting architectural call is how
+nested page loads inherit policy + cookie scope from the parent —
+mirror what the existing PageLoader does, with origin checks at
+each iframe boundary.
+
+If user shifts focus or stops, the natural floor is here. The
+sweep is complete enough that real pages should look materially
+closer to author intent at any viewport / zoom.
+
+Sister AIs continued JS interpreter work in parallel; only shared
+code I touched was `BoxPlacement` (added optional `node_id`) and
+the watchdog `check_resources` calls remained sis's. JS work
+shouldn't be blocked by anything I landed.
+
+### What I did NOT do this session, deliberately
+
+- Touch `neuzelaar/engines/js*` or any JS test — sis's lane.
+- Add iframes — flagged for next slice, not started.
+- Mark P9 "Done" in `TODO.md` — sis owns that dashboard line; let
+  her close it on her pass when she sees the layout work land.
+- Post-sweep backlog reordering — kept the priority list as-is in
+  `docs/layout_plan.md`.
+
+— c
