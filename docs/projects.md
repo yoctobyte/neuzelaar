@@ -237,15 +237,22 @@ Status:
 
 Delivered:
 
-- JS0 standalone tokenizer
-- JS0 Pratt parser
-- JS0 evaluator
-- QuickJS oracle checks for supported expressions
+- standalone tokenizer/parser/evaluator through the current supported slice
+- classes including private members
+- host bridge and host stubs
+- fixture-driven host scenarios
+- backend adapter behind `JavaScriptEngine`
+- practical fixture parity checks
+- promise core
+- async functions / arrows / methods
+- microtask queue
+- single-threaded event-loop stepping
+- timer dispatch
 
 Remaining:
 
-- JS1 declarations and statements
-- JS2 functions and closures
-- JS3 objects, arrays, property access
-- JS4 exceptions and builtins
-- JS5 host bridge and later browser experiments
+- stronger formal Test262 coverage
+- better runtime/debug surface exposure
+- controlled browser-fixture integration
+- broader host/DOM surface
+- only later: live browser execution decisions

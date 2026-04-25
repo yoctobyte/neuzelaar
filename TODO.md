@@ -53,7 +53,7 @@ Expected:
 | P9 styling and compatibility | In progress | Same-origin stylesheet fetch, descendant selectors, local image rendering, basic margin/padding/font-size layout, passive asset budgets, and shared subresource gating are in; broader CSS/layout still open. |
 | P10 active content | In progress | Script tags become explicit execution requests; permission checks now flow through `PermissionService` and command-bus grants, with console diagnostics, shell-facing grant/deny flow, reload verification, and remembered grants in place; real JS execution remains disabled. |
 | JS backend plumbing | In progress | Swappable JS backend factory, session/browser injection points, and a narrow Test262 subset runner are in; execution remains opt-in and browser-default is still `noop`. |
-| JS own interpreter | In progress | Standalone `js_own` package is the main track now; browser wiring stays deferred until the interpreter is credible on its own. |
+| JS own interpreter | In progress | Standalone `js_own` now includes promises, async functions, scheduler/event-loop stepping, and timer dispatch; browser wiring stays deferred. |
 
 ## Active Backlog
 
@@ -181,15 +181,16 @@ Files:
 
 Tasks:
 
-- land `JS0` as a standalone expression interpreter
-- compare supported snippets against `quickjs`
+- expose event-loop and scheduler state to debug surfaces
+- expand formal Test262 coverage around promises/async/await
+- harden promise/runtime diagnostics before live browser integration
 - keep browser integration out of scope until later stages
 
 Acceptance:
 
-- tokenization, parsing, and evaluation exist for the JS0 subset
-- a focused unit test suite exists
-- `quickjs` oracle comparisons exist for supported expressions
+- standalone runtime remains testable and inspectable
+- async/promise/event-loop behavior is covered by focused tests
+- broader formal coverage exists for the supported async slice
 
 ## Completed Packages
 
@@ -258,6 +259,12 @@ MVP code path is complete enough for internal testing:
 - [x] Tk visual frame path
 - [x] software rasterization
 - [ ] manual GUI smoke verification on a machine with a display
+
+## Scripting Note
+
+Use [docs/scripting_todo.md](/home/rene/neuzelaar2/docs/scripting_todo.md) as
+the current scripting/runtime handoff. `docs/js_own.md` describes the
+implemented interpreter surface; `docs/scripting_todo.md` is the backlog.
 
 ## Coordination Rules
 
