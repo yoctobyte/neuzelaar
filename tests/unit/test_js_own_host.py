@@ -315,7 +315,10 @@ def test_runtime_event_loop_can_step_microtasks_manually() -> None:
         step = runtime.step()
 
         assert step.progressed is True
-        assert step.task_kind == ScriptTaskKind.MICROTASK.value
+        assert step.tasks_run == 1
+        assert step.microtasks_run == 1
+        assert step.timers_run == 0
+        assert step.last_task_kind == ScriptTaskKind.MICROTASK.value
         assert env.get("seen") == 7.0
 
 
@@ -329,9 +332,10 @@ def test_runtime_event_loop_can_run_timer_until_idle() -> None:
         evaluate_program("var seen = 0; setTimeout(() => { seen = 9; }, 0);", env)
         assert env.get("seen") == 0.0
 
-        steps = runtime.run_until_idle()
+        result = runtime.step(until_idle=True)
 
-        assert steps == 1
+        assert result.tasks_run == 1
+        assert result.timers_run == 1
         assert env.get("seen") == 9.0
 
 
@@ -344,5 +348,37 @@ def test_cleared_timer_does_not_run() -> None:
     with runtime_session(ScriptRuntimeConfig()) as runtime:
         evaluate_program("var seen = 0; var id = setTimeout(() => { seen = 5; }, 0); clearTimeout(id);", env)
 
-        assert runtime.run_until_idle() == 0
+        result = runtime.step(until_idle=True)
+        assert result.tasks_run == 0
         assert env.get("seen") == 0.0
+
+
+def test_runtime_step_can_stop_after_time_budget_even_if_pending_work_remains() -> None:
+    env = Environment()
+    install_builtins(env)
+
+    with runtime_session(ScriptRuntimeConfig()) as runtime:
+        evaluate_program(
+            "var seen = 0; "
+            "queueMicrotask(() => { seen = seen + 1; queueMicrotask(() => { seen = seen + 1; }); });",
+            env,
+        )
+
+        result = runtime.step(timeout_ms=0, max_tasks=100, until_idle=True)
+
+        assert result.progressed is False
+        assert result.tasks_run == 0
+        assert result.still_pending is True
+
+
+def test_runtime_has_pending_work_differs_from_ready_work_for_future_timers() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    stubs.install(env)
+
+    with runtime_session(ScriptRuntimeConfig()) as runtime:
+        evaluate_program("setTimeout(() => { }, 1000);", env)
+
+        assert runtime.has_pending_work() is True
+        assert runtime.has_ready_work() is False

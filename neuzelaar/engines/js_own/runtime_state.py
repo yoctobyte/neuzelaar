@@ -43,9 +43,14 @@ class PendingTimer:
 @dataclass(frozen=True, slots=True)
 class EventLoopStepResult:
     progressed: bool
-    task_kind: str | None
-    task_id: int | None
-    reason: str | None
+    tasks_run: int
+    microtasks_run: int
+    timers_run: int
+    elapsed_ms: float
+    last_task_kind: str | None
+    last_task_id: int | None
+    last_reason: str | None
+    still_pending: bool
 
 
 @dataclass(slots=True)
@@ -108,59 +113,91 @@ class ScriptRuntimeState:
                     self.scheduler.cancel_task(pending.task_id, reason="clearTimeout")
                 break
 
-    def step(self) -> EventLoopStepResult:
-        if self.microtasks:
-            pending = self.microtasks.popleft()
-            self._run_task_callback(
-                pending.callback,
-                task_id=pending.task_id,
-                reason=pending.reason,
-            )
-            return EventLoopStepResult(
-                progressed=True,
-                task_kind=ScriptTaskKind.MICROTASK.value,
-                task_id=pending.task_id,
-                reason=pending.reason,
-            )
-        due_timer = self._pop_due_timer()
-        if due_timer is not None:
-            self._run_task_callback(
-                due_timer.callback,
-                task_id=due_timer.task_id,
-                reason=due_timer.reason,
-            )
-            return EventLoopStepResult(
-                progressed=True,
-                task_kind=ScriptTaskKind.TIMER.value,
-                task_id=due_timer.task_id,
-                reason=due_timer.reason,
-            )
-        return EventLoopStepResult(progressed=False, task_kind=None, task_id=None, reason=None)
+    def step(
+        self,
+        *,
+        timeout_ms: float | None = None,
+        max_tasks: int | None = 1,
+        until_idle: bool = False,
+    ) -> EventLoopStepResult:
+        started_at = time.monotonic()
+        tasks_run = 0
+        microtasks_run = 0
+        timers_run = 0
+        last_task_kind: str | None = None
+        last_task_id: int | None = None
+        last_reason: str | None = None
 
-    def run_until_idle(self) -> int:
-        steps = 0
         while True:
-            result = self.step()
-            if not result.progressed:
+            if max_tasks is not None and tasks_run >= max_tasks:
                 break
-            steps += 1
-        return steps
+            if timeout_ms is not None and ((time.monotonic() - started_at) * 1000.0) >= timeout_ms:
+                break
+            next_ready = self._pop_next_ready_task()
+            if next_ready is None:
+                break
+            task_kind, callback, task_id, reason = next_ready
+            self._run_task_callback(callback, task_id=task_id, reason=reason)
+            tasks_run += 1
+            if task_kind == ScriptTaskKind.MICROTASK.value:
+                microtasks_run += 1
+            elif task_kind == ScriptTaskKind.TIMER.value:
+                timers_run += 1
+            last_task_kind = task_kind
+            last_task_id = task_id
+            last_reason = reason
+            if not until_idle:
+                break
+
+        return EventLoopStepResult(
+            progressed=tasks_run > 0,
+            tasks_run=tasks_run,
+            microtasks_run=microtasks_run,
+            timers_run=timers_run,
+            elapsed_ms=(time.monotonic() - started_at) * 1000.0,
+            last_task_kind=last_task_kind,
+            last_task_id=last_task_id,
+            last_reason=last_reason,
+            still_pending=self.has_pending_work(),
+        )
+
+    def run_until_idle(self, *, max_tasks: int | None = None) -> int:
+        result = self.step(until_idle=True, max_tasks=max_tasks)
+        return result.tasks_run
 
     def has_pending_work(self) -> bool:
         return bool(self.microtasks or any(not timer.cancelled for timer in self.timers))
 
+    def has_ready_work(self) -> bool:
+        if self.microtasks:
+            return True
+        self._prune_cancelled_timers()
+        now = time.monotonic()
+        return any(timer.due_at <= now for timer in self.timers)
+
+    def _pop_next_ready_task(self) -> tuple[str, Callable[[], None], int | None, str] | None:
+        if self.microtasks:
+            pending = self.microtasks.popleft()
+            return (ScriptTaskKind.MICROTASK.value, pending.callback, pending.task_id, pending.reason)
+        due_timer = self._pop_due_timer()
+        if due_timer is not None:
+            return (ScriptTaskKind.TIMER.value, due_timer.callback, due_timer.task_id, due_timer.reason)
+        return None
+
     def _pop_due_timer(self) -> PendingTimer | None:
+        self._prune_cancelled_timers()
         if not self.timers:
             return None
         now = time.monotonic()
         self.timers.sort(key=lambda timer: timer.due_at)
         for index, pending in enumerate(self.timers):
-            if pending.cancelled:
-                self.timers.pop(index)
-                return self._pop_due_timer()
             if pending.due_at <= now:
                 return self.timers.pop(index)
         return None
+
+    def _prune_cancelled_timers(self) -> None:
+        if self.timers:
+            self.timers = [timer for timer in self.timers if not timer.cancelled]
 
     def _run_task_callback(self, callback: Callable[[], None], *, task_id: int | None, reason: str) -> None:
         if self.scheduler is not None and task_id is not None:

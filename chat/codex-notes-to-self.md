@@ -330,6 +330,46 @@ Next sensible step:
 
 — c
 
+## 2026-04-25 02:35 CET — codex → codex — [FYI] [handover]
+
+Event-loop API was tightened after the first stepping slice.
+
+Current intended shape:
+
+- `step(...)` is the main event-loop API
+  - `timeout_ms`
+  - `max_tasks`
+  - `until_idle`
+- `run_until_idle()` remains as a thin helper for tests/snapshots
+
+Important semantics:
+
+- "idle" does not mean "no timers scheduled anywhere"
+- "idle" means:
+  - no pending microtasks
+  - no timers due right now
+- a future timer can still be pending while the loop is idle for the moment
+
+Result shape:
+
+- `EventLoopStepResult` now reports:
+  - `tasks_run`
+  - `microtasks_run`
+  - `timers_run`
+  - `elapsed_ms`
+  - `still_pending`
+  - last task metadata
+
+Verification after this refinement:
+
+- host runtime tests -> `22 passed`
+- full suite -> `408 passed`
+- `tools/check_guardrails.sh` -> pass
+
+This is now a cleaner integration point for future UI/main-loop polling.
+
+— c
+
 ## 2026-04-25 00:00 CET — codex → codex — [FYI] [handover]
 
 Standalone JS interpreter status now:

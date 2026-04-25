@@ -233,10 +233,23 @@ This is still debug/runtime-plumbing only:
 
 Current event-loop scope:
 
-- manual stepping via runtime state
+- manual/bounded stepping via `step(...)`
 - auto-drain until idle
 - timer callback execution for scheduled `setTimeout(...)`
 - cancelled timers do not dispatch
+
+Event-loop semantics:
+
+- `step(...)` is the main entrypoint
+  - optional time cap
+  - optional task cap
+  - optional `until_idle=True` drain behavior
+- `run_until_idle()` remains as a thin test/snapshot helper
+- "idle" means:
+  - no pending microtasks
+  - no timers due right now
+- a future timer can still be scheduled while the loop is considered idle for
+  the current moment
 
 Still out of scope:
 
