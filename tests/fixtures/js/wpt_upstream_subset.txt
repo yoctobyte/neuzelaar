@@ -1,0 +1,5 @@
+# Imported upstream WPT cases for the current host/runtime frontier.
+# These are tracked against the local clone at .cache/wpt.
+.cache/wpt/html/webappapis/timers/cleartimeout-clearinterval.any.js
+.cache/wpt/html/webappapis/timers/negative-settimeout.any.js
+.cache/wpt/html/webappapis/timers/missing-timeout-setinterval.any.js

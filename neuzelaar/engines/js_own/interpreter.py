@@ -105,6 +105,7 @@ class JavaScriptFunction:
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
         call_env.declare("this", this_value, kind="const")
+        call_env.declare("arguments", list(arguments), kind="var")
         if self.super_class is not None:
             call_env.declare("__super_class__", self.super_class, kind="const")
         if self.super_prototype is not None:
@@ -166,6 +167,7 @@ class JavaScriptAsyncFunction(JavaScriptFunction):
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
         call_env.declare("this", this_value, kind="const")
+        call_env.declare("arguments", list(arguments), kind="var")
         if self.super_class is not None:
             call_env.declare("__super_class__", self.super_class, kind="const")
         if self.super_prototype is not None:

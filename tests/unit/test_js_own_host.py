@@ -140,6 +140,37 @@ def test_browser_host_timer_stub_can_emit_scheduler_debug_tasks() -> None:
     assert snapshots[0].metadata["delay"] == 0.0
 
 
+def test_browser_host_interval_stub_repeats_until_cleared() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    stubs.install(env)
+
+    with runtime_session(ScriptRuntimeConfig(debug_track_tasks=True), scheduler=stubs.scheduler) as runtime:
+        evaluate_program(
+            "var count = 0; "
+            "var h = setInterval(function () { count++; if (count == 2) { clearInterval(h); } }, 0);",
+            env,
+        )
+        runtime.run_until_idle(max_tasks=10)
+
+    assert stubs.timers.scheduled[0]["repeat"] is True
+    assert 1 in stubs.timers.cleared
+    assert env.get("count") == 2.0
+
+
+def test_browser_host_interval_stub_defaults_missing_delay_to_zero() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    stubs.install(env)
+
+    result = evaluate_program("setInterval(function () { }, undefined);", env)
+
+    assert result == 1.0
+    assert stubs.timers.scheduled[0]["delay"] == 0.0
+
+
 def test_browser_host_document_stub_exposes_title_and_nodes() -> None:
     env = Environment()
     install_builtins(env)

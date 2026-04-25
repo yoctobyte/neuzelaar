@@ -36,6 +36,10 @@ class PendingTimer:
     reason: str
     timer_id: int
     due_at: float
+    delay_ms: float = 0.0
+    repeat: bool = False
+    origin: str | None = None
+    url: str | None = None
     task_id: int | None = None
     cancelled: bool = False
 
@@ -59,6 +63,7 @@ class ScriptRuntimeState:
     scheduler: ScriptScheduler | None = None
     microtasks: deque[PendingMicrotask] = field(default_factory=deque)
     timers: list[PendingTimer] = field(default_factory=list)
+    cancelled_timer_ids: set[int] = field(default_factory=set)
 
     def queue_microtask(self, callback: MicrotaskCallback, *, reason: str) -> None:
         task_id: int | None = None
@@ -77,10 +82,13 @@ class ScriptRuntimeState:
         *,
         timer_id: int,
         delay_ms: float,
+        repeat: bool = False,
         reason: str,
         origin: str | None = None,
         url: str | None = None,
     ) -> None:
+        if timer_id in self.cancelled_timer_ids:
+            return
         task_id: int | None = None
         if self.scheduler is not None:
             task = self.scheduler.queue_task(
@@ -101,11 +109,16 @@ class ScriptRuntimeState:
                 reason=reason,
                 timer_id=timer_id,
                 due_at=time.monotonic() + (delay_ms / 1000.0),
+                delay_ms=delay_ms,
+                repeat=repeat,
+                origin=origin,
+                url=url,
                 task_id=task_id,
             )
         )
 
     def cancel_timer(self, timer_id: int) -> None:
+        self.cancelled_timer_ids.add(timer_id)
         for pending in self.timers:
             if pending.timer_id == timer_id and not pending.cancelled:
                 pending.cancelled = True
@@ -181,7 +194,20 @@ class ScriptRuntimeState:
             return (ScriptTaskKind.MICROTASK.value, pending.callback, pending.task_id, pending.reason)
         due_timer = self._pop_due_timer()
         if due_timer is not None:
-            return (ScriptTaskKind.TIMER.value, due_timer.callback, due_timer.task_id, due_timer.reason)
+            def _run_due_timer() -> None:
+                due_timer.callback()
+                if due_timer.repeat and due_timer.timer_id not in self.cancelled_timer_ids:
+                    self.queue_timer(
+                        due_timer.callback,
+                        timer_id=due_timer.timer_id,
+                        delay_ms=due_timer.delay_ms,
+                        repeat=True,
+                        reason=due_timer.reason,
+                        origin=due_timer.origin,
+                        url=due_timer.url,
+                    )
+
+            return (ScriptTaskKind.TIMER.value, _run_due_timer, due_timer.task_id, due_timer.reason)
         return None
 
     def _pop_due_timer(self) -> PendingTimer | None:

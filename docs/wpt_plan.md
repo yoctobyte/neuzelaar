@@ -65,3 +65,41 @@ This repo now includes a tiny local WPT-oriented runner:
 
 This is intentionally narrow. It is a host/runtime checkpoint, not a claim that
 we can run the upstream WPT suite broadly yet.
+
+## First Imported Upstream Frontier
+
+We now have a first imported upstream manifest:
+
+- `tests/fixtures/js/wpt_upstream_subset.txt`
+
+Current imported focus:
+
+- timer cancellation interoperability
+- timeout delay normalization
+- missing/undefined interval delay behavior
+
+Current state:
+
+- `quickjs` passes this imported timer subset
+- `own` still has host/harness/runtime gaps on that imported subset
+
+That is still useful. It gives us:
+
+- a real upstream reference path
+- a narrower compatibility target than "all of WPT"
+- a concrete next host/runtime backlog
+
+## Immediate Own-Engine Gaps Exposed By Imported Upstream WPT
+
+The imported upstream timer subset has already exposed remaining gaps in the
+`own` path:
+
+- harness/runtime interaction around thrown errors in timer callbacks
+- remaining interval/timer host edge cases under the imported harness
+- broader `testharness.js` compatibility, not just local lookalike helpers
+
+So the next practical WPT work is not "more tests first". It is:
+
+1. make the imported timer subset pass on `own`
+2. then import `queueMicrotask` upstream cases
+3. only then widen into DOM/event/history coverage

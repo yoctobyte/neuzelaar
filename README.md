@@ -126,3 +126,14 @@ git clone --depth 1 https://github.com/tc39/test262 .cache/test262
 ```
 
 See `docs/js_engines.md` for the current backend snapshot.
+
+Local WPT-oriented host/runtime checks:
+
+```sh
+git clone --depth 1 https://github.com/web-platform-tests/wpt .cache/wpt
+.venv/bin/python tools/run_js_wpt_subset.py --engine own
+.venv/bin/python tools/run_js_wpt_subset.py --engine quickjs
+.venv/bin/python tools/run_js_wpt_subset.py --engine quickjs --manifest tests/fixtures/js/wpt_upstream_subset.txt
+```
+
+See `docs/wpt_plan.md` for the current host-layer scope and imported-upstream status.

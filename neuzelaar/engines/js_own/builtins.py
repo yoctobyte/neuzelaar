@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from neuzelaar.engines.js_own.host import HostCallable, HostObject
+from neuzelaar.engines.js_own.host import ConstructibleHostObject, HostCallable, HostObject
 from neuzelaar.engines.js_own.promises import create_promise_builtins
 from neuzelaar.engines.js_own.runtime import js_error_object, js_to_number, js_to_string
+
+
+class _CallableConstructor(ConstructibleHostObject):
+    def __init__(self, name: str, build_value) -> None:
+        super().__init__(properties={}, construct_impl=lambda args: build_value(args))
+        self.name = name
+        self._build_value = build_value
+
+    def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
+        return self._build_value(arguments)
 
 
 def install_builtins(environment) -> None:
@@ -51,15 +61,19 @@ def install_builtins(environment) -> None:
         ),
         kind="const",
     )
-    environment.declare(
+    error_prototype = {}
+    error_constructor = _CallableConstructor(
         "Error",
-        HostCallable(
-            "Error",
-            lambda args, _this: js_error_object(args[0] if args else ""),
-            properties={"prototype": {}},
-        ),
-        kind="const",
+        lambda args: js_error_object(args[0] if args else ""),
     )
+    error_constructor.set("prototype", error_prototype)
+    environment.declare("Error", error_constructor, kind="const")
+    type_error_constructor = _CallableConstructor(
+        "TypeError",
+        lambda args: {"name": "TypeError", "message": js_to_string(args[0] if args else "")},
+    )
+    type_error_constructor.set("prototype", error_prototype)
+    environment.declare("TypeError", type_error_constructor, kind="const")
     def _eval(args: tuple[object, ...], _this: object | None) -> object:
         from neuzelaar.engines.js_own.interpreter import evaluate_program_with_config
 

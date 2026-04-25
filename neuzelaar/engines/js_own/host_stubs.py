@@ -56,11 +56,21 @@ class HostTimers:
         return {
             "setTimeout": HostCallable("setTimeout", self._set_timeout),
             "clearTimeout": HostCallable("clearTimeout", self._clear_timeout),
+            "setInterval": HostCallable("setInterval", self._set_interval),
+            "clearInterval": HostCallable("clearInterval", self._clear_timeout),
         }
 
     def _set_timeout(self, arguments: tuple[object, ...], _this: object | None) -> object:
+        return self._schedule(arguments, repeat=False)
+
+    def _set_interval(self, arguments: tuple[object, ...], _this: object | None) -> object:
+        return self._schedule(arguments, repeat=True)
+
+    def _schedule(self, arguments: tuple[object, ...], *, repeat: bool) -> object:
         callback = arguments[0] if arguments else None
         delay = arguments[1] if len(arguments) > 1 else 0.0
+        if delay is None:
+            delay = 0.0
         timer_id = self.next_id
         self.next_id += 1
         self.scheduled.append(
@@ -69,6 +79,7 @@ class HostTimers:
                 "callback": callback,
                 "delay": delay,
                 "arguments": arguments[2:],
+                "repeat": repeat,
             }
         )
         runtime = current_runtime_state()
@@ -77,7 +88,8 @@ class HostTimers:
                 lambda: callback.call(tuple(arguments[2:]), this_value=None),
                 timer_id=timer_id,
                 delay_ms=float(delay),
-                reason="setTimeout",
+                repeat=repeat,
+                reason="setInterval" if repeat else "setTimeout",
                 origin=self.scheduler_origin,
                 url=self.scheduler_url,
             )

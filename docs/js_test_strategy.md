@@ -146,6 +146,11 @@ When browser-host work becomes active:
   - DOM mutation/event basics
   - history/location behavior
 
+Current concrete entrypoints:
+
+- local subset: `tests/fixtures/js/wpt_subset.txt`
+- imported upstream subset: `tests/fixtures/js/wpt_upstream_subset.txt`
+
 ## Non-Goal
 
 Do not try to run broad WPT coverage before the host layer exists. That would

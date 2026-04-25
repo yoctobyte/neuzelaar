@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import time
 
 from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
 from neuzelaar.engines.js_own.host_scenarios import BrowserScenarioFixture, build_browser_scenario
@@ -25,6 +26,8 @@ except ImportError:  # pragma: no cover
 _HARNESS_PREFIX = r"""
 var __wpt_results = "";
 var __wpt_pending = 0;
+var __wpt_single_test_mode = false;
+var __wpt_single_test_done = false;
 
 function __wpt_string(value) {
   if (value === undefined) {
@@ -54,6 +57,12 @@ function assert_true(actual, message) {
   }
 }
 
+function assert_false(actual, message) {
+  if (actual) {
+    throw new Error(message || "Expected falsy value");
+  }
+}
+
 function assert_equals(actual, expected, message) {
   if (actual !== expected) {
     throw new Error(message || ("Expected " + __wpt_string(expected) + ", got " + __wpt_string(actual)));
@@ -75,6 +84,29 @@ function assert_array_equals(actual, expected, message) {
 
 function assert_unreached(message) {
   throw new Error(message || "Reached unexpectedly");
+}
+
+function assert_throws_js(ExpectedError, fn, message) {
+  try {
+    fn();
+  } catch (error) {
+    if (error instanceof ExpectedError || error.name === ExpectedError.name) {
+      return;
+    }
+    throw new Error(message || ("Unexpected error: " + __wpt_string(error)));
+  }
+  throw new Error(message || ("Expected " + ExpectedError.name + " to be thrown"));
+}
+
+function setup(_options) {
+  if (_options && _options.single_test) {
+    __wpt_single_test_mode = true;
+  }
+}
+
+function done() {
+  __wpt_record("PASS", "single_test", "");
+  __wpt_single_test_done = true;
 }
 
 function test(fn, name) {
@@ -105,13 +137,13 @@ function promise_test(fn, name) {
   }
 }
 
-function async_test(name) {
+function __wpt_make_async_test(name) {
   __wpt_pending = __wpt_pending + 1;
   var done_called = false;
   return {
     step: function(fn) {
       if (done_called) {
-        throw new Error("async_test already completed");
+        return;
       }
       try {
         fn();
@@ -128,6 +160,14 @@ function async_test(name) {
         self.step(function() { return fn.apply(null, args); });
       };
     },
+    step_func_done: function(fn) {
+      var self = this;
+      return self.step_func(function() {
+        var result = fn.apply(null, arguments);
+        self.done();
+        return result;
+      });
+    },
     step_timeout: function(fn, delay) {
       var wrapped = this.step_func(fn);
       return setTimeout(wrapped, delay);
@@ -142,13 +182,45 @@ function async_test(name) {
     }
   };
 }
+
+function async_test(name) {
+  if (name && name.call) {
+    var fn = name;
+    var label = "";
+    if (arguments.length > 1) {
+      label = arguments[1];
+    }
+    var t = __wpt_make_async_test(label);
+    try {
+      fn(t);
+    } catch (error) {
+      __wpt_fail(label, error);
+      __wpt_pending = __wpt_pending - 1;
+    }
+    return t;
+  }
+  return __wpt_make_async_test(name);
+}
 """.strip()
 
 _QUICKJS_TIMER_SHIM = r"""
 var __wpt_timer_queue = [];
+var __wpt_timer_registry = {};
 var __wpt_next_timer_id = 1;
+var __wpt_now = 0;
 
 function setTimeout(fn, delay) {
+  if (!fn || !fn.call) {
+    throw new TypeError("Timer callback must be callable");
+  }
+  if (delay === undefined || delay === null || isNaN(Number(delay))) {
+    delay = 0;
+  } else {
+    delay = Number(delay);
+  }
+  if (delay < 0) {
+    delay = 0;
+  }
   var args = [];
   var i = 2;
   while (i < arguments.length) {
@@ -159,47 +231,115 @@ function setTimeout(fn, delay) {
     id: __wpt_next_timer_id,
     fn: fn,
     cancelled: false,
-    args: args
+    args: args,
+    repeat: false,
+    delay: delay,
+    dueAt: __wpt_now + delay
   };
   __wpt_next_timer_id = __wpt_next_timer_id + 1;
   __wpt_timer_queue.push(timer);
+  __wpt_timer_registry[timer.id] = timer;
+  return timer.id;
+}
+
+function setInterval(fn, delay) {
+  if (!fn || !fn.call) {
+    throw new TypeError("Timer callback must be callable");
+  }
+  if (delay === undefined || delay === null || isNaN(Number(delay))) {
+    delay = 0;
+  } else {
+    delay = Number(delay);
+  }
+  if (delay < 0) {
+    delay = 0;
+  }
+  var args = [];
+  var i = 2;
+  while (i < arguments.length) {
+    args.push(arguments[i]);
+    i = i + 1;
+  }
+  var timer = {
+    id: __wpt_next_timer_id,
+    fn: fn,
+    cancelled: false,
+    args: args,
+    repeat: true,
+    delay: delay,
+    dueAt: __wpt_now + delay
+  };
+  __wpt_next_timer_id = __wpt_next_timer_id + 1;
+  __wpt_timer_queue.push(timer);
+  __wpt_timer_registry[timer.id] = timer;
   return timer.id;
 }
 
 function clearTimeout(id) {
-  var i = 0;
-  while (i < __wpt_timer_queue.length) {
-    if (__wpt_timer_queue[i].id === id) {
-      __wpt_timer_queue[i].cancelled = true;
-      return;
-    }
-    i = i + 1;
+  if (__wpt_timer_registry[id]) {
+    __wpt_timer_registry[id].cancelled = true;
   }
+}
+
+function clearInterval(id) {
+  clearTimeout(id);
 }
 
 function queueMicrotask(fn) {
-  Promise.resolve().then(fn);
+  if (!fn || !fn.call) {
+    throw new TypeError("queueMicrotask callback must be callable");
+  }
+  Promise.resolve().then(function() {
+    fn();
+  });
 }
 
 function __wpt_run_one_timer() {
-  while (__wpt_timer_queue.length > 0) {
-    var timer = __wpt_timer_queue.shift();
-    if (timer.cancelled) {
-      continue;
-    }
-    timer.fn.apply(null, timer.args);
-    return true;
+  if (__wpt_single_test_mode && __wpt_single_test_done) {
+    __wpt_timer_queue = [];
+    __wpt_timer_registry = {};
+    return false;
   }
-  return false;
+  var nextIndex = -1;
+  var nextDueAt = 0;
+  var i = 0;
+  while (i < __wpt_timer_queue.length) {
+    var candidate = __wpt_timer_queue[i];
+    if (!candidate.cancelled && (nextIndex === -1 || candidate.dueAt < nextDueAt)) {
+      nextIndex = i;
+      nextDueAt = candidate.dueAt;
+    }
+    i = i + 1;
+  }
+  if (nextIndex === -1) {
+    return false;
+  }
+  __wpt_now = nextDueAt;
+  var timer = __wpt_timer_queue.splice(nextIndex, 1)[0];
+  if (timer.cancelled) {
+    delete __wpt_timer_registry[timer.id];
+    return false;
+  }
+  timer.fn.apply(null, timer.args);
+  if (timer.repeat && !timer.cancelled) {
+    timer.dueAt = __wpt_now + timer.delay;
+    __wpt_timer_queue.push(timer);
+  } else {
+    delete __wpt_timer_registry[timer.id];
+  }
+  return true;
 }
 
 function __wpt_has_timer_work() {
-  var i = 0;
-  while (i < __wpt_timer_queue.length) {
-    if (!__wpt_timer_queue[i].cancelled) {
+  if (__wpt_single_test_mode && __wpt_single_test_done) {
+    return false;
+  }
+  while (__wpt_timer_queue.length > 0) {
+    var timer = __wpt_timer_queue[0];
+    if (!timer.cancelled) {
       return true;
     }
-    i = i + 1;
+    __wpt_timer_queue.shift();
   }
   return false;
 }
@@ -272,6 +412,15 @@ def _run_case_own(case: WptCase) -> WptOutcome:
             evaluate_ast_program(program, environment)
             safety_rounds = 0
             while state.has_pending_work():
+                if not state.has_ready_work():
+                    next_due = min(
+                        (pending.due_at for pending in state.timers if not pending.cancelled),
+                        default=None,
+                    )
+                    if next_due is not None:
+                        for pending in state.timers:
+                            if not pending.cancelled and pending.due_at == next_due:
+                                pending.due_at = time.monotonic()
                 result = state.step(until_idle=True, timeout_ms=5.0, max_tasks=1000)
                 safety_rounds += 1
                 if not result.progressed or safety_rounds > 100:

@@ -460,6 +460,11 @@ class Parser:
             return self._parse_object_literal()
         if token.kind in {"PLUS", "MINUS", "BANG"}:
             return UnaryExpr(operator=token.lexeme, operand=self.parse_expression(8))
+        if token.kind == "++":
+            target = self.parse_expression(8)
+            if not isinstance(target, (Identifier, MemberExpr, IndexExpr)):
+                raise JavaScriptSyntaxError(f"Invalid update target at offset {token.offset}")
+            return UpdateExpr(target=target, operator=token.lexeme, prefix=True)
         if token.kind == "LPAREN":
             expr = self.parse_expression()
             self._consume("RPAREN", "Expected ')' after expression")

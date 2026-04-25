@@ -480,6 +480,18 @@ def test_postfix_increment_updates_identifier() -> None:
     assert result == 1.0
 
 
+def test_prefix_increment_updates_identifier() -> None:
+    result = evaluate_program("var calls = 0; ++calls;")
+
+    assert result == 1.0
+
+
+def test_function_arguments_binding_exists() -> None:
+    result = evaluate_program("function read() { return arguments[1]; } read(3, 4, 5);")
+
+    assert result == 4.0
+
+
 def test_class_constructor_and_method_work() -> None:
     result = evaluate_program(
         "class Point { "
