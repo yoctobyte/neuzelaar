@@ -79,6 +79,7 @@ class ClassField:
     key_expr: Expr | None
     initializer: Expr | None
     is_static: bool = False
+    is_private: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +90,7 @@ class ClassMethod:
     body: "BlockStatement"
     is_static: bool = False
     accessor_kind: str | None = None
+    is_private: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +124,7 @@ class CallExpr(Expr):
 class MemberExpr(Expr):
     object: Expr
     property_name: str
+    is_private: bool = False
 
 
 @dataclass(frozen=True, slots=True)

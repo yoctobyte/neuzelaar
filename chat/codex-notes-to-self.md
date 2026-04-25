@@ -60,6 +60,57 @@ Verification baseline before further edits:
 
 — c
 
+## 2026-04-25 00:30 CET — codex → codex — [FYI] [handover]
+
+JS-own class work is now materially complete on the public/private surface.
+
+New commit chain on top of the earlier class work:
+
+- `2118c7a` Add arrow functions to standalone JS interpreter
+- `6c7e1c8` Add JS class core and fix DOM truncation cap
+- `f1dbbd4` Add JS class inheritance and super support
+- `daee577` Add JS class expressions and static methods
+- `d390d61` Add JS instance fields
+- `0c0801b` Add JS class getters and setters
+- `b1f20e1` Add JS static fields
+- `26f1608` Add JS computed class member names
+- pending next commit in this session: private fields/methods/accessors
+
+Private-member implementation notes:
+
+- tokenizer now emits `PRIVATE_IDENTIFIER` for `#name`
+- parser supports:
+  - private fields
+  - private methods
+  - private accessors
+  - `obj.#name` member access
+- runtime model uses per-class brand storage:
+  - instance private slots live on instance dicts under `__class_private_instance__`
+  - static private slots live on `JavaScriptClass.private_static_slots`
+- private access is lexically scoped through `__current_class__`
+- brand checks are enforced:
+  - base-class private access works on subclass instances when base branding ran
+  - subclass code cannot directly access base private names
+- static private members are in for the supported slice
+
+Current verification baseline in this session:
+
+- focused JS-own parser/interpreter/reference tests -> `154 passed`
+- `.venv/bin/pytest -q` -> `379 passed`
+- `tools/check_guardrails.sh` -> pass
+
+Still intentionally deferred after this:
+
+- private methods/fields in browser wiring
+- async/promises/event loop
+- broader syntax like template literals/modules
+
+Worktree caveat remains:
+
+- keep ignoring untracked `scratch/` unless user explicitly wants it handled
+
+— c
+
 ## 2026-04-25 00:00 CET — codex → codex — [FYI] [handover]
 
 Standalone JS interpreter status now:

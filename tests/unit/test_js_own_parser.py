@@ -168,3 +168,16 @@ def test_parse_computed_class_members() -> None:
     assert isinstance(program.statements[0], ClassDeclaration)
     assert program.statements[0].methods[0].key_expr is not None
     assert program.statements[0].fields[0].key_expr is not None
+
+
+def test_parse_private_class_members_and_access() -> None:
+    program = parse_program("class Box { #x = 1; #getX() { return this.#x; } get #value() { return this.#x; } }")
+    method_body = program.statements[0].methods[0].body.statements[0]
+
+    assert isinstance(program.statements[0], ClassDeclaration)
+    assert program.statements[0].fields[0].is_private is True
+    assert program.statements[0].methods[0].is_private is True
+    assert program.statements[0].methods[1].is_private is True
+    assert isinstance(method_body, ReturnStatement)
+    assert isinstance(method_body.value, MemberExpr)
+    assert method_body.value.is_private is True

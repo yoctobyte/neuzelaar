@@ -87,10 +87,6 @@ def tokenize(source: str) -> tuple[Token, ...]:
             tokens.append(Token(kind=kind, lexeme=operator, value=None, offset=index))
             index += len(operator)
             continue
-        if char in SINGLE_CHAR_TOKENS:
-            tokens.append(Token(kind=SINGLE_CHAR_TOKENS[char], lexeme=char, value=None, offset=index))
-            index += 1
-            continue
         if char.isdigit():
             token, index = _read_number(source, index)
             tokens.append(token)
@@ -99,9 +95,17 @@ def tokenize(source: str) -> tuple[Token, ...]:
             token, index = _read_string(source, index)
             tokens.append(token)
             continue
+        if char == "#" and index + 1 < len(source) and (source[index + 1].isalpha() or source[index + 1] in "_$"):
+            token, index = _read_private_identifier(source, index)
+            tokens.append(token)
+            continue
         if char.isalpha() or char in "_$":
             token, index = _read_identifier(source, index)
             tokens.append(token)
+            continue
+        if char in SINGLE_CHAR_TOKENS:
+            tokens.append(Token(kind=SINGLE_CHAR_TOKENS[char], lexeme=char, value=None, offset=index))
+            index += 1
             continue
         raise JavaScriptSyntaxError(f"Unexpected character {char!r} at offset {index}")
     tokens.append(Token(kind="EOF", lexeme="", value=None, offset=len(source)))
@@ -177,3 +181,11 @@ def _read_identifier(source: str, start: int) -> tuple[Token, int]:
             return Token(kind=keyword_kind, lexeme=lexeme, value=None, offset=start), index
         return Token(kind=keyword_kind, lexeme=lexeme, value=lexeme, offset=start), index
     return Token(kind="IDENTIFIER", lexeme=lexeme, value=lexeme, offset=start), index
+
+
+def _read_private_identifier(source: str, start: int) -> tuple[Token, int]:
+    index = start + 1
+    while index < len(source) and (source[index].isalnum() or source[index] in "_$"):
+        index += 1
+    lexeme = source[start:index]
+    return Token(kind="PRIVATE_IDENTIFIER", lexeme=lexeme, value=lexeme[1:], offset=start), index

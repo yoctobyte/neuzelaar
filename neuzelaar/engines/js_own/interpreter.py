@@ -157,6 +157,11 @@ class JavaScriptClass:
         self.static_properties: dict[str, object] = {}
         self.fields: tuple[ClassField, ...] = ()
         self.static_fields: tuple[ClassField, ...] = ()
+        self.private_fields: tuple[ClassField, ...] = ()
+        self.private_static_fields: tuple[ClassField, ...] = ()
+        self.private_methods: dict[str, object] = {}
+        self.private_static_methods: dict[str, object] = {}
+        self.private_static_slots: dict[int, dict[str, object]] = {}
         self.constructor: JavaScriptFunction | None = None
         self.install_members(methods=methods, fields=(), closure=closure)
 
@@ -167,8 +172,10 @@ class JavaScriptClass:
         fields: tuple[ClassField, ...],
         closure: Environment,
     ) -> None:
-        self.fields = tuple(field for field in fields if not field.is_static)
-        self.static_fields = tuple(field for field in fields if field.is_static)
+        self.fields = tuple(field for field in fields if not field.is_static and not field.is_private)
+        self.static_fields = tuple(field for field in fields if field.is_static and not field.is_private)
+        self.private_fields = tuple(field for field in fields if not field.is_static and field.is_private)
+        self.private_static_fields = tuple(field for field in fields if field.is_static and field.is_private)
         for method in methods:
             property_name = _class_member_name(method, closure)
             function = JavaScriptFunction(
@@ -180,6 +187,17 @@ class JavaScriptClass:
                 super_prototype=self.superclass.prototype if self.superclass is not None else None,
                 owner_class=self,
             )
+            if method.is_private:
+                target = self.private_static_methods if method.is_static else self.private_methods
+                if method.accessor_kind is not None:
+                    descriptor = target.get(property_name)
+                    if not isinstance(descriptor, dict) or ("get" not in descriptor and "set" not in descriptor):
+                        descriptor = {"get": None, "set": None}
+                    descriptor[method.accessor_kind] = function
+                    target[property_name] = descriptor
+                else:
+                    target[property_name] = function
+                continue
             if method.accessor_kind is not None:
                 target = self.static_properties if method.is_static else self.prototype
                 descriptor = target.get(property_name)
@@ -195,6 +213,93 @@ class JavaScriptClass:
             else:
                 self.prototype[property_name] = function
 
+    def _ensure_instance_private_slot(self, instance: object) -> dict[str, object]:
+        if not isinstance(instance, dict):
+            raise TypeError("Private fields require an object receiver")
+        slot = instance.get("__class_private_instance__")
+        if not isinstance(slot, dict):
+            slot = {}
+            instance["__class_private_instance__"] = slot
+        class_slot = slot.get(id(self))
+        if not isinstance(class_slot, dict):
+            class_slot = {}
+            slot[id(self)] = class_slot
+        return class_slot
+
+    def _get_instance_private_slot(self, instance: object) -> dict[str, object]:
+        if not isinstance(instance, dict):
+            raise TypeError("Private fields require an object receiver")
+        slot = instance.get("__class_private_instance__")
+        if not isinstance(slot, dict):
+            raise TypeError("Private member access on non-instance")
+        class_slot = slot.get(id(self))
+        if not isinstance(class_slot, dict):
+            raise TypeError(f"Object is not branded for private member #{self.name}")
+        return class_slot
+
+    def _ensure_static_private_slot(self) -> dict[str, object]:
+        slot = self.private_static_slots.get(id(self))
+        if slot is None:
+            slot = {}
+            self.private_static_slots[id(self)] = slot
+        return slot
+
+    def _get_static_private_slot(self, target: object) -> dict[str, object]:
+        if not isinstance(target, JavaScriptClass):
+            raise TypeError("Private static fields require a class receiver")
+        slot = target.private_static_slots.get(id(self))
+        if slot is None:
+            raise TypeError(f"Class is not branded for private static member #{self.name}")
+        return slot
+
+    def read_private(self, target: object, property_name: str, *, receiver: object | None = None) -> object:
+        if property_name in self.private_static_methods:
+            self._get_static_private_slot(target)
+            return _resolve_private_descriptor(
+                self.private_static_methods[property_name],
+                target if receiver is None else receiver,
+            )
+        if property_name in _private_name_set(self.private_static_fields):
+            return self._get_static_private_slot(target).get(property_name)
+        if property_name in self.private_methods:
+            self._get_instance_private_slot(target)
+            return _resolve_private_descriptor(
+                self.private_methods[property_name],
+                target if receiver is None else receiver,
+            )
+        if property_name in _private_name_set(self.private_fields):
+            return self._get_instance_private_slot(target).get(property_name)
+        raise TypeError(f"Private member #{property_name} is not declared in class {self.name}")
+
+    def write_private(self, target: object, property_name: str, value: object, *, receiver: object | None = None) -> object:
+        if property_name in self.private_static_methods:
+            self._get_static_private_slot(target)
+            descriptor = self.private_static_methods[property_name]
+            if isinstance(descriptor, dict) and ("get" in descriptor or "set" in descriptor):
+                setter = descriptor.get("set")
+                if setter is None:
+                    raise TypeError(f"Cannot set private property #{property_name}")
+                setter.call((value,), this_value=target if receiver is None else receiver)
+                return value
+            raise TypeError(f"Cannot set private method #{property_name}")
+        if property_name in _private_name_set(self.private_static_fields):
+            self._get_static_private_slot(target)[property_name] = value
+            return value
+        if property_name in self.private_methods:
+            self._get_instance_private_slot(target)
+            descriptor = self.private_methods[property_name]
+            if isinstance(descriptor, dict) and ("get" in descriptor or "set" in descriptor):
+                setter = descriptor.get("set")
+                if setter is None:
+                    raise TypeError(f"Cannot set private property #{property_name}")
+                setter.call((value,), this_value=target if receiver is None else receiver)
+                return value
+            raise TypeError(f"Cannot set private method #{property_name}")
+        if property_name in _private_name_set(self.private_fields):
+            self._get_instance_private_slot(target)[property_name] = value
+            return value
+        raise TypeError(f"Private member #{property_name} is not declared in class {self.name}")
+
     def initialize_static_fields(self) -> None:
         field_env = Environment(parent=self.closure)
         field_env.declare("this", self, kind="const")
@@ -203,10 +308,18 @@ class JavaScriptClass:
             field_env.declare("__super_prototype__", self.superclass.prototype, kind="const")
         if self.name:
             field_env.declare(self.name, self, kind="const")
+        if self.private_static_fields or self.private_static_methods:
+            self._ensure_static_private_slot()
         for field in self.static_fields:
             property_name = _class_member_name(field, field_env)
             value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
             self.static_properties[property_name] = value
+        if self.private_static_fields:
+            private_slot = self._ensure_static_private_slot()
+            for field in self.private_static_fields:
+                property_name = _class_member_name(field, field_env)
+                value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
+                private_slot[property_name] = value
 
     def initialize_instance_fields(self, instance: dict[str, object]) -> None:
         marker = f"__fields_initialized_{id(self)}"
@@ -219,10 +332,18 @@ class JavaScriptClass:
             field_env.declare("__super_prototype__", self.superclass.prototype, kind="const")
         if self.name:
             field_env.declare(self.name, self, kind="const")
+        if self.private_fields or self.private_methods:
+            self._ensure_instance_private_slot(instance)
         for field in self.fields:
             property_name = _class_member_name(field, field_env)
             value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
             instance[property_name] = value
+        if self.private_fields:
+            private_slot = self._ensure_instance_private_slot(instance)
+            for field in self.private_fields:
+                property_name = _class_member_name(field, field_env)
+                value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
+                private_slot[property_name] = value
         instance[marker] = True
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
@@ -266,6 +387,19 @@ def _class_member_name(member: ClassMethod | ClassField, environment: Environmen
     if isinstance(value, float):
         return str(int(value)) if value.is_integer() else str(value)
     return str(value)
+
+
+def _resolve_private_descriptor(value: object, receiver: object) -> object:
+    if isinstance(value, dict) and ("get" in value or "set" in value):
+        getter = value.get("get")
+        if getter is None:
+            return None
+        return getter.call((), this_value=receiver)
+    return value
+
+
+def _private_name_set(fields: tuple[ClassField, ...]) -> set[str]:
+    return {field.name for field in fields if field.name is not None}
 
 
 def evaluate_class_expr(expr: ClassExpr, environment: Environment) -> JavaScriptClass:
@@ -448,7 +582,13 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             if isinstance(current_class, JavaScriptClass):
                 current_class.initialize_instance_fields(this_value)
             return this_value if result is None or result is this_value else result
-        if isinstance(expr.callee, MemberExpr) and isinstance(expr.callee.object, SuperExpr):
+        if isinstance(expr.callee, MemberExpr) and expr.callee.is_private:
+            owner_class = environment.get("__current_class__")
+            if not isinstance(owner_class, JavaScriptClass):
+                raise TypeError(f"Private member #{expr.callee.property_name} is not available here")
+            this_value = evaluate_expr(expr.callee.object, environment)
+            callee = owner_class.read_private(this_value, expr.callee.property_name, receiver=this_value)
+        elif isinstance(expr.callee, MemberExpr) and isinstance(expr.callee.object, SuperExpr):
             this_value = environment.get("this")
             super_prototype = environment.get("__super_prototype__")
             callee = read_property(super_prototype, expr.callee.property_name, receiver=this_value)
@@ -475,6 +615,18 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         if isinstance(expr.target, Identifier):
             return environment.assign(expr.target.name, value)
         if isinstance(expr.target, MemberExpr):
+            if expr.target.is_private:
+                owner_class = environment.get("__current_class__")
+                if not isinstance(owner_class, JavaScriptClass):
+                    raise TypeError(f"Private member #{expr.target.property_name} is not available here")
+                target_object = evaluate_expr(expr.target.object, environment)
+                owner_class.write_private(
+                    target_object,
+                    expr.target.property_name,
+                    value,
+                    receiver=target_object,
+                )
+                return value
             if isinstance(expr.target.object, SuperExpr):
                 target_object = environment.get("__super_prototype__")
                 receiver = environment.get("this")
@@ -490,6 +642,12 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return value
         raise RuntimeError(f"Unsupported assignment target: {type(expr.target).__name__}")
     if isinstance(expr, MemberExpr):
+        if expr.is_private:
+            owner_class = environment.get("__current_class__")
+            if not isinstance(owner_class, JavaScriptClass):
+                raise TypeError(f"Private member #{expr.property_name} is not available here")
+            target = evaluate_expr(expr.object, environment)
+            return owner_class.read_private(target, expr.property_name, receiver=target)
         if isinstance(expr.object, SuperExpr):
             receiver = environment.get("this")
             target = environment.get("__super_prototype__")

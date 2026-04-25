@@ -235,6 +235,7 @@ class Parser:
         accessor_kind: str | None = None
         computed_key: Expr | None = None
         name: str | None = None
+        is_private = False
         if (
             self._check("IDENTIFIER")
             and str(self._peek().value) in {"get", "set"}
@@ -258,8 +259,22 @@ class Parser:
             accessor_kind = str(self._advance().value)
             name_token = self._consume("IDENTIFIER", "Expected class method name")
             name = str(name_token.value)
+        elif (
+            self._check("IDENTIFIER")
+            and str(self._peek().value) in {"get", "set"}
+            and self.index + 2 < len(self.tokens)
+            and self.tokens[self.index + 1].kind == "PRIVATE_IDENTIFIER"
+            and self.tokens[self.index + 2].kind == "LPAREN"
+        ):
+            accessor_kind = str(self._advance().value)
+            name_token = self._consume("PRIVATE_IDENTIFIER", "Expected private class method name")
+            name = str(name_token.value)
+            is_private = True
         elif self._check("IDENTIFIER"):
             name = str(self._advance().value)
+        elif self._check("PRIVATE_IDENTIFIER"):
+            name = str(self._advance().value)
+            is_private = True
         elif self._check("STRING"):
             name = str(self._advance().value)
         else:
@@ -272,6 +287,7 @@ class Parser:
                 key_expr=computed_key,
                 initializer=initializer,
                 is_static=is_static,
+                is_private=is_private,
             )
         self._consume("LPAREN", "Expected '(' after method name")
         params: list[str] = []
@@ -290,6 +306,7 @@ class Parser:
             body=body,
             is_static=is_static,
             accessor_kind=accessor_kind,
+            is_private=is_private,
         )
 
     def _parse_class_expression(self, *, require_name: bool) -> ClassExpr:
@@ -391,8 +408,13 @@ class Parser:
             self._consume("RPAREN", "Expected ')' after arguments")
             return CallExpr(callee=left, arguments=tuple(arguments))
         if token.kind == "DOT":
-            property_token = self._consume("IDENTIFIER", "Expected property name after '.'")
-            return MemberExpr(object=left, property_name=str(property_token.value))
+            if self._check("IDENTIFIER"):
+                property_token = self._advance()
+                return MemberExpr(object=left, property_name=str(property_token.value))
+            if self._check("PRIVATE_IDENTIFIER"):
+                property_token = self._advance()
+                return MemberExpr(object=left, property_name=str(property_token.value), is_private=True)
+            raise JavaScriptSyntaxError(f"Expected property name after '.' at offset {self._peek().offset}")
         if token.kind == "LBRACKET":
             index = self.parse_expression()
             self._consume("RBRACKET", "Expected ']' after index expression")

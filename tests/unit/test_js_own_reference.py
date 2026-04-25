@@ -65,6 +65,11 @@ CASES = [
     'var key = "value"; class Box { [key] = 4; } new Box().value;',
     'var key = "answer"; class Box { static [key] = 42; } Box.answer;',
     'var key = "value"; class Box { get [key]() { return this.stored + 1; } set [key](x) { this.stored = x; } } var b = new Box(); b.value = 4; b.value;',
+    "class Box { #x = 1; bump() { this.#x = this.#x + 2; return this.#x; } } var b = new Box(); b.bump();",
+    "class Box { #secret() { return 7; } value() { return this.#secret(); } } new Box().value();",
+    "class Box { #stored = 0; get #value() { return this.#stored + 1; } set #value(x) { this.#stored = x; } write(x) { this.#value = x; } read() { return this.#value; } } var b = new Box(); b.write(4); b.read();",
+    "class Base { #x = 4; read() { return this.#x; } } class Child extends Base { } new Child().read();",
+    "class Box { static #x = 4; static #secret() { return this.#x + 3; } static value() { return this.#secret(); } } Box.value();",
 ]
 
 

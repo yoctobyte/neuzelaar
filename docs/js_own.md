@@ -106,6 +106,8 @@ Scope:
 - static fields
 - static methods
 - computed method and field names
+- private fields
+- private methods/accessors
 - `constructor`
 - `new`
 - prototype-based method lookup for plain JS objects
@@ -114,7 +116,7 @@ Scope:
 
 Out of scope:
 
-- private fields or methods
+- private fields or methods in live browser wiring
 
 Status:
 

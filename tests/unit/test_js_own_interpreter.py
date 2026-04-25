@@ -180,6 +180,94 @@ def test_method_call_via_index_binds_this() -> None:
     assert result == 8.0
 
 
+def test_private_field_read_and_write_work() -> None:
+    result = evaluate_program(
+        "class Box { "
+        "  #x = 1; "
+        "  bump() { this.#x = this.#x + 2; return this.#x; } "
+        "} "
+        "var b = new Box(); "
+        "b.bump();"
+    )
+
+    assert result == 3.0
+
+
+def test_private_method_call_works() -> None:
+    result = evaluate_program(
+        "class Box { "
+        "  #secret() { return 7; } "
+        "  value() { return this.#secret(); } "
+        "} "
+        "new Box().value();"
+    )
+
+    assert result == 7.0
+
+
+def test_private_accessor_works() -> None:
+    result = evaluate_program(
+        "class Box { "
+        "  #stored = 0; "
+        "  get #value() { return this.#stored + 1; } "
+        "  set #value(x) { this.#stored = x; } "
+        "  write(x) { this.#value = x; } "
+        "  read() { return this.#value; } "
+        "} "
+        "var b = new Box(); "
+        "b.write(4); "
+        "b.read();"
+    )
+
+    assert result == 5.0
+
+
+def test_private_brand_check_rejects_foreign_object() -> None:
+    with pytest.raises(TypeError):
+        evaluate_program(
+            "class Box { "
+            "  #x = 1; "
+            "  read(other) { return other.#x; } "
+            "} "
+            "new Box().read({});"
+        )
+
+
+def test_subclass_instance_inherits_base_private_brand() -> None:
+    result = evaluate_program(
+        "class Base { "
+        "  #x = 4; "
+        "  read() { return this.#x; } "
+        "} "
+        "class Child extends Base { } "
+        "new Child().read();"
+    )
+
+    assert result == 4.0
+
+
+def test_subclass_cannot_access_base_private_name_directly() -> None:
+    with pytest.raises(TypeError):
+        evaluate_program(
+            "class Base { #x = 1; } "
+            "class Child extends Base { read() { return this.#x; } } "
+            "new Child().read();"
+        )
+
+
+def test_static_private_field_and_method_work() -> None:
+    result = evaluate_program(
+        "class Box { "
+        "  static #x = 4; "
+        "  static #secret() { return this.#x + 3; } "
+        "  static value() { return this.#secret(); } "
+        "} "
+        "Box.value();"
+    )
+
+    assert result == 7.0
+
+
 def test_throw_and_catch_work() -> None:
     result = evaluate_program('try { throw "x"; } catch (e) { e; }')
 
