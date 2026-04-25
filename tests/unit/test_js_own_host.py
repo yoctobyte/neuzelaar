@@ -22,6 +22,7 @@ from neuzelaar.engines.js_own.scheduler import (
     ScriptTaskKind,
     ScriptTaskPriority,
 )
+from neuzelaar.engines.js_own.runtime_state import runtime_session
 from neuzelaar.engines.js_own.interpreter import evaluate_program
 from neuzelaar.engines.js_own.values import (
     is_callable,
@@ -126,15 +127,17 @@ def test_browser_host_timer_stub_can_emit_scheduler_debug_tasks() -> None:
     stubs.timers.scheduler_url = "https://example.test/page"
     stubs.install(env)
 
-    evaluate_program("setTimeout(function () { return 1; }, 250, 'a');", env)
+    with runtime_session(ScriptRuntimeConfig(debug_track_tasks=True), scheduler=stubs.scheduler) as runtime:
+        evaluate_program("setTimeout(function () { return 1; }, 0, 'a');", env)
+        runtime.run_until_idle()
 
     assert stubs.scheduler is not None
     snapshots = stubs.scheduler.snapshots()
     assert len(snapshots) == 1
     assert snapshots[0].kind == ScriptTaskKind.TIMER.value
-    assert snapshots[0].state == "queued"
+    assert snapshots[0].state == "completed"
     assert snapshots[0].metadata["timer_id"] == 1
-    assert snapshots[0].metadata["delay"] == 250.0
+    assert snapshots[0].metadata["delay"] == 0.0
 
 
 def test_browser_host_document_stub_exposes_title_and_nodes() -> None:
@@ -257,7 +260,9 @@ def test_browser_scenario_can_provide_scheduler_debug_state() -> None:
         )
     )
 
-    evaluate_program("setTimeout(function () { return 1; }, 100);", env)
+    with runtime_session(ScriptRuntimeConfig(debug_track_tasks=True), scheduler=stubs.scheduler) as runtime:
+        evaluate_program("setTimeout(function () { return 1; }, 0);", env)
+        runtime.run_until_idle()
 
     assert stubs.scheduler is not None
     snapshots = stubs.scheduler.snapshots()
@@ -297,3 +302,47 @@ def test_scheduler_uses_explicit_task_kinds_and_priorities() -> None:
     snapshot = task.snapshot()
     assert snapshot.kind == ScriptTaskKind.CLICK_HANDLER.value
     assert snapshot.priority == ScriptTaskPriority.USER_BLOCKING.value
+
+
+def test_runtime_event_loop_can_step_microtasks_manually() -> None:
+    env = Environment()
+    install_builtins(env)
+
+    with runtime_session(ScriptRuntimeConfig()) as runtime:
+        evaluate_program("var seen = 0; queueMicrotask(() => { seen = 7; });", env)
+        assert env.get("seen") == 0.0
+
+        step = runtime.step()
+
+        assert step.progressed is True
+        assert step.task_kind == ScriptTaskKind.MICROTASK.value
+        assert env.get("seen") == 7.0
+
+
+def test_runtime_event_loop_can_run_timer_until_idle() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    stubs.install(env)
+
+    with runtime_session(ScriptRuntimeConfig()) as runtime:
+        evaluate_program("var seen = 0; setTimeout(() => { seen = 9; }, 0);", env)
+        assert env.get("seen") == 0.0
+
+        steps = runtime.run_until_idle()
+
+        assert steps == 1
+        assert env.get("seen") == 9.0
+
+
+def test_cleared_timer_does_not_run() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    stubs.install(env)
+
+    with runtime_session(ScriptRuntimeConfig()) as runtime:
+        evaluate_program("var seen = 0; var id = setTimeout(() => { seen = 5; }, 0); clearTimeout(id);", env)
+
+        assert runtime.run_until_idle() == 0
+        assert env.get("seen") == 0.0

@@ -8,7 +8,7 @@ from neuzelaar.engines.js_own.execution import budget_tick, execution_budget
 from neuzelaar.engines.js_own.promises import JavaScriptPromise, await_value, promise_resolve
 from neuzelaar.engines.js_own.errors import JavaScriptThrownValue
 from neuzelaar.engines.js_own.host import HostCallable
-from neuzelaar.engines.js_own.runtime_state import runtime_session
+from neuzelaar.engines.js_own.runtime_state import current_runtime_state, runtime_session
 from neuzelaar.engines.js_own.ast import (
     ArrayLiteral,
     AssignmentExpr,
@@ -946,6 +946,10 @@ def evaluate_expression_with_config(
     env = environment or create_global_environment()
     try:
         with execution_budget(runtime_config):
+            existing_state = current_runtime_state()
+            if existing_state is not None:
+                value = evaluate_expr(parse_expression_ast(source), env)
+                return value
             with runtime_session(runtime_config, scheduler=scheduler) as state:
                 value = evaluate_expr(parse_expression_ast(source), env)
                 state.drain_microtasks()
@@ -964,6 +968,10 @@ def evaluate_program_with_config(
     program = parse_program_ast(source)
     try:
         with execution_budget(runtime_config):
+            existing_state = current_runtime_state()
+            if existing_state is not None:
+                value = evaluate_ast_program(program, env)
+                return value
             with runtime_session(runtime_config, scheduler=scheduler) as state:
                 value = evaluate_ast_program(program, env)
                 state.drain_microtasks()

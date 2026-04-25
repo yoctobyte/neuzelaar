@@ -6,11 +6,8 @@ from dataclasses import dataclass, field
 
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
 from neuzelaar.engines.js_own.runtime import js_to_string
-from neuzelaar.engines.js_own.scheduler import (
-    ScriptScheduler,
-    ScriptTaskKind,
-    ScriptTaskPriority,
-)
+from neuzelaar.engines.js_own.runtime_state import current_runtime_state
+from neuzelaar.engines.js_own.scheduler import ScriptScheduler
 
 
 @dataclass(slots=True)
@@ -74,27 +71,25 @@ class HostTimers:
                 "arguments": arguments[2:],
             }
         )
-        if self.scheduler is not None:
-            task = self.scheduler.queue_task(
-                kind=ScriptTaskKind.TIMER,
+        runtime = current_runtime_state()
+        if runtime is not None and hasattr(callback, "call"):
+            runtime.queue_timer(
+                lambda: callback.call(tuple(arguments[2:]), this_value=None),
+                timer_id=timer_id,
+                delay_ms=float(delay),
+                reason="setTimeout",
                 origin=self.scheduler_origin,
                 url=self.scheduler_url,
-                priority=ScriptTaskPriority.BACKGROUND,
-                reason="setTimeout",
-                metadata={
-                    "timer_id": timer_id,
-                    "delay": delay,
-                    "has_callback": callback is not None,
-                    "arguments": arguments[2:],
-                },
             )
-            self.scheduled[-1]["task_id"] = task.task_id
         return float(timer_id)
 
     def _clear_timeout(self, arguments: tuple[object, ...], _this: object | None) -> object:
         if arguments:
             timer_id = int(arguments[0])
             self.cleared.add(timer_id)
+            runtime = current_runtime_state()
+            if runtime is not None:
+                runtime.cancel_timer(timer_id)
             if self.scheduler is not None:
                 for scheduled in self.scheduled:
                     if scheduled["id"] == timer_id and "task_id" in scheduled:

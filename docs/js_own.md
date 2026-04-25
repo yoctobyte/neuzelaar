@@ -227,7 +227,22 @@ Current scope:
 This is still debug/runtime-plumbing only:
 
 - microtask queue is now present for promise reactions and `queueMicrotask(...)`
+- single-threaded event-loop stepping is now present in `runtime_state.py`
+- timers can now dispatch their callbacks through that event loop
 - no live browser scheduler yet
+
+Current event-loop scope:
+
+- manual stepping via runtime state
+- auto-drain until idle
+- timer callback execution for scheduled `setTimeout(...)`
+- cancelled timers do not dispatch
+
+Still out of scope:
+
+- background threads
+- live browser/tab event-loop integration
+- richer fairness/preemption rules
 
 ## Current Reference
 

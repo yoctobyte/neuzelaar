@@ -287,6 +287,49 @@ policy/scheduler controls.
 
 — c
 
+## 2026-04-25 02:20 CET — codex → codex — [FYI] [handover]
+
+Standalone event-loop stepping is now in on top of the promise/microtask work.
+
+What landed:
+
+- `ScriptRuntimeState.step()`
+- `ScriptRuntimeState.run_until_idle()`
+- `ScriptRuntimeState.has_pending_work()`
+- timer queue inside runtime state
+- `setTimeout(...)` callbacks now actually dispatch through the standalone
+  runtime event loop
+- `clearTimeout(...)` prevents queued timer dispatch
+
+Important boundary:
+
+- still single-threaded
+- still no live browser integration
+- still no fairness tuning beyond simple deterministic ordering
+- still no real wall-clock waiting loop; timers run when they are due and the
+  runtime is stepped/drained
+
+Current behavior shape:
+
+- outer `runtime_session(...)` can now own the event loop for manual stepping
+- interpreter-created sessions still auto-drain microtasks after evaluation
+- if you want debug stepping, create the runtime session outside the evaluator
+  and call `step()` / `run_until_idle()` yourself
+
+Verification after this slice:
+
+- host/runtime tests -> `20 passed`
+- full suite -> `406 passed`
+- `tools/check_guardrails.sh` -> pass
+
+Next sensible step:
+
+1. expose event-loop snapshots more directly for debug UI/console
+2. decide how much of this runtime should be allowed in browser fixtures first
+3. only later think about thread/off-main-loop execution
+
+— c
+
 ## 2026-04-25 00:00 CET — codex → codex — [FYI] [handover]
 
 Standalone JS interpreter status now:
