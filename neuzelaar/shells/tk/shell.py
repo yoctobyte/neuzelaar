@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 import sys
 import traceback
 import tkinter as tk
+import tkinter.font as tkfont
 from dataclasses import dataclass, field
 from pathlib import Path
 import signal
@@ -139,7 +140,18 @@ class TkShell:
 
         dom_tree = ttk.Treeview(dom_frame, columns=("node",), show="tree")
         style = ttk.Style(root)
-        style.configure("Neuzelaar.Treeview", rowheight=34, font=("TkDefaultFont", 13))
+        # Treeview rowheight is in pixels but font sizes are in points
+        # that Tk scales by desktop DPI, so a hardcoded rowheight clips
+        # the text on high-DPI displays. Derive both rowheights from
+        # actual font line metrics so they track scaling.
+        default_font = tkfont.nametofont("TkDefaultFont")
+        style.configure("Treeview", rowheight=default_font.metrics("linespace") + 8)
+        dom_font = tkfont.Font(family=default_font.cget("family"), size=13)
+        style.configure(
+            "Neuzelaar.Treeview",
+            rowheight=dom_font.metrics("linespace") + 8,
+            font=("TkDefaultFont", 13),
+        )
         dom_tree.configure(style="Neuzelaar.Treeview")
         dom_scroll = ttk.Scrollbar(dom_frame, orient=tk.VERTICAL, command=dom_tree.yview)
         dom_tree.configure(yscrollcommand=dom_scroll.set)
