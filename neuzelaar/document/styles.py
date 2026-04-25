@@ -100,14 +100,21 @@ def compute_styles(document: Document, rules: tuple[StyleRule, ...] = ()) -> dic
     styles: dict[NodeId, ComputedStyle] = {}
     root_px: int | None = None
     all_rules = UA_STYLESHEET + tuple(rules)
+    initial_values = _initial_style_values()
     for node in walk(document):
         if not isinstance(node, Element):
             continue
         parent_style = _parent_style(node, styles)
         declarations = _cascade_declarations(node, all_rules)
         parent_px = _font_size_to_px(parent_style.font_size, fallback=16)
+        raw_font_size = _resolve_property_value(
+            "font-size",
+            declarations,
+            parent_style,
+            initial_values,
+        )
         resolved_px = _resolve_font_size(
-            declarations.get("font-size"),
+            raw_font_size,
             parent_px=parent_px,
             root_px=root_px if root_px is not None else parent_px,
         )
@@ -185,27 +192,167 @@ def _style_from_declarations(
     declarations: dict[str, str],
     parent_style: ComputedStyle,
 ) -> ComputedStyle:
+    initial_values = _initial_style_values()
     return ComputedStyle(
-        color=declarations.get("color", parent_style.color),
-        background_color=declarations.get("background-color", DEFAULT_BACKGROUND_COLOR),
-        font_weight=declarations.get("font-weight", parent_style.font_weight),
-        font_size=declarations.get("font-size", parent_style.font_size),
-        display=declarations.get("display", DEFAULT_DISPLAY),
-        margin=declarations.get("margin", "0"),
-        padding=declarations.get("padding", "0"),
-        text_align=_normalize_text_align(declarations.get("text-align"), parent_style.text_align),
-        width=declarations.get("width", "auto"),
-        height=declarations.get("height", "auto"),
-        float=_normalize_float(declarations.get("float")),
-        clear=_normalize_clear(declarations.get("clear")),
-        position=_normalize_position(declarations.get("position")),
-        top=declarations.get("top", "auto"),
-        right=declarations.get("right", "auto"),
-        bottom=declarations.get("bottom", "auto"),
-        left=declarations.get("left", "auto"),
-        overflow=_normalize_overflow(declarations.get("overflow")),
-        z_index=declarations.get("z-index", "auto"),
+        color=_normalize_color(
+            _resolve_property_value("color", declarations, parent_style, initial_values),
+            parent_style.color,
+        ),
+        background_color=_normalize_background_color(
+            _resolve_property_value("background-color", declarations, parent_style, initial_values)
+        ),
+        font_weight=_normalize_font_weight(
+            _resolve_property_value("font-weight", declarations, parent_style, initial_values),
+            parent_style.font_weight,
+        ),
+        font_size=_normalize_font_size(
+            _resolve_property_value("font-size", declarations, parent_style, initial_values),
+            parent_style.font_size,
+        ),
+        display=_normalize_display(
+            _resolve_property_value("display", declarations, parent_style, initial_values)
+        ),
+        margin=_normalize_box_shorthand(
+            _resolve_property_value("margin", declarations, parent_style, initial_values)
+        ),
+        padding=_normalize_box_shorthand(
+            _resolve_property_value("padding", declarations, parent_style, initial_values)
+        ),
+        text_align=_normalize_text_align(
+            _resolve_property_value("text-align", declarations, parent_style, initial_values),
+            parent_style.text_align,
+        ),
+        width=_normalize_length_or_auto(
+            _resolve_property_value("width", declarations, parent_style, initial_values)
+        ),
+        height=_normalize_length_or_auto(
+            _resolve_property_value("height", declarations, parent_style, initial_values)
+        ),
+        float=_normalize_float(
+            _resolve_property_value("float", declarations, parent_style, initial_values)
+        ),
+        clear=_normalize_clear(
+            _resolve_property_value("clear", declarations, parent_style, initial_values)
+        ),
+        position=_normalize_position(
+            _resolve_property_value("position", declarations, parent_style, initial_values)
+        ),
+        top=_normalize_offset(
+            _resolve_property_value("top", declarations, parent_style, initial_values)
+        ),
+        right=_normalize_offset(
+            _resolve_property_value("right", declarations, parent_style, initial_values)
+        ),
+        bottom=_normalize_offset(
+            _resolve_property_value("bottom", declarations, parent_style, initial_values)
+        ),
+        left=_normalize_offset(
+            _resolve_property_value("left", declarations, parent_style, initial_values)
+        ),
+        overflow=_normalize_overflow(
+            _resolve_property_value("overflow", declarations, parent_style, initial_values)
+        ),
+        z_index=_normalize_z_index(
+            _resolve_property_value("z-index", declarations, parent_style, initial_values)
+        ),
     )
+
+
+def _initial_style_values() -> dict[str, str]:
+    return {
+        "background-color": DEFAULT_BACKGROUND_COLOR,
+        "bottom": "auto",
+        "clear": "none",
+        "color": DEFAULT_COLOR,
+        "display": DEFAULT_DISPLAY,
+        "float": "none",
+        "font-size": DEFAULT_FONT_SIZE,
+        "font-weight": DEFAULT_FONT_WEIGHT,
+        "height": "auto",
+        "left": "auto",
+        "margin": "0",
+        "overflow": "visible",
+        "padding": "0",
+        "position": "static",
+        "right": "auto",
+        "text-align": "left",
+        "top": "auto",
+        "width": "auto",
+        "z-index": "auto",
+    }
+
+
+def _resolve_property_value(
+    name: str,
+    declarations: dict[str, str],
+    parent_style: ComputedStyle,
+    initial_values: dict[str, str],
+) -> str:
+    value = declarations.get(name)
+    if value is None or value.strip().lower() == "unset":
+        if name in INHERITED_PROPERTIES:
+            return getattr(parent_style, name.replace("-", "_"))
+        return initial_values[name]
+    normalized = value.strip()
+    lowered = normalized.lower()
+    if lowered == "inherit":
+        return getattr(parent_style, name.replace("-", "_"))
+    if lowered == "initial":
+        return initial_values[name]
+    return normalized
+
+
+def _normalize_color(value: str, fallback: str) -> str:
+    text = value.strip()
+    return text or fallback
+
+
+def _normalize_background_color(value: str) -> str:
+    text = value.strip()
+    return text or DEFAULT_BACKGROUND_COLOR
+
+
+def _normalize_font_weight(value: str, fallback: str) -> str:
+    text = value.strip().lower()
+    if text in {"normal", "bold", "bolder", "lighter"}:
+        return text
+    if text.isdigit():
+        return text
+    return fallback
+
+
+def _normalize_font_size(value: str, fallback: str) -> str:
+    text = value.strip().lower()
+    if text:
+        return text
+    return fallback
+
+
+def _normalize_display(value: str) -> str:
+    text = value.strip().lower()
+    if text:
+        return text
+    return DEFAULT_DISPLAY
+
+
+def _normalize_box_shorthand(value: str) -> str:
+    text = " ".join(value.strip().split())
+    return text or "0"
+
+
+def _normalize_length_or_auto(value: str) -> str:
+    text = value.strip().lower()
+    return text or "auto"
+
+
+def _normalize_offset(value: str) -> str:
+    text = value.strip().lower()
+    return text or "auto"
+
+
+def _normalize_z_index(value: str) -> str:
+    text = value.strip().lower()
+    return text or "auto"
 
 
 def _normalize_position(value: str | None) -> str:
@@ -266,12 +413,10 @@ def _selector_specificity(selector: str) -> tuple[int, int, int]:
     for part in selector.split():
         if not part:
             continue
-        if part.startswith("#"):
-            ids += 1
-        elif part.startswith("."):
-            classes += 1
-        else:
-            tags += 1
+        parsed = _parse_simple_selector(part)
+        ids += 1 if parsed.id_name is not None else 0
+        classes += len(parsed.classes)
+        tags += 1 if parsed.tag is not None else 0
     return (ids, classes, tags)
 
 
@@ -350,12 +495,65 @@ def _font_size_to_px(value: str, *, fallback: int) -> int:
 
 
 def _matches_simple_selector(node: Element, selector: str) -> bool:
-    if selector.startswith("."):
-        classes = (node.attr("class") or "").split()
-        return selector[1:] in classes
-    if selector.startswith("#"):
-        return node.attr("id") == selector[1:]
-    return node.tag.lower() == selector.lower()
+    parsed = _parse_simple_selector(selector)
+    if parsed is None:
+        return False
+    if parsed.tag is not None and node.tag.lower() != parsed.tag:
+        return False
+    if parsed.id_name is not None and node.attr("id") != parsed.id_name:
+        return False
+    if parsed.classes:
+        classes = set((node.attr("class") or "").split())
+        if not all(name in classes for name in parsed.classes):
+            return False
+    return parsed.tag is not None or parsed.id_name is not None or bool(parsed.classes)
+
+
+@dataclass(frozen=True, slots=True)
+class _SimpleSelector:
+    tag: str | None
+    id_name: str | None
+    classes: tuple[str, ...]
+
+
+def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
+    text = selector.strip()
+    if not text:
+        return None
+    tag: str | None = None
+    id_name: str | None = None
+    classes: list[str] = []
+    token = ""
+    mode = "tag"
+    for char in text:
+        if char in {"#", "."}:
+            if token:
+                if mode == "tag":
+                    if tag is not None:
+                        return None
+                    tag = token.lower()
+                elif mode == "id":
+                    if id_name is not None:
+                        return None
+                    id_name = token
+                else:
+                    classes.append(token)
+            token = ""
+            mode = "id" if char == "#" else "class"
+            continue
+        token += char
+    if token:
+        if mode == "tag":
+            if tag is not None:
+                return None
+            tag = token.lower()
+        elif mode == "id":
+            if id_name is not None:
+                return None
+            id_name = token
+        else:
+            classes.append(token)
+    return _SimpleSelector(tag=tag, id_name=id_name, classes=tuple(classes))
 
 
 def _text_content(node: Node) -> str:

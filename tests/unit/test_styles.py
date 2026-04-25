@@ -210,3 +210,67 @@ def test_compute_styles_handles_grouped_selectors() -> None:
     assert styles[NodeId("h1")].color == "green"
     assert styles[NodeId("h2")].color == "green"
     assert styles[NodeId("p")].color != "green"
+
+
+def test_compute_styles_matches_compound_selector_parts() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"id": "lead", "class": "note hero"})
+    append_child(document, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet("p.note#lead { color: purple }"),
+    )
+
+    assert styles[NodeId("p")].color == "purple"
+
+
+def test_compute_styles_matches_descendant_compound_selector() -> None:
+    document = Document(id=NodeId("doc"))
+    section = Element(id=NodeId("section"), tag="section", attrs={"class": "article"})
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"class": "lead"})
+    append_child(document, section)
+    append_child(section, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet("section.article p.lead { color: teal }"),
+    )
+
+    assert styles[NodeId("p")].color == "teal"
+
+
+def test_compute_styles_supports_inherit_initial_and_unset_keywords() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    paragraph = Element(
+        id=NodeId("p"),
+        tag="p",
+        attrs={"style": "color: inherit; background-color: initial; text-align: unset"},
+    )
+    append_child(document, body)
+    append_child(body, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet("body { color: blue; text-align: center; background-color: #222222 }"),
+    )
+
+    assert styles[NodeId("p")].color == "blue"
+    assert styles[NodeId("p")].background_color == "#ffffff"
+    assert styles[NodeId("p")].text_align == "center"
+
+
+def test_compute_styles_resolves_font_size_keywords_through_cascade_keywords() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, body)
+    append_child(body, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet("body { font-size: 20px } p { font-size: inherit }"),
+    )
+
+    assert styles[NodeId("p")].font_size == "20px"
