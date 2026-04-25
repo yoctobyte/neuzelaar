@@ -61,6 +61,10 @@ CASES = [
     "class Box { static answer = 42; } Box.answer;",
     "var Box = class NamedBox { static selfName = String(this.prototype !== null); }; Box.selfName;",
     "class Box { static value() { return 7; } static answer = this.value() + 1; } Box.answer;",
+    'var name = "speak"; class Box { [name]() { return 7; } } new Box().speak();',
+    'var key = "value"; class Box { [key] = 4; } new Box().value;',
+    'var key = "answer"; class Box { static [key] = 42; } Box.answer;',
+    'var key = "value"; class Box { get [key]() { return this.stored + 1; } set [key](x) { this.stored = x; } } var b = new Box(); b.value = 4; b.value;',
 ]
 
 

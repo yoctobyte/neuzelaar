@@ -75,14 +75,16 @@ class NewExpr(Expr):
 
 @dataclass(frozen=True, slots=True)
 class ClassField:
-    name: str
+    name: str | None
+    key_expr: Expr | None
     initializer: Expr | None
     is_static: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class ClassMethod:
-    name: str
+    name: str | None
+    key_expr: Expr | None
     params: tuple[str, ...]
     body: "BlockStatement"
     is_static: bool = False

@@ -170,8 +170,9 @@ class JavaScriptClass:
         self.fields = tuple(field for field in fields if not field.is_static)
         self.static_fields = tuple(field for field in fields if field.is_static)
         for method in methods:
+            property_name = _class_member_name(method, closure)
             function = JavaScriptFunction(
-                name=method.name,
+                name=property_name,
                 params=method.params,
                 body=method.body,
                 closure=closure,
@@ -181,18 +182,18 @@ class JavaScriptClass:
             )
             if method.accessor_kind is not None:
                 target = self.static_properties if method.is_static else self.prototype
-                descriptor = target.get(method.name)
+                descriptor = target.get(property_name)
                 if not isinstance(descriptor, dict) or ("get" not in descriptor and "set" not in descriptor):
                     descriptor = {"get": None, "set": None}
                 descriptor[method.accessor_kind] = function
-                target[method.name] = descriptor
+                target[property_name] = descriptor
                 continue
-            if method.name == "constructor" and not method.is_static:
+            if property_name == "constructor" and not method.is_static:
                 self.constructor = function
             elif method.is_static:
-                self.static_properties[method.name] = function
+                self.static_properties[property_name] = function
             else:
-                self.prototype[method.name] = function
+                self.prototype[property_name] = function
 
     def initialize_static_fields(self) -> None:
         field_env = Environment(parent=self.closure)
@@ -203,8 +204,9 @@ class JavaScriptClass:
         if self.name:
             field_env.declare(self.name, self, kind="const")
         for field in self.static_fields:
+            property_name = _class_member_name(field, field_env)
             value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
-            self.static_properties[field.name] = value
+            self.static_properties[property_name] = value
 
     def initialize_instance_fields(self, instance: dict[str, object]) -> None:
         marker = f"__fields_initialized_{id(self)}"
@@ -218,8 +220,9 @@ class JavaScriptClass:
         if self.name:
             field_env.declare(self.name, self, kind="const")
         for field in self.fields:
+            property_name = _class_member_name(field, field_env)
             value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
-            instance[field.name] = value
+            instance[property_name] = value
         instance[marker] = True
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
@@ -247,6 +250,22 @@ def create_global_environment() -> Environment:
     env.declare("this", None, kind="const")
     install_builtins(env)
     return env
+
+
+def _class_member_name(member: ClassMethod | ClassField, environment: Environment) -> str:
+    if member.key_expr is None:
+        assert member.name is not None
+        return member.name
+    value = evaluate_expr(member.key_expr, environment)
+    if value is None:
+        return "null"
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else str(value)
+    return str(value)
 
 
 def evaluate_class_expr(expr: ClassExpr, environment: Environment) -> JavaScriptClass:

@@ -233,7 +233,22 @@ class Parser:
     def _parse_class_member(self) -> ClassMethod | ClassField:
         is_static = self._match("STATIC")
         accessor_kind: str | None = None
+        computed_key: Expr | None = None
+        name: str | None = None
         if (
+            self._check("IDENTIFIER")
+            and str(self._peek().value) in {"get", "set"}
+            and self.index + 1 < len(self.tokens)
+            and self.tokens[self.index + 1].kind == "LBRACKET"
+        ):
+            accessor_kind = str(self._advance().value)
+            self._consume("LBRACKET", "Expected '[' after accessor keyword")
+            computed_key = self.parse_expression()
+            self._consume("RBRACKET", "Expected ']' after computed class key")
+        elif self._match("LBRACKET"):
+            computed_key = self.parse_expression()
+            self._consume("RBRACKET", "Expected ']' after computed class key")
+        elif (
             self._check("IDENTIFIER")
             and str(self._peek().value) in {"get", "set"}
             and self.index + 2 < len(self.tokens)
@@ -241,12 +256,20 @@ class Parser:
             and self.tokens[self.index + 2].kind == "LPAREN"
         ):
             accessor_kind = str(self._advance().value)
-        name_token = self._consume("IDENTIFIER", "Expected class method name")
+            name_token = self._consume("IDENTIFIER", "Expected class method name")
+            name = str(name_token.value)
+        elif self._check("IDENTIFIER"):
+            name = str(self._advance().value)
+        elif self._check("STRING"):
+            name = str(self._advance().value)
+        else:
+            raise JavaScriptSyntaxError(f"Expected class member name at offset {self._peek().offset}")
         if not self._check("LPAREN"):
             initializer = self.parse_expression() if self._match("EQUAL") else None
             self._consume_optional_semicolon()
             return ClassField(
-                name=str(name_token.value),
+                name=name,
+                key_expr=computed_key,
                 initializer=initializer,
                 is_static=is_static,
             )
@@ -261,7 +284,8 @@ class Parser:
         self._consume("RPAREN", "Expected ')' after method parameters")
         body = self._parse_block_statement()
         return ClassMethod(
-            name=str(name_token.value),
+            name=name,
+            key_expr=computed_key,
             params=tuple(params),
             body=body,
             is_static=is_static,

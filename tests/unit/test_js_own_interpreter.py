@@ -471,3 +471,48 @@ def test_static_field_initializer_can_use_static_method() -> None:
     )
 
     assert result == 8.0
+
+
+def test_computed_method_name_works() -> None:
+    result = evaluate_program(
+        'var name = "speak"; '
+        'class Box { [name]() { return 7; } } '
+        'new Box().speak();'
+    )
+
+    assert result == 7.0
+
+
+def test_computed_instance_field_name_works() -> None:
+    result = evaluate_program(
+        'var key = "value"; '
+        'class Box { [key] = 4; } '
+        'new Box().value;'
+    )
+
+    assert result == 4.0
+
+
+def test_computed_static_field_name_works() -> None:
+    result = evaluate_program(
+        'var key = "answer"; '
+        'class Box { static [key] = 42; } '
+        'Box.answer;'
+    )
+
+    assert result == 42.0
+
+
+def test_computed_getter_and_setter_work() -> None:
+    result = evaluate_program(
+        'var key = "value"; '
+        'class Box { '
+        '  get [key]() { return this.stored + 1; } '
+        '  set [key](x) { this.stored = x; } '
+        '} '
+        'var b = new Box(); '
+        'b.value = 4; '
+        'b.value;'
+    )
+
+    assert result == 5.0

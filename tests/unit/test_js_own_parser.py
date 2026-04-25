@@ -160,3 +160,11 @@ def test_parse_static_field() -> None:
 
     assert isinstance(program.statements[0], ClassDeclaration)
     assert program.statements[0].fields[0].is_static is True
+
+
+def test_parse_computed_class_members() -> None:
+    program = parse_program('class Box { ["x"]() { return 1; } [name] = 2; }')
+
+    assert isinstance(program.statements[0], ClassDeclaration)
+    assert program.statements[0].methods[0].key_expr is not None
+    assert program.statements[0].fields[0].key_expr is not None

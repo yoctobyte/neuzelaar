@@ -105,6 +105,7 @@ Scope:
 - getters/setters
 - static fields
 - static methods
+- computed method and field names
 - `constructor`
 - `new`
 - prototype-based method lookup for plain JS objects
@@ -113,7 +114,6 @@ Scope:
 
 Out of scope:
 
-- computed method or field names
 - private fields or methods
 
 Status:
