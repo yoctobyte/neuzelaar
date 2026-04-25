@@ -13,6 +13,7 @@ from tkinter import ttk
 
 from PIL import Image, ImageTk
 
+from neuzelaar.core.config.service import ConfigService
 from neuzelaar.core.page import PageLoadResult, PlannedSubresourceDecision
 from neuzelaar.core.policy.profile import PolicyProfile
 from neuzelaar.core.session import BrowserSession
@@ -20,6 +21,7 @@ from neuzelaar.document.dom import Comment, Document, Element, Node, Text
 from neuzelaar.render.display_builder import build_display_list
 from neuzelaar.render.software import rasterize
 from neuzelaar.shell_api.frame import Frame, PixelFormat
+from neuzelaar.shells.tk.preferences_window import PreferencesWindow
 from neuzelaar.shells.tk.settings import ALLOWED_ZOOM_LEVELS, Settings, settings_path
 
 
@@ -81,6 +83,15 @@ class TkShell:
         initial_url = self.normalize_address(url)
         window_width = self.width + 520
 
+        config = ConfigService()
+        # Bring our in-memory Settings into sync with whatever the
+        # config service resolved (legacy settings.json import is part
+        # of ConfigService construction).
+        try:
+            self.settings.zoom = float(str(config.get("ui.zoom")))
+        except (TypeError, ValueError):
+            pass
+
         root = tk.Tk()
         root.title("Neuzelaar")
         root.geometry(f"{window_width}x{self.height + 140}")
@@ -95,8 +106,7 @@ class TkShell:
                 # Silently fail if icon cannot be loaded.
                 pass
 
-
-        if not settings_path().exists():
+        if not config.has_global_override("ui.zoom"):
             try:
                 scaling = float(root.tk.call("tk", "scaling"))
             except (tk.TclError, ValueError):
@@ -104,7 +114,8 @@ class TkShell:
             detected = scaling / 1.333
             snapped = min(ALLOWED_ZOOM_LEVELS, key=lambda level: abs(level - detected))
             if snapped != self.settings.zoom:
-                self.set_zoom(snapped)
+                config.set("ui.zoom", f"{snapped:g}")
+                self.settings.zoom = float(snapped)
 
         split = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
         split.pack(fill=tk.BOTH, expand=True)
@@ -298,19 +309,36 @@ class TkShell:
 
         blocked_button.configure(command=show_blocked_popup)
 
-        profile_var = tk.StringVar(value=self.session.policy_profile.value)
+        # Bring session profile in line with config before we wire
+        # the var that drives the menu, so the radio reflects reality.
+        configured_profile = str(config.get("policy.profile"))
+        try:
+            self.session.set_policy_profile(PolicyProfile(configured_profile))
+        except ValueError:
+            configured_profile = self.session.policy_profile.value
+        profile_var = tk.StringVar(value=configured_profile)
 
         def switch_profile() -> None:
+            value = profile_var.get()
             try:
-                profile = PolicyProfile(profile_var.get())
+                config.set("policy.profile", value)
+            except (KeyError, ValueError):
+                return
+
+        def on_profile_changed(value: object) -> None:
+            try:
+                profile = PolicyProfile(str(value))
             except ValueError:
                 return
             self.session.set_policy_profile(profile)
+            profile_var.set(profile.value)
             if last_result[0] is not None:
                 try:
-                    present(*self.reload_to_frame())
+                    present(*self.reload_to_frame(width=current_width[0]))
                 except Exception as exc:
                     show_error(exc)
+
+        config.subscribe("policy.profile", on_profile_changed)
 
         menubar = tk.Menu(root)
         file_menu = tk.Menu(menubar, tearoff=False)
@@ -320,15 +348,37 @@ class TkShell:
             accelerator="Ctrl+L",
         )
         file_menu.add_separator()
+
+        def open_preferences() -> None:
+            PreferencesWindow(config=config, parent=root).open()
+
+        file_menu.add_command(label="Preferences…", command=open_preferences, accelerator="Ctrl+,")
+        file_menu.add_separator()
         file_menu.add_command(label="Quit", command=root.destroy, accelerator="Ctrl+Q")
         menubar.add_cascade(label="File", menu=file_menu)
 
         zoom_var = tk.StringVar(value=f"{self.settings.zoom:g}")
 
         def apply_zoom_value(value: float) -> None:
-            self.set_zoom(value)
-            zoom_var.set(f"{self.settings.zoom:g}")
+            try:
+                config.set("ui.zoom", f"{value:g}")
+            except (KeyError, ValueError):
+                return
+
+        def on_zoom_changed(value: object) -> None:
+            try:
+                level = float(str(value))
+            except (TypeError, ValueError):
+                return
+            self.settings.zoom = level
+            try:
+                self.settings.save()
+            except OSError:
+                pass
+            zoom_var.set(f"{level:g}")
             reflow_at_current_width()
+
+        config.subscribe("ui.zoom", on_zoom_changed)
 
         def zoom_from_menu() -> None:
             try:
@@ -382,6 +432,7 @@ class TkShell:
         root.bind_all("<Control-l>", lambda _e: (address_entry.focus_set(), address_entry.selection_range(0, tk.END)))
         root.bind_all("<Control-q>", lambda _e: root.destroy())
         root.bind_all("<Control-r>", lambda _e: reload_page())
+        root.bind_all("<Control-comma>", lambda _e: open_preferences())
         root.bind_all("<Control-equal>", zoom_in)
         root.bind_all("<Control-plus>", zoom_in)
         root.bind_all("<Control-minus>", zoom_out)
