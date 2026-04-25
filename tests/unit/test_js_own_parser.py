@@ -17,6 +17,7 @@ from neuzelaar.engines.js_own.ast import (
     NumberLiteral,
     ObjectLiteral,
     ReturnStatement,
+    TemplateLiteral,
     ThrowStatement,
     ThisExpr,
     TryStatement,
@@ -43,6 +44,16 @@ def test_parse_expression_handles_grouping_and_unary() -> None:
     assert expr.operator == "-"
     assert isinstance(expr.operand, BinaryExpr)
     assert isinstance(expr.operand.left, Identifier)
+
+
+def test_parse_template_literal() -> None:
+    expr = parse_expression("`hello ${name} ${1 + 2}`")
+
+    assert isinstance(expr, TemplateLiteral)
+    assert expr.parts[0] == "hello "
+    assert isinstance(expr.parts[1], Identifier)
+    assert expr.parts[2] == " "
+    assert isinstance(expr.parts[3], BinaryExpr)
 
 
 def test_parse_program_handles_expression_sequence() -> None:

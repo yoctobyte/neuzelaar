@@ -4,11 +4,18 @@ import pytest
 
 from neuzelaar.engines.js_own.environment import Environment
 from neuzelaar.engines.js_own.errors import (
+    JavaScriptExecutionLimitError,
     JavaScriptReferenceError,
     JavaScriptSyntaxError,
     JavaScriptThrownValue,
 )
-from neuzelaar.engines.js_own.interpreter import evaluate_expression, evaluate_program
+from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
+from neuzelaar.engines.js_own.interpreter import (
+    evaluate_expression,
+    evaluate_expression_with_config,
+    evaluate_program,
+    evaluate_program_with_config,
+)
 
 
 def test_evaluate_numeric_precedence() -> None:
@@ -17,6 +24,14 @@ def test_evaluate_numeric_precedence() -> None:
 
 def test_evaluate_string_concatenation() -> None:
     assert evaluate_expression('"a" + 2') == "a2"
+
+
+def test_evaluate_template_literal() -> None:
+    assert evaluate_program('var name = "rene"; `hello ${name} ${1 + 2}`;') == "hello rene 3"
+
+
+def test_evaluate_nested_template_literal_expression() -> None:
+    assert evaluate_expression_with_config("`sum: ${`x${1 + 1}`}`") == "sum: x2"
 
 
 def test_evaluate_unary_and_comparison() -> None:
@@ -295,6 +310,24 @@ def test_uncaught_throw_raises_python_wrapper() -> None:
         evaluate_program('throw "boom";')
 
     assert exc.value.value == "boom"
+
+
+def test_execution_step_budget_can_abort_script() -> None:
+    with pytest.raises(JavaScriptExecutionLimitError):
+        evaluate_program_with_config(
+            "function fact(n) { if (n === 0) { return 1; } return n * fact(n - 1); } fact(5);",
+            runtime_config=ScriptRuntimeConfig(max_steps=10),
+        )
+
+
+def test_execution_step_budget_allows_small_program() -> None:
+    assert (
+        evaluate_program_with_config(
+            "var x = 1; x = x + 2; x;",
+            runtime_config=ScriptRuntimeConfig(max_steps=50),
+        )
+        == 3.0
+    )
 
 
 def test_math_and_primitive_builtins_work() -> None:

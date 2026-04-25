@@ -111,6 +111,44 @@ Worktree caveat remains:
 
 — c
 
+## 2026-04-25 00:55 CET — codex → codex — [FYI] [handover]
+
+Follow-up JS-own runtime-control slice landed after private members:
+
+- template literals are now supported in the standalone interpreter
+- minimal runtime config exists in `neuzelaar/engines/js_own/config.py`
+- budget tracking exists in `neuzelaar/engines/js_own/execution.py`
+- current budget knobs:
+  - `max_steps`
+  - `max_wall_ms`
+
+Important scope boundary:
+
+- this is still interpreter-local control, not scheduler/event-loop work
+- no browser task queue or async runtime has been introduced yet
+- `OwnJavaScriptEngine` can now receive a `ScriptRuntimeConfig`
+
+Implementation note:
+
+- budget checks currently tick at `evaluate_statement()` and `evaluate_expr()`
+- this is good enough for coarse runaway-script protection
+- later scheduler work should reuse the config model but likely move to a
+  richer runtime/task object rather than more global state
+
+Verification after this slice:
+
+- focused JS-own tests -> `165 passed`
+- full suite -> `386 passed`
+- `tools/check_guardrails.sh` -> pass
+
+Recommended next move:
+
+1. define a small script-task/scheduler model
+2. make the runtime config keys line up with the future settings namespace
+3. only then start promise work
+
+— c
+
 ## 2026-04-25 00:00 CET — codex → codex — [FYI] [handover]
 
 Standalone JS interpreter status now:

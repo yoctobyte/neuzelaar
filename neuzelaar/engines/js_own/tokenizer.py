@@ -95,6 +95,10 @@ def tokenize(source: str) -> tuple[Token, ...]:
             token, index = _read_string(source, index)
             tokens.append(token)
             continue
+        if char == "`":
+            token, index = _read_template(source, index)
+            tokens.append(token)
+            continue
         if char == "#" and index + 1 < len(source) and (source[index + 1].isalpha() or source[index + 1] in "_$"):
             token, index = _read_private_identifier(source, index)
             tokens.append(token)
@@ -189,3 +193,124 @@ def _read_private_identifier(source: str, start: int) -> tuple[Token, int]:
         index += 1
     lexeme = source[start:index]
     return Token(kind="PRIVATE_IDENTIFIER", lexeme=lexeme, value=lexeme[1:], offset=start), index
+
+
+def _read_template(source: str, start: int) -> tuple[Token, int]:
+    index = start + 1
+    parts: list[str] = []
+    chunks: list[str | tuple[str, str]] = []
+    while index < len(source):
+        char = source[index]
+        if char == "`":
+            if parts:
+                chunks.append("".join(parts))
+            return (
+                Token(
+                    kind="TEMPLATE",
+                    lexeme=source[start : index + 1],
+                    value=tuple(chunks),
+                    offset=start,
+                ),
+                index + 1,
+            )
+        if char == "\\":
+            index += 1
+            if index >= len(source):
+                break
+            escape = source[index]
+            parts.append(
+                {
+                    "n": "\n",
+                    "r": "\r",
+                    "t": "\t",
+                    "\\": "\\",
+                    "`": "`",
+                    "$": "$",
+                }.get(escape, escape)
+            )
+            index += 1
+            continue
+        if char == "$" and index + 1 < len(source) and source[index + 1] == "{":
+            if parts:
+                chunks.append("".join(parts))
+                parts = []
+            expr_source, index = _read_template_expression(source, index + 2)
+            chunks.append(("expr", expr_source))
+            continue
+        parts.append(char)
+        index += 1
+    raise JavaScriptSyntaxError(f"Unterminated template literal at offset {start}")
+
+
+def _read_template_expression(source: str, start: int) -> tuple[str, int]:
+    index = start
+    depth = 1
+    parts: list[str] = []
+    while index < len(source):
+        char = source[index]
+        if char in {"'", '"'}:
+            literal, index = _consume_string_segment(source, index, char)
+            parts.append(literal)
+            continue
+        if char == "`":
+            literal, index = _consume_template_segment(source, index)
+            parts.append(literal)
+            continue
+        if char == "{":
+            depth += 1
+            parts.append(char)
+            index += 1
+            continue
+        if char == "}":
+            depth -= 1
+            if depth == 0:
+                return "".join(parts), index + 1
+            parts.append(char)
+            index += 1
+            continue
+        parts.append(char)
+        index += 1
+    raise JavaScriptSyntaxError(f"Unterminated template expression at offset {start}")
+
+
+def _consume_string_segment(source: str, start: int, quote: str) -> tuple[str, int]:
+    index = start + 1
+    parts = [quote]
+    while index < len(source):
+        char = source[index]
+        parts.append(char)
+        if char == "\\":
+            index += 1
+            if index >= len(source):
+                break
+            parts.append(source[index])
+            index += 1
+            continue
+        if char == quote:
+            return "".join(parts), index + 1
+        index += 1
+    raise JavaScriptSyntaxError(f"Unterminated string literal at offset {start}")
+
+
+def _consume_template_segment(source: str, start: int) -> tuple[str, int]:
+    index = start + 1
+    parts = ["`"]
+    while index < len(source):
+        char = source[index]
+        parts.append(char)
+        if char == "\\":
+            index += 1
+            if index >= len(source):
+                break
+            parts.append(source[index])
+            index += 1
+            continue
+        if char == "$" and index + 1 < len(source) and source[index + 1] == "{":
+            expr_source, next_index = _read_template_expression(source, index + 2)
+            parts.append(source[index + 1 : next_index])
+            index = next_index
+            continue
+        if char == "`":
+            return "".join(parts), index + 1
+        index += 1
+    raise JavaScriptSyntaxError(f"Unterminated template literal at offset {start}")

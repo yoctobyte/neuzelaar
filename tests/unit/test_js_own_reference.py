@@ -36,6 +36,7 @@ CASES = [
     'Number("12");',
     "String(12);",
     'Error("x").message;',
+    '`hello ${"world"} ${1 + 2}`;',
     "var inc = x => x + 1; inc(2);",
     "var add = (x, y) => { return x + y; }; add(2, 3);",
     "var o = { value: 7, get: function () { var f = () => this.value; return f(); } }; o.get();",

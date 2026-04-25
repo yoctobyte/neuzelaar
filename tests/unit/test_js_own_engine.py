@@ -1,6 +1,7 @@
 from neuzelaar.core.policy.capability import Capability
 from neuzelaar.engines.js.interface import ScriptExecutionRequest, ScriptExecutionStatus
 from neuzelaar.engines.js.own_engine import OwnJavaScriptEngine
+from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
 from neuzelaar.engines.js_own.host_scenarios import BrowserScenarioFixture, DocumentNodeFixture
 
 
@@ -49,3 +50,16 @@ def test_own_engine_can_run_against_fixture_driven_host_scenario() -> None:
     )
 
     assert result.status is ScriptExecutionStatus.RAN
+
+
+def test_own_engine_reports_execution_limit_error() -> None:
+    engine = OwnJavaScriptEngine(runtime_config=ScriptRuntimeConfig(max_steps=10))
+
+    result = engine.execute(
+        ScriptExecutionRequest(
+            source="function fact(n) { if (n === 0) { return 1; } return n * fact(n - 1); } fact(5);"
+        )
+    )
+
+    assert result.status is ScriptExecutionStatus.ERROR
+    assert "ExecutionLimitError:" in result.reason

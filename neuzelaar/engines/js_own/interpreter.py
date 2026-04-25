@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from neuzelaar.engines.js_own.builtins import install_builtins
+from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
+from neuzelaar.engines.js_own.execution import budget_tick, execution_budget
 from neuzelaar.engines.js_own.errors import JavaScriptThrownValue
 from neuzelaar.engines.js_own.host import HostCallable
 from neuzelaar.engines.js_own.ast import (
@@ -34,6 +36,7 @@ from neuzelaar.engines.js_own.ast import (
     Stmt,
     StringLiteral,
     SuperExpr,
+    TemplateLiteral,
     ThisExpr,
     ThrowStatement,
     TryStatement,
@@ -47,6 +50,7 @@ from neuzelaar.engines.js_own.runtime import (
     js_add,
     js_loose_equal,
     js_strict_equal,
+    js_to_string,
     js_to_number,
     js_truthy,
 )
@@ -425,18 +429,36 @@ def evaluate_class_expr(expr: ClassExpr, environment: Environment) -> JavaScript
 
 
 def evaluate_expression(source: str, environment: Environment | None = None) -> object:
+    return evaluate_expression_with_config(source, environment=environment, runtime_config=None)
+
+
+def evaluate_program(source: str, environment: Environment | None = None) -> object:
+    return evaluate_program_with_config(source, environment=environment, runtime_config=None)
+
+
+def evaluate_expression_with_config(
+    source: str,
+    environment: Environment | None = None,
+    runtime_config: ScriptRuntimeConfig | None = None,
+) -> object:
     env = environment or create_global_environment()
     try:
-        return evaluate_expr(parse_expression_ast(source), env)
+        with execution_budget(runtime_config):
+            return evaluate_expr(parse_expression_ast(source), env)
     except ThrowSignal as signal:
         raise JavaScriptThrownValue(signal.value) from None
 
 
-def evaluate_program(source: str, environment: Environment | None = None) -> object:
+def evaluate_program_with_config(
+    source: str,
+    environment: Environment | None = None,
+    runtime_config: ScriptRuntimeConfig | None = None,
+) -> object:
     env = environment or create_global_environment()
     program = parse_program_ast(source)
     try:
-        return evaluate_ast_program(program, env)
+        with execution_budget(runtime_config):
+            return evaluate_ast_program(program, env)
     except ThrowSignal as signal:
         raise JavaScriptThrownValue(signal.value) from None
 
@@ -450,6 +472,7 @@ def evaluate_ast_program(program: Program, environment: Environment | None = Non
 
 
 def evaluate_statement(statement: Stmt, environment: Environment) -> object:
+    budget_tick()
     if isinstance(statement, ExpressionStatement):
         return evaluate_expr(statement.expression, environment)
     if isinstance(statement, VariableDeclaration):
@@ -523,10 +546,19 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
 
 
 def evaluate_expr(expr: Expr, environment: Environment) -> object:
+    budget_tick()
     if isinstance(expr, NumberLiteral):
         return expr.value
     if isinstance(expr, StringLiteral):
         return expr.value
+    if isinstance(expr, TemplateLiteral):
+        rendered: list[str] = []
+        for part in expr.parts:
+            if isinstance(part, str):
+                rendered.append(part)
+            else:
+                rendered.append(js_to_string(evaluate_expr(part, environment)))
+        return "".join(rendered)
     if isinstance(expr, BooleanLiteral):
         return expr.value
     if isinstance(expr, NullLiteral):

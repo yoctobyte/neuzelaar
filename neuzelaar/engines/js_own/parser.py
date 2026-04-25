@@ -34,6 +34,7 @@ from neuzelaar.engines.js_own.ast import (
     Stmt,
     StringLiteral,
     SuperExpr,
+    TemplateLiteral,
     ThisExpr,
     ThrowStatement,
     TryStatement,
@@ -353,6 +354,15 @@ class Parser:
             return NumberLiteral(value=float(token.value))
         if token.kind == "STRING":
             return StringLiteral(value=str(token.value))
+        if token.kind == "TEMPLATE":
+            parts: list[str | Expr] = []
+            for chunk in token.value:
+                if isinstance(chunk, tuple) and len(chunk) == 2 and chunk[0] == "expr":
+                    nested = parse_expression(chunk[1])
+                    parts.append(nested)
+                else:
+                    parts.append(str(chunk))
+            return TemplateLiteral(parts=tuple(parts))
         if token.kind in {"TRUE", "FALSE"}:
             return BooleanLiteral(value=bool(token.value))
         if token.kind == "NULL":

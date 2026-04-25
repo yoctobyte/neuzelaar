@@ -128,6 +128,7 @@ Scope:
 
 - `throw`
 - `try` / `catch` / `finally`
+- template literals
 - small builtin surface:
   - `Math.abs`
   - `Math.max`
@@ -160,6 +161,17 @@ Status:
 - in progress
 - initial host bridge implemented
 - thin `JavaScriptEngine` adapter implemented for isolated tests
+
+## Runtime Control
+
+The standalone interpreter now has a minimal runtime-control surface:
+
+- `ScriptRuntimeConfig.max_steps`
+- `ScriptRuntimeConfig.max_wall_ms`
+
+These are intentionally local to `js_own` for now. They are the first step
+toward later scheduler, fairness, and async work, but they do not yet imply a
+task queue or browser event loop.
 
 ## Current Reference
 

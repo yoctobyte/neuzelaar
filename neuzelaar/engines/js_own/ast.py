@@ -34,6 +34,11 @@ class NullLiteral(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class TemplateLiteral(Expr):
+    parts: tuple[str | Expr, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Identifier(Expr):
     name: str
 

@@ -17,3 +17,7 @@ class JavaScriptThrownValue(Exception):
     def __init__(self, value: object) -> None:
         super().__init__(repr(value))
         self.value = value
+
+
+class JavaScriptExecutionLimitError(Exception):
+    """Raised when an interpreter execution budget is exceeded."""
