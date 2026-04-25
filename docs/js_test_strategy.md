@@ -98,6 +98,10 @@ Relevant project:
 
 - <https://github.com/web-platform-tests/wpt>
 
+Local staging docs:
+
+- `docs/wpt_plan.md`
+
 Purpose:
 
 - verify browser host behavior, not just ECMAScript language semantics

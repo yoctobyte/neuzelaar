@@ -1,0 +1,5 @@
+# Tiny local WPT-oriented subset for current host/runtime work.
+tests/fixtures/js/wpt/microtask-before-timeout.js
+tests/fixtures/js/wpt/queue-microtask-before-timeout.js
+tests/fixtures/js/wpt/clear-timeout-cancels-task.js
+tests/fixtures/js/wpt/promise-reaction-order.js
