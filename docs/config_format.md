@@ -3,26 +3,52 @@
 Short reference for how Neuzelaar stores user configuration on disk
 and how modules read it. Cross-module shared contract — keep it stable.
 
-## File format: TOML
+## File formats — more than one, by purpose
 
-Two files, both TOML, both under `~/.config/neuzelaar/` (XDG-aware via
-`XDG_CONFIG_HOME`):
+We use different formats for different categories of data. The rule:
+**if a human is supposed to edit it with a text editor, TOML;
+otherwise JSON; imported third-party lists keep their native format.**
+
+Everything sits under `~/.config/neuzelaar/` (XDG-aware via
+`XDG_CONFIG_HOME`).
+
+### User-facing config — TOML
 
 - `config.toml` — global user config.
 - `sites.toml` — per-site overrides.
 
-Why TOML:
+Why TOML for user-facing config:
 
 - Stdlib reader (`tomllib`, Python 3.11+). Writer is hand-rolled or
   `tomli_w`; the schema is small and we control it.
 - Comments allowed. Section headers organise without indentation
   traps (unlike YAML).
 - Far less typo-sensitive than YAML — no significant whitespace, no
-  quoting surprises around booleans / numbers.
+  quoting surprises around booleans / numbers. (NestedText is the
+  other contender in this niche; TOML wins on stdlib support and
+  ecosystem familiarity.)
 - More user-readable than JSON.
 
 The previous `settings.json` (zoom) stays readable as a legacy
 fallback during migration; new writes go to `config.toml`.
+
+### Machine state — JSON
+
+- `state.json` — last-session state: history, current tab list,
+  last viewport size, etc.
+- Future: `cookies.json`, `cache_index.json`, `permissions.json` for
+  PermissionStore persistence.
+
+Why JSON for machine state: never human-edited, round-trips cleanly
+through `json` stdlib, fast to load. No need for comments or
+sections.
+
+### Imported third-party data — keep native
+
+Block lists (`hosts` format), filter lists (Adblock-Plus / ABP
+syntax), CA bundles (PEM): parse in place, never convert. They're
+authored upstream by other projects and we're consumers. Cache them
+under `~/.config/neuzelaar/lists/` with their original filenames.
 
 ## API contract: flat dotted keys
 
