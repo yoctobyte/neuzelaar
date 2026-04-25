@@ -9,6 +9,20 @@ def is_js_object(value: object) -> bool:
     return value is not None and not isinstance(value, (bool, int, float, str))
 
 
+def js_typeof(value: object) -> str:
+    if value is None:
+        return "object"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if hasattr(value, "call"):
+        return "function"
+    return "object"
+
+
 def js_truthy(value: object) -> bool:
     if value is None:
         return False

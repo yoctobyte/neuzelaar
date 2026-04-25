@@ -77,11 +77,12 @@ Current imported focus:
 - timer cancellation interoperability
 - timeout delay normalization
 - missing/undefined interval delay behavior
+- `queueMicrotask` semantics
 
 Current state:
 
-- `quickjs` passes this imported timer subset
-- `own` still has host/harness/runtime gaps on that imported subset
+- `quickjs` passes the current imported subset
+- `own` also passes the current imported subset
 
 That is still useful. It gives us:
 
@@ -89,17 +90,27 @@ That is still useful. It gives us:
 - a narrower compatibility target than "all of WPT"
 - a concrete next host/runtime backlog
 
-## Immediate Own-Engine Gaps Exposed By Imported Upstream WPT
+## Current Imported Coverage
 
-The imported upstream timer subset has already exposed remaining gaps in the
-`own` path:
+Current imported upstream cases:
 
-- harness/runtime interaction around thrown errors in timer callbacks
-- remaining interval/timer host edge cases under the imported harness
-- broader `testharness.js` compatibility, not just local lookalike helpers
+- `html/webappapis/timers/cleartimeout-clearinterval.any.js`
+- `html/webappapis/timers/negative-settimeout.any.js`
+- `html/webappapis/timers/missing-timeout-setinterval.any.js`
+- `html/webappapis/microtask-queuing/queue-microtask.any.js`
 
-So the next practical WPT work is not "more tests first". It is:
+These are now passing on both:
 
-1. make the imported timer subset pass on `own`
-2. then import `queueMicrotask` upstream cases
-3. only then widen into DOM/event/history coverage
+- `own`
+- `quickjs`
+
+## Next Practical WPT Work
+
+The next useful upstream WPT targets are:
+
+1. more `queueMicrotask` / microtask cases
+2. unhandled promise rejection behavior
+3. DOM/event/history cases once the host surface grows
+
+The order still matters. Timers and microtasks were the right first imported
+frontier because they map cleanly to the current runtime.

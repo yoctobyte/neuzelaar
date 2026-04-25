@@ -156,8 +156,7 @@ function __wpt_make_async_test(name) {
     step_func: function(fn) {
       var self = this;
       return function() {
-        var args = arguments;
-        self.step(function() { return fn.apply(null, args); });
+        self.step(function() { return fn(); });
       };
     },
     step_func_done: function(fn) {
@@ -412,6 +411,9 @@ def _run_case_own(case: WptCase) -> WptOutcome:
             evaluate_ast_program(program, environment)
             safety_rounds = 0
             while state.has_pending_work():
+                if bool(environment.get("__wpt_single_test_done")):
+                    state.timers = []
+                    break
                 if not state.has_ready_work():
                     next_due = min(
                         (pending.due_at for pending in state.timers if not pending.cancelled),

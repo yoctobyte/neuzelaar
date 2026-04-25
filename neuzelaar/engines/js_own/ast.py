@@ -217,6 +217,12 @@ class IfStatement(Stmt):
 
 
 @dataclass(frozen=True, slots=True)
+class WhileStatement(Stmt):
+    test: Expr
+    body: Stmt
+
+
+@dataclass(frozen=True, slots=True)
 class ReturnStatement(Stmt):
     value: Expr | None
 

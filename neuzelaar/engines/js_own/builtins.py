@@ -67,12 +67,14 @@ def install_builtins(environment) -> None:
         lambda args: js_error_object(args[0] if args else ""),
     )
     error_constructor.set("prototype", error_prototype)
+    error_constructor.set("name", "Error")
     environment.declare("Error", error_constructor, kind="const")
     type_error_constructor = _CallableConstructor(
         "TypeError",
         lambda args: {"name": "TypeError", "message": js_to_string(args[0] if args else "")},
     )
     type_error_constructor.set("prototype", error_prototype)
+    type_error_constructor.set("name", "TypeError")
     environment.declare("TypeError", type_error_constructor, kind="const")
     def _eval(args: tuple[object, ...], _this: object | None) -> object:
         from neuzelaar.engines.js_own.interpreter import evaluate_program_with_config

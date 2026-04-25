@@ -25,6 +25,7 @@ from neuzelaar.engines.js_own.ast import (
     TryStatement,
     UnaryExpr,
     VariableDeclaration,
+    WhileStatement,
 )
 from neuzelaar.engines.js_own.parser import parse_expression, parse_program
 from neuzelaar.engines.js_own.errors import JavaScriptSyntaxError
@@ -97,6 +98,12 @@ def test_parse_variable_declaration_and_if_block() -> None:
     assert isinstance(program.statements[1].consequent, BlockStatement)
 
 
+def test_parse_while_statement() -> None:
+    program = parse_program("let x = 0; while (x < 2) { x = x + 1; }")
+
+    assert isinstance(program.statements[1], WhileStatement)
+
+
 def test_parse_function_declaration_and_return() -> None:
     program = parse_program("function add(a, b) { return a + b; }")
 
@@ -124,6 +131,13 @@ def test_parse_array_object_member_and_index_expressions() -> None:
     assert isinstance(member_expr, MemberExpr)
     assert isinstance(index_expr, IndexExpr)
     assert isinstance(this_expr, ThisExpr)
+
+
+def test_parse_object_literal_method_shorthand() -> None:
+    expr = parse_expression("{ handleEvent() { return 1; } }")
+
+    assert isinstance(expr, ObjectLiteral)
+    assert isinstance(expr.properties[0].value, FunctionExpr)
 
 
 def test_parse_throw_and_try_statement() -> None:

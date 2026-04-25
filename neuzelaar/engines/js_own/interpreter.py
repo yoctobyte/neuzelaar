@@ -47,14 +47,17 @@ from neuzelaar.engines.js_own.ast import (
     UnaryExpr,
     UpdateExpr,
     VariableDeclaration,
+    WhileStatement,
 )
 from neuzelaar.engines.js_own.environment import Environment
 from neuzelaar.engines.js_own.parser import parse_expression as parse_expression_ast
 from neuzelaar.engines.js_own.parser import parse_program as parse_program_ast
 from neuzelaar.engines.js_own.runtime import (
     js_add,
+    js_error_object,
     js_loose_equal,
     js_strict_equal,
+    js_typeof,
     js_to_string,
     js_to_number,
     js_truthy,
@@ -104,6 +107,7 @@ class JavaScriptFunction:
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
+        call_env.var_scope = call_env
         call_env.declare("this", this_value, kind="const")
         call_env.declare("arguments", list(arguments), kind="var")
         if self.super_class is not None:
@@ -147,6 +151,7 @@ class JavaScriptArrowFunction:
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
+        call_env.var_scope = call_env
         call_env.declare("this", self.lexical_this, kind="const")
         for index, param in enumerate(self.params):
             value = arguments[index] if index < len(arguments) else None
@@ -166,6 +171,7 @@ class JavaScriptArrowFunction:
 class JavaScriptAsyncFunction(JavaScriptFunction):
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
+        call_env.var_scope = call_env
         call_env.declare("this", this_value, kind="const")
         call_env.declare("arguments", list(arguments), kind="var")
         if self.super_class is not None:
@@ -192,6 +198,7 @@ class JavaScriptAsyncFunction(JavaScriptFunction):
 class JavaScriptAsyncArrowFunction(JavaScriptArrowFunction):
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
+        call_env.var_scope = call_env
         call_env.declare("this", self.lexical_this, kind="const")
         for index, param in enumerate(self.params):
             value = arguments[index] if index < len(arguments) else None
@@ -1042,6 +1049,11 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
         if statement.alternate is not None:
             return evaluate_statement(statement.alternate, environment)
         return None
+    if isinstance(statement, WhileStatement):
+        value: object = None
+        while js_truthy(evaluate_expr(statement.test, environment)):
+            value = evaluate_statement(statement.body, environment)
+        return value
     if isinstance(statement, ReturnStatement):
         value = None if statement.value is None else evaluate_expr(statement.value, environment)
         raise ReturnSignal(value)
@@ -1062,6 +1074,17 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
                     assert statement.catch_name is not None
                     catch_env.declare(statement.catch_name, thrown.value, kind="let")
                     value = evaluate_statement(statement.catch_body, catch_env)
+            except TypeError as exc:
+                if statement.catch_body is None:
+                    raise
+                catch_env = environment.child_block()
+                assert statement.catch_name is not None
+                catch_env.declare(
+                    statement.catch_name,
+                    {"name": "TypeError", "message": str(exc)},
+                    kind="let",
+                )
+                value = evaluate_statement(statement.catch_body, catch_env)
         except ReturnSignal as signal:
             pending_return = signal
         finally:
@@ -1135,6 +1158,8 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return js_to_number(operand)
         if expr.operator == "-":
             return -js_to_number(operand)
+        if expr.operator == "typeof":
+            return js_typeof(operand)
     if isinstance(expr, UpdateExpr):
         current = None
         if isinstance(expr.target, Identifier):

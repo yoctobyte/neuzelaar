@@ -3,3 +3,4 @@
 .cache/wpt/html/webappapis/timers/cleartimeout-clearinterval.any.js
 .cache/wpt/html/webappapis/timers/negative-settimeout.any.js
 .cache/wpt/html/webappapis/timers/missing-timeout-setinterval.any.js
+.cache/wpt/html/webappapis/microtask-queuing/queue-microtask.any.js

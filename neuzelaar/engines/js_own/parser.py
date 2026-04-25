@@ -43,6 +43,7 @@ from neuzelaar.engines.js_own.ast import (
     UnaryExpr,
     UpdateExpr,
     VariableDeclaration,
+    WhileStatement,
 )
 from neuzelaar.engines.js_own.errors import JavaScriptSyntaxError
 from neuzelaar.engines.js_own.tokenizer import Token, tokenize
@@ -93,6 +94,8 @@ PROPERTY_NAME_TOKENS = {
     "FINALLY",
     "ASYNC",
     "AWAIT",
+    "TYPEOF",
+    "WHILE",
 }
 
 
@@ -169,6 +172,8 @@ class Parser:
             return self._parse_class_declaration()
         if self._check("IF"):
             return self._parse_if_statement()
+        if self._check("WHILE"):
+            return self._parse_while_statement()
         if self._check("RETURN"):
             return self._parse_return_statement()
         if self._check("THROW"):
@@ -197,6 +202,14 @@ class Parser:
         consequent = self.parse_statement()
         alternate = self.parse_statement() if self._match("ELSE") else None
         return IfStatement(test=test, consequent=consequent, alternate=alternate)
+
+    def _parse_while_statement(self) -> WhileStatement:
+        self._consume("WHILE", "Expected 'while'")
+        self._consume("LPAREN", "Expected '(' after while")
+        test = self.parse_expression()
+        self._consume("RPAREN", "Expected ')' after while condition")
+        body = self.parse_statement()
+        return WhileStatement(test=test, body=body)
 
     def _parse_return_statement(self) -> ReturnStatement:
         if self.function_depth <= 0:
@@ -460,6 +473,8 @@ class Parser:
             return self._parse_object_literal()
         if token.kind in {"PLUS", "MINUS", "BANG"}:
             return UnaryExpr(operator=token.lexeme, operand=self.parse_expression(8))
+        if token.kind == "TYPEOF":
+            return UnaryExpr(operator="typeof", operand=self.parse_expression(8))
         if token.kind == "++":
             target = self.parse_expression(8)
             if not isinstance(target, (Identifier, MemberExpr, IndexExpr)):
@@ -547,8 +562,25 @@ class Parser:
                     raise JavaScriptSyntaxError(
                         f"Expected object property key at offset {key_token.offset}"
                     )
-                self._consume("COLON", "Expected ':' after object property key")
-                value = self.parse_expression()
+                if self._check("LPAREN"):
+                    self._consume("LPAREN", "Expected '(' after method name")
+                    params: list[str] = []
+                    if not self._check("RPAREN"):
+                        while True:
+                            param = self._consume("IDENTIFIER", "Expected parameter name")
+                            params.append(str(param.value))
+                            if not self._match("COMMA"):
+                                break
+                    self._consume("RPAREN", "Expected ')' after method parameters")
+                    self.function_depth += 1
+                    try:
+                        body = self._parse_block_statement()
+                    finally:
+                        self.function_depth -= 1
+                    value = FunctionExpr(name=key, params=tuple(params), body=body, is_async=False)
+                else:
+                    self._consume("COLON", "Expected ':' after object property key")
+                    value = self.parse_expression()
                 properties.append(ObjectProperty(key=key, value=value))
                 if not self._match("COMMA"):
                     break

@@ -67,8 +67,14 @@ def read_property(target: object, property_name: str, *, receiver: object | None
             _lookup_dict_property(target, property_name),
             target if receiver is None else receiver,
         )
-    if isinstance(target, list) and property_name == "length":
-        return float(len(target))
+    if isinstance(target, list):
+        if property_name == "length":
+            return float(len(target))
+        if property_name == "push":
+            return HostCallable(
+                "Array.push",
+                lambda args, this_value: _array_push(target if this_value is None else this_value, args),
+            )
     raise TypeError(f"Cannot read property {property_name!r}")
 
 
@@ -159,3 +165,10 @@ def to_index(value: object) -> int:
     if isinstance(value, str):
         return int(float(value))
     raise TypeError("Invalid index")
+
+
+def _array_push(target: object, values: tuple[object, ...]) -> float:
+    if not isinstance(target, list):
+        raise TypeError("Array.push receiver must be an array")
+    target.extend(values)
+    return float(len(target))

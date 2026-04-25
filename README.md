@@ -133,6 +133,7 @@ Local WPT-oriented host/runtime checks:
 git clone --depth 1 https://github.com/web-platform-tests/wpt .cache/wpt
 .venv/bin/python tools/run_js_wpt_subset.py --engine own
 .venv/bin/python tools/run_js_wpt_subset.py --engine quickjs
+.venv/bin/python tools/run_js_wpt_subset.py --engine own --manifest tests/fixtures/js/wpt_upstream_subset.txt
 .venv/bin/python tools/run_js_wpt_subset.py --engine quickjs --manifest tests/fixtures/js/wpt_upstream_subset.txt
 ```
 

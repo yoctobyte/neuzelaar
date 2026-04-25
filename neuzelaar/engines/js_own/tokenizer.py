@@ -32,6 +32,8 @@ KEYWORDS = {
     "finally": "FINALLY",
     "instanceof": "INSTANCEOF",
     "yield": "YIELD",
+    "typeof": "TYPEOF",
+    "while": "WHILE",
 }
 
 MULTI_CHAR_OPERATORS = (

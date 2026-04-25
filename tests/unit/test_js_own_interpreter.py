@@ -492,6 +492,45 @@ def test_function_arguments_binding_exists() -> None:
     assert result == 4.0
 
 
+def test_function_calls_keep_separate_var_scope_per_invocation() -> None:
+    result = evaluate_program(
+        "function make(name) { return { done: function() { return name; } }; } "
+        "var t1 = make('one'); "
+        "var t2 = make('two'); "
+        "t1.done();"
+    )
+
+    assert result == "one"
+
+
+def test_typeof_and_object_method_shorthand_work() -> None:
+    result = evaluate_program(
+        "var obj = { handleEvent() { return typeof queueMicrotask; } }; obj.handleEvent();"
+    )
+
+    assert result == "function"
+
+
+def test_try_catch_can_catch_runtime_type_error() -> None:
+    result = evaluate_program(
+        "try { queueMicrotask(); } catch (error) { error.name; }"
+    )
+
+    assert result == "TypeError"
+
+
+def test_while_statement_runs_until_condition_is_false() -> None:
+    result = evaluate_program("var x = 0; while (x < 3) { x = x + 1; } x;")
+
+    assert result == 3.0
+
+
+def test_array_push_appends_values() -> None:
+    result = evaluate_program("var xs = []; xs.push('a'); xs.push('b'); xs.length;")
+
+    assert result == 2.0
+
+
 def test_class_constructor_and_method_work() -> None:
     result = evaluate_program(
         "class Point { "
