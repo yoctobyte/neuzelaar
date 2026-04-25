@@ -31,7 +31,7 @@ commits per docs/layout_plan.md.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from neuzelaar.core.page import ImageAsset
 from neuzelaar.document.box import Box, BoxGeometry, BoxKind, EdgeSizes
@@ -78,10 +78,68 @@ Placement = TextPlacement | ImagePlacement | BoxPlacement
 
 
 @dataclass(slots=True)
+class FloatExclusion:
+    """An active floated box's contribution to the float context.
+
+    A float on the left occupies x in [bfc_left, edge_x); a float on
+    the right occupies x in [edge_x, bfc_right). Vertical extent is
+    [top, bottom). Inline content laid out at any y in that range
+    must avoid the occupied side.
+    """
+
+    side: str  # "left" or "right"
+    top: int
+    bottom: int
+    edge_x: int
+
+
+@dataclass(slots=True)
+class FloatContext:
+    """List of active floats inside a Block Formatting Context.
+    Queried by both block placement (for shifting in-flow blocks)
+    and inline placement (for narrowing line boxes).
+    """
+
+    exclusions: list[FloatExclusion] = field(default_factory=list)
+
+    def constrain(
+        self,
+        y: int,
+        height: int,
+        content_left: int,
+        content_right: int,
+    ) -> tuple[int, int]:
+        """Return (adjusted_left, adjusted_right) at the given vertical
+        range, narrowing around any floats that overlap.
+        """
+        left = content_left
+        right = content_right
+        for ex in self.exclusions:
+            if ex.bottom <= y or ex.top >= y + max(height, 1):
+                continue
+            if ex.side == "left":
+                left = max(left, ex.edge_x)
+            else:
+                right = min(right, ex.edge_x)
+        return left, right
+
+    def lowest(self, side: str | None = None) -> int:
+        """y of the lowest active float bottom, optionally filtered by
+        side. Used to implement `clear`.
+        """
+        result = 0
+        for ex in self.exclusions:
+            if side is None or side == ex.side:
+                result = max(result, ex.bottom)
+        return result
+
+
+@dataclass(slots=True)
 class LayoutState:
     viewport_width: int
     images: dict[NodeId, ImageAsset]
     items: list[Placement]
+    floats: FloatContext = field(default_factory=FloatContext)
     budget_exceeded: bool = False
 
 
@@ -142,7 +200,12 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     inner_width = content_width
 
     cursor_y = child_y
-    if box.children and all(child.is_inline_level for child in box.children):
+    bfc_left = child_x
+    bfc_right = child_x + inner_width
+    if box.children and all(
+        child.is_inline_level and child.style.float == "none"
+        for child in box.children
+    ):
         # Pure inline formatting context: lay out all children as a
         # single run of line boxes with proper word wrapping.
         cursor_y = _layout_inline_context(
@@ -159,27 +222,51 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
             if state.budget_exceeded or len(state.items) >= MAX_LAYOUT_ITEMS:
                 state.budget_exceeded = True
                 break
+
+            # Honour `clear` before placing, regardless of float
+            # status of this child.
+            clear = child.style.clear
+            if clear != "none":
+                clear_side = None if clear == "both" else clear
+                clear_y = state.floats.lowest(clear_side)
+                if cursor_y < clear_y:
+                    cursor_y = clear_y
+
+            if child.style.float in ("left", "right"):
+                _place_float(
+                    child, state,
+                    bfc_left=bfc_left, bfc_right=bfc_right,
+                    available_y=cursor_y, containing_width=inner_width,
+                )
+                # Float does not advance cursor for in-flow content.
+                previous_margin_bottom = 0
+                continue
+
             if child.is_block_level:
-                # Collapse this child's top margin with the previous
-                # sibling's bottom margin (or with the parent's top
-                # edge if this is the first block child).
                 child_margin_top = _resolve_margin(child.style).top
                 collapse = max(previous_margin_bottom, child_margin_top)
                 if cursor_y == child_y:
                     collapse = 0
                 cursor_y = cursor_y - previous_margin_bottom + collapse - child_margin_top
-                cursor_y = _place_block(child, state, x=child_x, y=cursor_y, containing_width=inner_width)
+                # Narrow the in-flow block around active floats at this y.
+                avail_left, avail_right = state.floats.constrain(
+                    cursor_y + child_margin_top, 1, bfc_left, bfc_right,
+                )
+                block_x = avail_left
+                block_width = max(avail_right - avail_left, 0)
+                cursor_y = _place_block(child, state, x=block_x, y=cursor_y, containing_width=block_width)
                 previous_margin_bottom = _resolve_margin(child.style).bottom
             else:
-                # Inline child appearing alongside blocks — should
-                # have been wrapped in an anonymous block during box
-                # tree construction. Fall back to the proto-IFC path
-                # for safety.
                 cursor_y = _place_inline_or_text(
                     child, state, x=child_x, y=cursor_y,
                     content_width=inner_width, parent_style=style,
                 )
                 previous_margin_bottom = 0
+        # Containing block expands to enclose any floats that would
+        # otherwise escape — clearfix-by-default. Real CSS only does
+        # this for new BFC roots; we apply broadly for now and revisit
+        # when overflow lands.
+        cursor_y = max(cursor_y, state.floats.lowest())
 
     used_content_height = max(cursor_y - child_y, 0)
     content_height = _resolve_height(style, used_content_height)
@@ -187,6 +274,112 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
 
     box_bottom = box.geometry.y + border.top + padding.top + content_height + padding.bottom + border.bottom
     return box_bottom + margin.bottom
+
+
+def _place_float(
+    box: Box,
+    state: LayoutState,
+    *,
+    bfc_left: int,
+    bfc_right: int,
+    available_y: int,
+    containing_width: int,
+) -> None:
+    """Place a floated block at the appropriate edge of its BFC,
+    register the resulting exclusion, and emit its contents. The
+    cursor in the parent BFC is not advanced; in-flow siblings will
+    be narrowed via FloatContext.constrain at their own y.
+    """
+    style = box.style
+    margin = _resolve_margin(style)
+    padding = _resolve_padding(style)
+    border = EdgeSizes()
+    box.geometry.margin = margin
+    box.geometry.padding = padding
+    box.geometry.border = border
+
+    # Float width: explicit, else the containing block's width minus
+    # margins (CSS would shrink-to-fit; we approximate by using the
+    # full available width as a ceiling).
+    explicit = _length_to_px(style.width.strip().lower()) if style.width.strip().lower() not in ("", "auto") else 0
+    if explicit > 0:
+        content_width = explicit
+    else:
+        content_width = max(containing_width - margin.left - margin.right - padding.left - padding.right, 0)
+    box.geometry.content_width = content_width
+
+    border_box_width = (
+        border.left + padding.left + content_width + padding.right + border.right
+    )
+
+    # Find a y at-or-below available_y where the float fits between
+    # active floats on its preferred side.
+    side = style.float  # "left" or "right"
+    candidate_y = available_y
+    while True:
+        avail_left, avail_right = state.floats.constrain(
+            candidate_y, 1, bfc_left, bfc_right,
+        )
+        if avail_right - avail_left >= border_box_width + margin.left + margin.right:
+            break
+        next_clear = _next_clearance(state.floats, candidate_y)
+        if next_clear is None:
+            break  # no more floats to clear — place anyway, may overflow
+        candidate_y = next_clear
+
+    if side == "left":
+        box.geometry.x = avail_left + margin.left
+    else:
+        box.geometry.x = avail_right - margin.right - border_box_width
+    box.geometry.y = candidate_y + margin.top
+
+    _maybe_emit_background(box, state)
+
+    # Floats establish their own BFC for their contents, so we
+    # recursively lay out their children with a fresh float context.
+    saved_floats = state.floats
+    state.floats = FloatContext()
+    try:
+        child_x = box.geometry.x + border.left + padding.left
+        child_y = box.geometry.y + border.top + padding.top
+        cursor = child_y
+        if box.children and all(c.is_inline_level and c.style.float == "none" for c in box.children):
+            cursor = _layout_inline_context(
+                box.children, state,
+                x0=child_x, y0=child_y, content_width=content_width, parent_style=style,
+            )
+        else:
+            for child in box.children:
+                if state.budget_exceeded:
+                    break
+                if child.is_block_level:
+                    cursor = _place_block(child, state, x=child_x, y=cursor, containing_width=content_width)
+                else:
+                    cursor = _place_inline_or_text(child, state, x=child_x, y=cursor, content_width=content_width, parent_style=style)
+        used_height = max(cursor - child_y, 0)
+        content_height = _resolve_height(style, used_height)
+        box.geometry.content_height = content_height
+    finally:
+        state.floats = saved_floats
+
+    box_bottom = box.geometry.y + border.top + padding.top + box.geometry.content_height + padding.bottom + border.bottom
+    bottom_with_margin = box_bottom + margin.bottom
+
+    if side == "left":
+        edge_x = box.geometry.x + border_box_width + margin.right
+    else:
+        edge_x = box.geometry.x - margin.left
+    state.floats.exclusions.append(
+        FloatExclusion(side=side, top=candidate_y, bottom=bottom_with_margin, edge_x=edge_x)
+    )
+
+
+def _next_clearance(context: FloatContext, y: int) -> int | None:
+    """Lowest active float bottom strictly greater than y, or None."""
+    candidates = [ex.bottom for ex in context.exclusions if ex.bottom > y]
+    if not candidates:
+        return None
+    return min(candidates)
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,12 +461,29 @@ def _layout_inline_context(
     if not fragments:
         return y0
 
-    # A line-under-construction.
+    # A line-under-construction. line_x_start and line_max_width are
+    # refreshed each line so the line narrows around active floats at
+    # the line's y.
     line_items: list[tuple[int, _InlineFragment]] = []
+    line_x_start = x0
+    line_max_width = content_width
     cursor_x = x0
     cursor_y = y0
     line_max_height = 0
     line_max_font_size = 0
+
+    def refresh_line_bounds() -> None:
+        nonlocal line_x_start, line_max_width, cursor_x
+        # Estimate a default line height for float overlap testing.
+        probe_h = _line_height(line_max_font_size or _font_size_px(parent_style))
+        avail_left, avail_right = state.floats.constrain(
+            cursor_y, probe_h, x0, x0 + content_width,
+        )
+        line_x_start = avail_left
+        line_max_width = max(avail_right - avail_left, 0)
+        cursor_x = line_x_start
+
+    refresh_line_bounds()
 
     def flush_line(force: bool = False) -> None:
         nonlocal cursor_x, cursor_y, line_items, line_max_height, line_max_font_size
@@ -318,10 +528,10 @@ def _layout_inline_context(
                     )
                 )
         cursor_y += line_box_height
-        cursor_x = x0
         line_items = []
         line_max_height = 0
         line_max_font_size = 0
+        refresh_line_bounds()
 
     for fragment in fragments:
         if state.budget_exceeded or len(state.items) >= MAX_LAYOUT_ITEMS:
@@ -333,7 +543,7 @@ def _layout_inline_context(
             space_width = _measure_text(" ", fs) if line_items else 0
             # Wrap if this word would overflow. Always place at least
             # one fragment on an empty line, even if oversized.
-            if cursor_x + space_width + word_width > x0 + content_width and line_items:
+            if cursor_x + space_width + word_width > line_x_start + line_max_width and line_items:
                 flush_line()
                 space_width = 0
             if space_width:
@@ -343,7 +553,7 @@ def _layout_inline_context(
             line_max_font_size = max(line_max_font_size, fs)
             line_max_height = max(line_max_height, _line_height(fs))
         else:  # image
-            if cursor_x + fragment.width > x0 + content_width and line_items:
+            if cursor_x + fragment.width > line_x_start + line_max_width and line_items:
                 flush_line()
             line_items.append((cursor_x, fragment))
             cursor_x += fragment.width

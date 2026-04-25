@@ -25,12 +25,16 @@ class ComputedStyle:
     text_align: str = "left"
     width: str = "auto"
     height: str = "auto"
+    float: str = "none"
+    clear: str = "none"
 
 
 SUPPORTED_PROPERTIES = {
     "background-color",
+    "clear",
     "color",
     "display",
+    "float",
     "font-size",
     "font-weight",
     "height",
@@ -178,7 +182,27 @@ def _style_from_declarations(
         text_align=_normalize_text_align(declarations.get("text-align"), parent_style.text_align),
         width=declarations.get("width", "auto"),
         height=declarations.get("height", "auto"),
+        float=_normalize_float(declarations.get("float")),
+        clear=_normalize_clear(declarations.get("clear")),
     )
+
+
+def _normalize_float(value: str | None) -> str:
+    if value is None:
+        return "none"
+    normalized = value.strip().lower()
+    if normalized in {"left", "right", "none"}:
+        return normalized
+    return "none"
+
+
+def _normalize_clear(value: str | None) -> str:
+    if value is None:
+        return "none"
+    normalized = value.strip().lower()
+    if normalized in {"left", "right", "both", "none"}:
+        return normalized
+    return "none"
 
 
 def _normalize_text_align(value: str | None, parent_value: str) -> str:

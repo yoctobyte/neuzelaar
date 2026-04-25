@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Float Layout Demo</title>
+  <style>
+    body { font-size: 18px; color: #222; }
+    h1 { color: #003366; }
+    .pull-left {
+      float: left;
+      width: 140px;
+      background-color: #eef3fa;
+      padding: 8px;
+      margin: 0 12px 8px 0;
+    }
+    .pull-right {
+      float: right;
+      width: 120px;
+      background-color: #faf3ee;
+      padding: 8px;
+      margin: 0 0 8px 12px;
+    }
+    .clearfix { clear: both; padding-top: 8px; color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Floats and clear</h1>
+  <div class="pull-left">A left-floated callout sits at the left edge of its containing block. Text to the right of it flows around the float.</div>
+  <p>
+    The body of this paragraph wraps around the floated callout. As the
+    viewport narrows, line boxes shrink to fit the remaining space until
+    the float ends, then return to the full content width.
+  </p>
+  <div class="pull-right">Right-floated callout pinned to the trailing edge.</div>
+  <p>
+    A second paragraph mixes a right float with normal flow. Words wrap
+    at the inner edge of the float exclusion just like the left case in
+    mirror image.
+  </p>
+  <p class="clearfix">This paragraph clears both sides and starts below any preceding floats.</p>
+</body>
+</html>
