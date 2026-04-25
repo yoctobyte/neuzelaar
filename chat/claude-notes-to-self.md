@@ -179,3 +179,90 @@ shouldn't be blocked by anything I landed.
   `docs/layout_plan.md`.
 
 — c
+
+---
+
+## 2026-04-25 CET — note to self — [settings-system-v1]
+
+Evening session. User pivot from "make iframes work" to "first
+build the security/settings model that iframes will plug into."
+Right call — iframe policy is half a dozen settings, building
+those without a settings system would have meant hard-coding
+toggles into the iframe slice and ripping them out later.
+
+### What landed
+
+Four commits, in this order:
+
+1. `4d36b2d` — `docs/config_format.md` (TOML + JSON split, flat
+   dotted keys, sections vs leaves)
+2. `3468c24` — `docs/settings_ui.md` + multi-format clarification
+   in config_format.md
+3. `7f4e202` — `core/config/{registry,service}.py`,
+   `shells/tk/widgets/setting_row.py`,
+   `shells/tk/preferences_window.py`, wired into `shell.py`
+4. `bb08fc5` — high-DPI Treeview rowheight fix
+   (font linespace + 8px padding instead of hardcoded 34)
+
+### Key decisions worth holding in mind
+
+- **Registry is data, UI is dumb**. `SettingDef` is the contract;
+  the Preferences window enumerates and renders. A future GTK or
+  web shell renders the same registry without touching core. If
+  you find yourself adding setting-specific code to the window,
+  stop — make it a `SettingDef` field instead.
+- **Confirm policy is one-sided**. `when_relaxing` only prompts
+  when the change increases attack surface. Tightening is
+  silent. The relax direction is encoded in `relax_order` per
+  enum. Other settings that ever need this rule:
+  `iframes.policy`, `cookies.allow`, `content.images.third_party`
+  — register `relax_order` for each.
+- **Hand-rolled TOML writer is fine**. We control the schema. If
+  it ever gets bigger than the current ~70 lines, switch to
+  `tomli_w` — but right now the dep cost isn't worth it.
+- **Live-apply is the default** but I haven't tested confirm
+  dialogs in a real running window. The `messagebox.askyesno`
+  paths exist; verify on next UI session that they don't trigger
+  on every `_refresh()` (they shouldn't — only on `_apply` —
+  but flag if you see redundant prompts).
+
+### Things I almost did and should not have
+
+- **Did NOT** touch sis's `script-budget-max_steps` keys
+  directly. Migration is hers to do; I left a note in
+  `config_format.md` describing the rename.
+- **Did NOT** delete the `Settings`/`settings.json` legacy code.
+  ConfigService imports from it on first load and
+  `self.settings.zoom` is still read by the rendering path. When
+  the entire shell reads from `ConfigService`, that'll be a
+  follow-up cleanup — not now.
+- **Did NOT** add per-site UI even though the resolver supports
+  it. Without an iframe or per-site-policy backing setting,
+  there's nothing to scope yet. The shield popover (Slice 5)
+  brings the per-site UX; that's the natural pairing.
+
+### For next evening
+
+- User signalled "new job" after this — so the next session may
+  be unrelated. If it IS settings continuation, the natural
+  next slice is **shield popover** because it gives the
+  per-site UI a use case before iframes land.
+- If iframes get prioritised first, register the iframe
+  settings (`iframes.policy`, `iframes.max_depth`,
+  `iframes.max_count`) in the registry as part of that slice —
+  they'll show up in Preferences automatically.
+- Watch for sis renaming her runtime config keys. If she does,
+  the keys need to also get registered as `SettingDef`s under
+  `scripts` group, subgroup `Budgets` / `Debug`. The
+  `from_settings(dict)` shape doesn't need to change.
+
+### Self-discipline check
+
+User tried to "go ahead, my dear" and I correctly switched modes
+from planning to building. The four-commit shape (docs first,
+then implementation, then a tiny bug fix the user caught) is the
+right grain — small enough to revert any one without losing the
+others. Hold this rhythm.
+
+— c
+
