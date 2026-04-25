@@ -16,6 +16,11 @@ from neuzelaar.engines.js_own.interpreter import evaluate_ast_program
 from neuzelaar.engines.js_own.parser import parse_program
 from neuzelaar.engines.js_own.runtime_state import runtime_session
 
+try:
+    import quickjs as _quickjs
+except ImportError:  # pragma: no cover
+    _quickjs = None
+
 
 _HARNESS_PREFIX = r"""
 var __wpt_results = "";
@@ -139,6 +144,67 @@ function async_test(name) {
 }
 """.strip()
 
+_QUICKJS_TIMER_SHIM = r"""
+var __wpt_timer_queue = [];
+var __wpt_next_timer_id = 1;
+
+function setTimeout(fn, delay) {
+  var args = [];
+  var i = 2;
+  while (i < arguments.length) {
+    args.push(arguments[i]);
+    i = i + 1;
+  }
+  var timer = {
+    id: __wpt_next_timer_id,
+    fn: fn,
+    cancelled: false,
+    args: args
+  };
+  __wpt_next_timer_id = __wpt_next_timer_id + 1;
+  __wpt_timer_queue.push(timer);
+  return timer.id;
+}
+
+function clearTimeout(id) {
+  var i = 0;
+  while (i < __wpt_timer_queue.length) {
+    if (__wpt_timer_queue[i].id === id) {
+      __wpt_timer_queue[i].cancelled = true;
+      return;
+    }
+    i = i + 1;
+  }
+}
+
+function queueMicrotask(fn) {
+  Promise.resolve().then(fn);
+}
+
+function __wpt_run_one_timer() {
+  while (__wpt_timer_queue.length > 0) {
+    var timer = __wpt_timer_queue.shift();
+    if (timer.cancelled) {
+      continue;
+    }
+    timer.fn.apply(null, timer.args);
+    return true;
+  }
+  return false;
+}
+
+function __wpt_has_timer_work() {
+  var i = 0;
+  while (i < __wpt_timer_queue.length) {
+    if (!__wpt_timer_queue[i].cancelled) {
+      return true;
+    }
+    i = i + 1;
+  }
+  return false;
+}
+""".strip()
+
 
 @dataclass(frozen=True, slots=True)
 class WptCase:
@@ -169,6 +235,7 @@ class WptOutcome:
 
 @dataclass(frozen=True, slots=True)
 class WptRunSummary:
+    engine: str
     total: int
     passed: int
     failed: int
@@ -189,7 +256,15 @@ def load_case(path: str | Path) -> WptCase:
     )
 
 
-def run_case(case: WptCase) -> WptOutcome:
+def run_case(case: WptCase, *, engine: str = "own") -> WptOutcome:
+    if engine == "own":
+        return _run_case_own(case)
+    if engine == "quickjs":
+        return _run_case_quickjs(case)
+    raise ValueError(f"Unknown engine: {engine}")
+
+
+def _run_case_own(case: WptCase) -> WptOutcome:
     environment, stubs = build_browser_scenario(case.scenario)
     program = parse_program(build_program(case))
     try:
@@ -232,15 +307,71 @@ def run_case(case: WptCase) -> WptOutcome:
     )
 
 
-def run_cases(cases: list[WptCase]) -> WptRunSummary:
-    outcomes = tuple(run_case(case) for case in cases)
+def _run_case_quickjs(case: WptCase) -> WptOutcome:
+    if _quickjs is None:
+        return WptOutcome(case=case, status="failed", reason="quickjs package is not installed")
+    context = _quickjs.Context()
+    try:
+        context.eval(build_quickjs_program(case))
+        safety_rounds = 0
+        while True:
+            progressed = False
+            while context.execute_pending_job():
+                progressed = True
+            if context.eval("__wpt_has_timer_work();"):
+                context.eval("__wpt_run_one_timer();")
+                progressed = True
+                continue
+            if not progressed:
+                break
+            safety_rounds += 1
+            if safety_rounds > 1000:
+                break
+        raw_results = str(context.eval("__wpt_results"))
+        pending_count = int(context.eval("__wpt_pending"))
+        test_results = _parse_results(raw_results)
+    except Exception as exc:
+        return WptOutcome(case=case, status="failed", reason=f"{type(exc).__name__}: {exc}")
+    if pending_count != 0:
+        return WptOutcome(
+            case=case,
+            status="failed",
+            reason=f"{pending_count} pending test(s) remain after event-loop drain",
+            test_results=test_results,
+            pending_count=pending_count,
+        )
+    failed = [result for result in test_results if result.status != "PASS"]
+    if failed:
+        first = failed[0]
+        return WptOutcome(
+            case=case,
+            status="failed",
+            reason=f"{first.name}: {first.message}",
+            test_results=test_results,
+            pending_count=pending_count,
+        )
+    return WptOutcome(
+        case=case,
+        status="passed",
+        reason=f"{len(test_results)} test(s) passed",
+        test_results=test_results,
+        pending_count=pending_count,
+    )
+
+
+def run_cases(cases: list[WptCase], *, engine: str = "own") -> WptRunSummary:
+    outcomes = tuple(run_case(case, engine=engine) for case in cases)
     passed = sum(outcome.status == "passed" for outcome in outcomes)
     failed = sum(outcome.status == "failed" for outcome in outcomes)
-    return WptRunSummary(total=len(outcomes), passed=passed, failed=failed, outcomes=outcomes)
+    return WptRunSummary(engine=engine, total=len(outcomes), passed=passed, failed=failed, outcomes=outcomes)
 
 
 def build_program(case: WptCase) -> str:
     return "\n".join((_HARNESS_PREFIX, case.source))
+
+
+def build_quickjs_program(case: WptCase) -> str:
+    return "\n".join((_HARNESS_PREFIX, _QUICKJS_TIMER_SHIM, case.source))
 
 
 def _parse_results(raw: str) -> tuple[WptTestResult, ...]:

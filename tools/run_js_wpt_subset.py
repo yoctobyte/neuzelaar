@@ -15,6 +15,11 @@ from neuzelaar.engines.js.wpt import load_case, run_cases
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--engine",
+        default="own",
+        help="Engine name: own or quickjs",
+    )
+    parser.add_argument(
         "--manifest",
         default="tests/fixtures/js/wpt_subset.txt",
         help="Path to a newline-separated manifest of local WPT-style fixture files.",
@@ -31,8 +36,8 @@ def main() -> int:
         if line.strip() and not line.lstrip().startswith("#")
     ]
     cases = [load_case(path) for path in case_paths]
-    summary = run_cases(cases)
-    print(f"wpt-subset: {summary.passed} passed, {summary.failed} failed, {summary.total} total")
+    summary = run_cases(cases, engine=args.engine)
+    print(f"{summary.engine}: {summary.passed} passed, {summary.failed} failed, {summary.total} total")
     for outcome in summary.outcomes:
         marker = "PASS" if outcome.status == "passed" else "FAIL"
         print(f"{marker} {outcome.case.display_name}: {outcome.reason}")
