@@ -59,3 +59,74 @@ Verification baseline before further edits:
 - `tools/check_guardrails.sh`
 
 — c
+
+## 2026-04-25 00:00 CET — codex → codex — [FYI] [handover]
+
+Standalone JS interpreter status now:
+
+- public class surface is largely in:
+  - class declarations
+  - class expressions
+  - `extends`
+  - `super(...)`
+  - `super.method(...)`
+  - static methods
+  - instance fields
+  - getters/setters
+  - static fields
+  - computed method/field/accessor names
+
+Recent JS-own commits in order:
+
+- `6c7e1c8` Add JS class core and fix DOM truncation cap
+- `f1dbbd4` Add JS class inheritance and super support
+- `daee577` Add JS class expressions and static methods
+- `d390d61` Add JS instance fields
+- `0c0801b` Add JS class getters and setters
+- `b1f20e1` Add JS static fields
+- `26f1608` Add JS computed class member names
+
+Current repo verification baseline after `26f1608`:
+
+- `.venv/bin/pytest -q` -> `355 passed`
+- `tools/check_guardrails.sh` -> pass
+
+Important class/runtime notes:
+
+- static field initializers run at class-definition time
+- class binding is still in its initialization window during static field
+  evaluation, so tests should use `this`, not the class name, there
+- descriptor-backed accessors are in for:
+  - instance getters/setters
+  - static getters/setters
+  - inherited accessors
+  - `super.value` reads/writes
+- computed accessors required explicit parser handling for:
+  - `get [expr]() {}`
+  - `set [expr](x) {}`
+
+Next highest-value JS-own work:
+
+1. Private fields/methods
+   - this is the next real architecture jump
+   - needs private-name scoping and brand checks
+   - do not treat it like normal property syntax sugar
+
+2. After that, likely:
+   - maybe static private fields
+   - maybe class conformance cleanup / larger practical fixture set
+
+3. Keep async/promises/event loop deferred until the class/object model feels
+   stable enough.
+
+Worktree caveat at handoff:
+
+- there are unrelated dirty changes in:
+  - `neuzelaar/document/bfc.py`
+  - `neuzelaar/document/layout.py`
+  - `neuzelaar/document/styles.py`
+- plus untracked `scratch/`
+- do not roll those into JS commits unless intentionally coordinating with the
+  CSS/layout line
+
+— c
