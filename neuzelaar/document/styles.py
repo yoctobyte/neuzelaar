@@ -33,6 +33,7 @@ class ComputedStyle:
     bottom: str = "auto"
     left: str = "auto"
     overflow: str = "visible"
+    z_index: str = "auto"
 
 
 SUPPORTED_PROPERTIES = {
@@ -54,6 +55,7 @@ SUPPORTED_PROPERTIES = {
     "text-align",
     "top",
     "width",
+    "z-index",
 }
 
 # Properties that inherit from parent by default in CSS. Non-listed
@@ -202,6 +204,7 @@ def _style_from_declarations(
         bottom=declarations.get("bottom", "auto"),
         left=declarations.get("left", "auto"),
         overflow=_normalize_overflow(declarations.get("overflow")),
+        z_index=declarations.get("z-index", "auto"),
     )
 
 

@@ -223,14 +223,31 @@ def layout_block(
     state.cb_stack.pop()
 
     # Lay out absolutes / fixed elements that were deferred during
-    # the main pass.
-    for deferred in state.deferred_absolutes:
+    # the main pass. Sort by z-index ascending (auto treated as 0) so
+    # higher z-index paints later, on top of lower. Document order is
+    # the stable tiebreak.
+    deferred_with_z: list[tuple[int, int, _DeferredAbsolute]] = [
+        (_parse_z_index(d.box.style.z_index), order, d)
+        for order, d in enumerate(state.deferred_absolutes)
+    ]
+    deferred_with_z.sort(key=lambda triple: (triple[0], triple[1]))
+    for _, _, deferred in deferred_with_z:
         if state.budget_exceeded:
             break
         _place_absolute(deferred, state)
 
     total_height = root.geometry.y + root.geometry.border_box_height + root.geometry.margin.bottom
     return total_height, state.items
+
+
+def _parse_z_index(value: str) -> int:
+    text = (value or "auto").strip().lower()
+    if text in ("", "auto"):
+        return 0
+    try:
+        return int(text)
+    except ValueError:
+        return 0
 
 
 
@@ -442,10 +459,35 @@ def _place_absolute(deferred: _DeferredAbsolute, state: LayoutState) -> None:
         content_width = max(cb.width - margin.left - margin.right - padding.left - padding.right, 0)
     box.geometry.content_width = content_width
 
+    # Resolve positional offsets. left/top win when both sides are
+    # specified, mirroring the CSS 2.1 over-constrained-box rule. We
+    # estimate the box's width/height for right/bottom resolution.
     left = style.left.strip().lower()
+    right = style.right.strip().lower()
     top = style.top.strip().lower()
-    offset_x = _length_to_px(left) if left and left != "auto" else 0
-    offset_y = _length_to_px(top) if top and top != "auto" else 0
+    bottom = style.bottom.strip().lower()
+    explicit_h = _length_to_px(style.height.strip().lower()) if style.height.strip().lower() not in ("", "auto") else 0
+    border_box_width = (
+        border.left + padding.left + content_width + padding.right + border.right
+    )
+
+    if left and left != "auto":
+        offset_x = _length_to_px(left)
+    elif right and right != "auto":
+        offset_x = cb.width - _length_to_px(right) - border_box_width - margin.left - margin.right
+    else:
+        offset_x = 0
+
+    if top and top != "auto":
+        offset_y = _length_to_px(top)
+    elif bottom and bottom != "auto" and explicit_h > 0:
+        # bottom only makes sense with a known height; otherwise we'd
+        # need a two-pass measurement we don't do yet.
+        # For an unknown CB height we cannot resolve bottom-from-CB
+        # reliably; fall back to 0.
+        offset_y = 0
+    else:
+        offset_y = 0
 
     box.geometry.x = cb.x + offset_x + margin.left
     box.geometry.y = cb.y + offset_y + margin.top

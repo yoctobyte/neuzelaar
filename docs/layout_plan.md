@@ -32,13 +32,18 @@ replaced.
 
 ## Commits in the sweep
 
-- **A** — Box tree + BFC with margin collapse and real box model.
-- **B** — IFC: line boxes, word wrap, `display: inline`.
-- **C** — Floats + `clear`.
-- **D** — Positioning: relative, absolute, fixed, containing block.
-- **E** — Overflow + clipping + `z-index` / stacking.
-- **F** — Polish: fixtures, docs, small properties that fall out
-  (`line-height`, `vertical-align`, `white-space` basics).
+- **A1** — Box tree types and DOM-to-tree construction. ✓
+- **A2** — BFC with margin collapse and real box model. ✓
+- **B** — IFC: line boxes, word wrap, `display: inline`. ✓
+- **C** — Floats + `clear`. ✓
+- **D** — Positioning: relative, absolute, fixed, containing block. ✓
+- **E** — Overflow + clipping (visible / hidden / scroll-as-hidden /
+  auto-as-hidden). Real scrollbar UI deferred. ✓
+- **F** — Polish: z-index for positioned content, right/bottom on
+  absolute boxes, fixtures and tests. ✓
+
+The sweep is closed. Remaining layout-adjacent work moves to the
+post-sweep backlog below.
 
 ## Out of scope (deferred, listed so they are not forgotten)
 
