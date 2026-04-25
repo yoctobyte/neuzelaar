@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Positioning Demo</title>
+  <style>
+    body { font-size: 18px; color: #222; padding: 20px; }
+    h1 { color: #003366; }
+    .stage {
+      position: relative;
+      background-color: #f4f4f4;
+      padding: 24px;
+      margin: 16px 0;
+      height: 200px;
+    }
+    .badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      width: 90px;
+      background-color: #ddeeff;
+      padding: 6px;
+      color: #003366;
+    }
+    .nudge {
+      position: relative;
+      top: 8px;
+      left: 24px;
+      background-color: #fff5e0;
+      padding: 6px;
+    }
+    .toast {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background-color: #001844;
+      color: #ffffff;
+      padding: 8px 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="toast">fixed toast</div>
+  <h1>Positioning</h1>
+  <div class="stage">
+    <div class="badge">absolute badge</div>
+    <p>The badge above is positioned absolutely against this relative stage. Normal-flow text continues below.</p>
+    <p class="nudge">A relative paragraph nudges right and down without disturbing surrounding boxes.</p>
+  </div>
+  <p>Plain trailing paragraph in the document flow.</p>
+</body>
+</html>

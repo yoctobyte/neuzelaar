@@ -27,10 +27,16 @@ class ComputedStyle:
     height: str = "auto"
     float: str = "none"
     clear: str = "none"
+    position: str = "static"
+    top: str = "auto"
+    right: str = "auto"
+    bottom: str = "auto"
+    left: str = "auto"
 
 
 SUPPORTED_PROPERTIES = {
     "background-color",
+    "bottom",
     "clear",
     "color",
     "display",
@@ -38,9 +44,13 @@ SUPPORTED_PROPERTIES = {
     "font-size",
     "font-weight",
     "height",
+    "left",
     "margin",
     "padding",
+    "position",
+    "right",
     "text-align",
+    "top",
     "width",
 }
 
@@ -184,7 +194,21 @@ def _style_from_declarations(
         height=declarations.get("height", "auto"),
         float=_normalize_float(declarations.get("float")),
         clear=_normalize_clear(declarations.get("clear")),
+        position=_normalize_position(declarations.get("position")),
+        top=declarations.get("top", "auto"),
+        right=declarations.get("right", "auto"),
+        bottom=declarations.get("bottom", "auto"),
+        left=declarations.get("left", "auto"),
     )
+
+
+def _normalize_position(value: str | None) -> str:
+    if value is None:
+        return "static"
+    normalized = value.strip().lower()
+    if normalized in {"static", "relative", "absolute", "fixed"}:
+        return normalized
+    return "static"
 
 
 def _normalize_float(value: str | None) -> str:

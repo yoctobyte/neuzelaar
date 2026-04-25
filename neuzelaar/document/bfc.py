@@ -72,6 +72,7 @@ class BoxPlacement:
     width: int
     height: int
     color: str
+    node_id: NodeId | None = None
 
 
 Placement = TextPlacement | ImagePlacement | BoxPlacement
@@ -135,12 +136,42 @@ class FloatContext:
 
 
 @dataclass(slots=True)
+class _ContainingBlock:
+    """Snapshot of a positioned ancestor's content edge. Used as the
+    containing block for absolute children; viewport for fixed.
+    """
+
+    x: int
+    y: int
+    width: int
+
+
+@dataclass(slots=True)
+class _DeferredAbsolute:
+    """An absolute/fixed box queued during the main layout pass and
+    placed once its containing block is fully resolved.
+    """
+
+    box: Box
+    containing_block: _ContainingBlock
+    is_fixed: bool
+
+
+@dataclass(slots=True)
 class LayoutState:
     viewport_width: int
     images: dict[NodeId, ImageAsset]
     items: list[Placement]
     floats: FloatContext = field(default_factory=FloatContext)
     budget_exceeded: bool = False
+    # Stack of positioned ancestors (innermost last). Each entry is
+    # the containing block established by that ancestor.
+    cb_stack: list[_ContainingBlock] = field(default_factory=list)
+    # Absolute / fixed boxes captured during main pass; placed after.
+    deferred_absolutes: list[_DeferredAbsolute] = field(default_factory=list)
+    # Cumulative position-relative offset applied to placements.
+    relative_offset_x: int = 0
+    relative_offset_y: int = 0
 
 
 # Safety cap: stop emitting layout items after this many to prevent
@@ -163,10 +194,20 @@ def layout_block(
         images=images or {},
         items=[],
     )
-    # The root sits at the viewport origin (0, 0). The containing
-    # block width used for resolving the root's width is the whole
-    # viewport.
+    # The viewport itself is the initial containing block (also the
+    # CB for `position: fixed` and for `position: absolute` when no
+    # positioned ancestor exists).
+    state.cb_stack.append(_ContainingBlock(x=0, y=0, width=viewport_width))
     _place_block(root, state, x=0, y=0, containing_width=viewport_width)
+    state.cb_stack.pop()
+
+    # Lay out absolutes / fixed elements that were deferred during
+    # the main pass.
+    for deferred in state.deferred_absolutes:
+        if state.budget_exceeded:
+            break
+        _place_absolute(deferred, state)
+
     total_height = root.geometry.y + root.geometry.border_box_height + root.geometry.margin.bottom
     return total_height, state.items
 
@@ -176,6 +217,20 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     """Resolve geometry and emit placements for a block-level box.
     Returns the bottom margin edge y-coordinate."""
     style = box.style
+    position = style.position
+
+    # Absolute and fixed are taken out of normal flow; capture their
+    # containing block now and lay them out after the main pass.
+    if position in ("absolute", "fixed"):
+        if position == "fixed":
+            cb = state.cb_stack[0] if state.cb_stack else _ContainingBlock(0, 0, containing_width)
+        else:
+            cb = state.cb_stack[-1] if state.cb_stack else _ContainingBlock(0, 0, containing_width)
+        state.deferred_absolutes.append(
+            _DeferredAbsolute(box=box, containing_block=cb, is_fixed=(position == "fixed"))
+        )
+        return y
+
     margin = _resolve_margin(style)
     padding = _resolve_padding(style)
     border = EdgeSizes()  # borders not yet supported
@@ -190,6 +245,24 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     # Top-left of the border box.
     box.geometry.x = x + margin.left
     box.geometry.y = y + margin.top
+
+    # Apply relative-position offset for this box and its descendants.
+    saved_offset = (state.relative_offset_x, state.relative_offset_y)
+    pushed_cb = False
+    if position == "relative":
+        dx, dy = _relative_offset(style)
+        state.relative_offset_x += dx
+        state.relative_offset_y += dy
+        # A relative box establishes a containing block for absolute
+        # descendants at its content edge.
+        state.cb_stack.append(
+            _ContainingBlock(
+                x=box.geometry.x + border.left + padding.left,
+                y=box.geometry.y + border.top + padding.top,
+                width=content_width,
+            )
+        )
+        pushed_cb = True
 
     # Emit the background rect before children so painters see it
     # beneath them. We emit only when a non-default background exists.
@@ -272,8 +345,99 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     content_height = _resolve_height(style, used_content_height)
     box.geometry.content_height = content_height
 
+    # Restore relative offset / CB stack before returning.
+    if pushed_cb:
+        state.cb_stack.pop()
+    state.relative_offset_x, state.relative_offset_y = saved_offset
+
     box_bottom = box.geometry.y + border.top + padding.top + content_height + padding.bottom + border.bottom
     return box_bottom + margin.bottom
+
+
+def _relative_offset(style: ComputedStyle) -> tuple[int, int]:
+    """Compute the (dx, dy) offset implied by top/right/bottom/left
+    on a `position: relative` box. left/top win over right/bottom when
+    both are non-auto, matching CSS 2.1.
+    """
+
+    def axis(start: str, end: str, sign_end: int) -> int:
+        if start.strip().lower() not in ("", "auto"):
+            return _length_to_px(start)
+        if end.strip().lower() not in ("", "auto"):
+            return sign_end * _length_to_px(end)
+        return 0
+
+    dx = axis(style.left, style.right, -1)
+    dy = axis(style.top, style.bottom, -1)
+    return dx, dy
+
+
+def _place_absolute(deferred: _DeferredAbsolute, state: LayoutState) -> None:
+    """Lay out an absolute / fixed box at its captured containing
+    block. Only `top` and `left` are honoured for now; `right` and
+    `bottom` are deferred to a polish pass.
+    """
+    box = deferred.box
+    cb = deferred.containing_block
+    style = box.style
+
+    margin = _resolve_margin(style)
+    padding = _resolve_padding(style)
+    border = EdgeSizes()
+    box.geometry.margin = margin
+    box.geometry.padding = padding
+    box.geometry.border = border
+
+    explicit = _length_to_px(style.width.strip().lower()) if style.width.strip().lower() not in ("", "auto") else 0
+    if explicit > 0:
+        content_width = explicit
+    else:
+        content_width = max(cb.width - margin.left - margin.right - padding.left - padding.right, 0)
+    box.geometry.content_width = content_width
+
+    left = style.left.strip().lower()
+    top = style.top.strip().lower()
+    offset_x = _length_to_px(left) if left and left != "auto" else 0
+    offset_y = _length_to_px(top) if top and top != "auto" else 0
+
+    box.geometry.x = cb.x + offset_x + margin.left
+    box.geometry.y = cb.y + offset_y + margin.top
+
+    _maybe_emit_background(box, state)
+
+    # Absolute / fixed boxes establish a CB for their descendants.
+    state.cb_stack.append(
+        _ContainingBlock(
+            x=box.geometry.x + border.left + padding.left,
+            y=box.geometry.y + border.top + padding.top,
+            width=content_width,
+        )
+    )
+    saved_floats = state.floats
+    state.floats = FloatContext()
+    try:
+        child_x = box.geometry.x + border.left + padding.left
+        child_y = box.geometry.y + border.top + padding.top
+        cursor = child_y
+        if box.children and all(c.is_inline_level and c.style.float == "none" for c in box.children):
+            cursor = _layout_inline_context(
+                box.children, state,
+                x0=child_x, y0=child_y, content_width=content_width, parent_style=style,
+            )
+        else:
+            for child in box.children:
+                if state.budget_exceeded:
+                    break
+                if child.is_block_level:
+                    cursor = _place_block(child, state, x=child_x, y=cursor, containing_width=content_width)
+                else:
+                    cursor = _place_inline_or_text(child, state, x=child_x, y=cursor, content_width=content_width, parent_style=style)
+        used_height = max(cursor - child_y, 0)
+        content_height = _resolve_height(style, used_height)
+        box.geometry.content_height = content_height
+    finally:
+        state.cb_stack.pop()
+        state.floats = saved_floats
 
 
 def _place_float(
@@ -506,8 +670,8 @@ def _layout_inline_context(
                 offset = line_box_height - max(int(round(fs * 1.3)), 10)
                 state.items.append(
                     TextPlacement(
-                        x=x,
-                        y=cursor_y + max(offset, 0),
+                        x=x + state.relative_offset_x,
+                        y=cursor_y + max(offset, 0) + state.relative_offset_y,
                         text=fragment.text,
                         color=(fragment.style or parent_style).color,
                         font_size=fs,
@@ -519,8 +683,8 @@ def _layout_inline_context(
                 offset = max(line_box_height - fragment.height, 0)
                 state.items.append(
                     ImagePlacement(
-                        x=x,
-                        y=cursor_y + offset,
+                        x=x + state.relative_offset_x,
+                        y=cursor_y + offset + state.relative_offset_y,
                         width=fragment.width,
                         height=fragment.height,
                         label=fragment.label,
@@ -599,8 +763,8 @@ def _place_inline_or_text(
         font_size = _font_size_px(style)
         state.items.append(
             TextPlacement(
-                x=x,
-                y=y,
+                x=x + state.relative_offset_x,
+                y=y + state.relative_offset_y,
                 text=text,
                 color=style.color,
                 font_size=font_size,
@@ -625,7 +789,14 @@ def _place_inline_or_text(
         width = attr_width or intrinsic_w
         height = attr_height or intrinsic_h
         state.items.append(
-            ImagePlacement(x=x, y=y, width=width, height=height, label=label, bitmap=asset)
+            ImagePlacement(
+                x=x + state.relative_offset_x,
+                y=y + state.relative_offset_y,
+                width=width,
+                height=height,
+                label=label,
+                bitmap=asset,
+            )
         )
         return y + height + 12
 
@@ -666,20 +837,19 @@ def _maybe_emit_background(box: Box, state: LayoutState) -> None:
     color = box.style.background_color
     if not color or color == "#ffffff":
         return
-    # Background fills the border box; we render only the padding box
-    # for now since borders are zero anyway.
     geom = box.geometry
-    x = geom.x + geom.border.left
-    y = geom.y + geom.border.top
+    x = geom.x + geom.border.left + state.relative_offset_x
+    y = geom.y + geom.border.top + state.relative_offset_y
     width = geom.padding.left + geom.content_width + geom.padding.right
-    # Height isn't known yet at emission time; we use a zero-height
-    # placeholder and patch it when layout finishes. Simpler path:
-    # re-emit after layout completes. For Commit A2 we defer the
-    # background rect until after children are placed by rewriting
-    # the items list below via a post-pass.
-    # To avoid ordering issues, we record a marker and resolve later.
     state.items.append(
-        BoxPlacement(x=x, y=y, width=width, height=_BACKGROUND_PLACEHOLDER, color=color)
+        BoxPlacement(
+            x=x,
+            y=y,
+            width=width,
+            height=_BACKGROUND_PLACEHOLDER,
+            color=color,
+            node_id=box.node_id,
+        )
     )
 
 
@@ -688,31 +858,36 @@ _BACKGROUND_PLACEHOLDER = -1  # height sentinel for post-pass resolution
 
 def finalize_backgrounds(root: Box, items: list[Placement]) -> list[Placement]:
     """Patch placeholder background heights now that all geometry is
-    resolved. Walks the box tree once to match placeholders to their
-    owning box by x/y.
+    resolved. Lookup is keyed by node_id so it survives any relative-
+    position offset applied at emit time.
     """
-    # Build a lookup of (x, y) → height for every box that has a
-    # background to render.
-    heights: dict[tuple[int, int], int] = {}
+    heights: dict[NodeId, int] = {}
     for box in _walk(root):
-        if not box.is_block_level:
+        if not box.is_block_level or box.node_id is None:
             continue
         color = box.style.background_color
         if not color or color == "#ffffff":
             continue
         geom = box.geometry
-        x = geom.x + geom.border.left
-        y = geom.y + geom.border.top
         height = geom.padding.top + geom.content_height + geom.padding.bottom
-        heights[(x, y)] = height
+        heights[box.node_id] = height
 
     resolved: list[Placement] = []
     for item in items:
         if isinstance(item, BoxPlacement) and item.height == _BACKGROUND_PLACEHOLDER:
-            height = heights.get((item.x, item.y), 0)
+            height = heights.get(item.node_id, 0) if item.node_id is not None else 0
             if height <= 0:
                 continue
-            resolved.append(BoxPlacement(x=item.x, y=item.y, width=item.width, height=height, color=item.color))
+            resolved.append(
+                BoxPlacement(
+                    x=item.x,
+                    y=item.y,
+                    width=item.width,
+                    height=height,
+                    color=item.color,
+                    node_id=item.node_id,
+                )
+            )
         else:
             resolved.append(item)
     return resolved
