@@ -173,6 +173,25 @@ These are intentionally local to `js_own` for now. They are the first step
 toward later scheduler, fairness, and async work, but they do not yet imply a
 task queue or browser event loop.
 
+## Scheduler Debug Groundwork
+
+The standalone host/test layer now also has a minimal scheduler/task model in
+`neuzelaar/engines/js_own/scheduler.py`.
+
+Current scope:
+
+- queue task records
+- task snapshots
+- optional retained history
+- timer stubs can publish `setTimeout` work into the scheduler for debug
+
+This is still debug/runtime-plumbing only:
+
+- no promise queue
+- no microtask semantics
+- no async/await lowering
+- no live browser scheduler yet
+
 ## Current Reference
 
 Use `quickjs` as the current oracle backend for supported snippets.

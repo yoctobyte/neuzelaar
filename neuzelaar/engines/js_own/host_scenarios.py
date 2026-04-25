@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from neuzelaar.engines.js_own.builtins import install_builtins
+from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
 from neuzelaar.engines.js_own.environment import Environment
 from neuzelaar.engines.js_own.host import HostObject
 from neuzelaar.engines.js_own.host_stubs import BrowserHostStubs, HostDocument, HostHistory, HostLocation
+from neuzelaar.engines.js_own.scheduler import ScriptScheduler
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +26,7 @@ class BrowserScenarioFixture:
     history_entries: tuple[str, ...] = ()
     history_index: int = -1
     nodes: tuple[DocumentNodeFixture, ...] = ()
+    scheduler_debug: bool = False
 
 
 def build_browser_scenario(fixture: BrowserScenarioFixture) -> tuple[Environment, BrowserHostStubs]:
@@ -33,7 +36,20 @@ def build_browser_scenario(fixture: BrowserScenarioFixture) -> tuple[Environment
         document=HostDocument(title=fixture.title),
         location=HostLocation(fixture.url),
         history=HostHistory(entries=list(fixture.history_entries), index=fixture.history_index),
+        scheduler=(
+            ScriptScheduler(
+                config=ScriptRuntimeConfig(
+                    debug_track_tasks=fixture.scheduler_debug,
+                    debug_keep_history=fixture.scheduler_debug,
+                )
+            )
+            if fixture.scheduler_debug
+            else None
+        ),
     )
+    stubs.timers.scheduler = stubs.scheduler
+    stubs.timers.scheduler_origin = fixture.url
+    stubs.timers.scheduler_url = fixture.url
     for node_fixture in fixture.nodes:
         properties = {"textContent": node_fixture.text_content}
         properties.update(node_fixture.extra_properties)

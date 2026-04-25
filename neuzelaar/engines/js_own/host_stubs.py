@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
 from neuzelaar.engines.js_own.runtime import js_to_string
+from neuzelaar.engines.js_own.scheduler import ScriptScheduler
 
 
 @dataclass(slots=True)
@@ -46,6 +47,9 @@ class HostTimers:
     next_id: int = 1
     scheduled: list[dict[str, object]] = field(default_factory=list)
     cleared: set[int] = field(default_factory=set)
+    scheduler: ScriptScheduler | None = None
+    scheduler_origin: str | None = None
+    scheduler_url: str | None = None
 
     def as_bindings(self) -> dict[str, HostCallable]:
         return {
@@ -66,11 +70,32 @@ class HostTimers:
                 "arguments": arguments[2:],
             }
         )
+        if self.scheduler is not None:
+            task = self.scheduler.queue_task(
+                kind="timer",
+                origin=self.scheduler_origin,
+                url=self.scheduler_url,
+                priority="background",
+                reason="setTimeout",
+                metadata={
+                    "timer_id": timer_id,
+                    "delay": delay,
+                    "has_callback": callback is not None,
+                    "arguments": arguments[2:],
+                },
+            )
+            self.scheduled[-1]["task_id"] = task.task_id
         return float(timer_id)
 
     def _clear_timeout(self, arguments: tuple[object, ...], _this: object | None) -> object:
         if arguments:
-            self.cleared.add(int(arguments[0]))
+            timer_id = int(arguments[0])
+            self.cleared.add(timer_id)
+            if self.scheduler is not None:
+                for scheduled in self.scheduled:
+                    if scheduled["id"] == timer_id and "task_id" in scheduled:
+                        self.scheduler.cancel_task(int(scheduled["task_id"]), reason="clearTimeout")
+                        break
         return None
 
 
@@ -149,6 +174,7 @@ class BrowserHostStubs:
     document: HostDocument = field(default_factory=HostDocument)
     location: HostLocation = field(default_factory=lambda: HostLocation("https://example.test/"))
     history: HostHistory = field(default_factory=HostHistory)
+    scheduler: ScriptScheduler | None = None
 
     def install(self, environment) -> None:
         environment.declare("console", self.console.as_host_object(), kind="const")

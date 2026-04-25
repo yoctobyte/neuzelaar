@@ -9,6 +9,8 @@ from neuzelaar.engines.js_own.host_scenarios import (
     settings_page_scenario,
 )
 from neuzelaar.engines.js_own.host_stubs import BrowserHostStubs
+from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
+from neuzelaar.engines.js_own.scheduler import ScriptScheduler
 from neuzelaar.engines.js_own.interpreter import evaluate_program
 from neuzelaar.engines.js_own.values import (
     is_callable,
@@ -104,6 +106,26 @@ def test_browser_host_timer_stub_records_scheduled_and_cleared() -> None:
     assert 1 in stubs.timers.cleared
 
 
+def test_browser_host_timer_stub_can_emit_scheduler_debug_tasks() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs(scheduler=ScriptScheduler())
+    stubs.timers.scheduler = stubs.scheduler
+    stubs.timers.scheduler_origin = "https://example.test/page"
+    stubs.timers.scheduler_url = "https://example.test/page"
+    stubs.install(env)
+
+    evaluate_program("setTimeout(function () { return 1; }, 250, 'a');", env)
+
+    assert stubs.scheduler is not None
+    snapshots = stubs.scheduler.snapshots()
+    assert len(snapshots) == 1
+    assert snapshots[0].kind == "timer"
+    assert snapshots[0].state == "queued"
+    assert snapshots[0].metadata["timer_id"] == 1
+    assert snapshots[0].metadata["delay"] == 250.0
+
+
 def test_browser_host_document_stub_exposes_title_and_nodes() -> None:
     env = Environment()
     install_builtins(env)
@@ -189,3 +211,40 @@ def test_settings_page_scenario_can_be_mutated_by_script() -> None:
 
     assert result == "saved"
     assert stubs.history.entries == ["/home", "/settings", "/settings?saved=1"]
+
+
+def test_scheduler_records_history_when_debug_enabled() -> None:
+    scheduler = ScriptScheduler(
+        config=ScriptRuntimeConfig(debug_track_tasks=True, debug_keep_history=True)
+    )
+    task = scheduler.queue_task(kind="background-script", reason="test")
+
+    started = scheduler.start_next()
+
+    assert started is not None
+    scheduler.note_progress(task.task_id, steps_used=12, wall_ms_used=4.5)
+    scheduler.complete_task(task.task_id, reason="done")
+
+    history = scheduler.history()
+    assert len(history) == 1
+    assert history[0].kind == "background-script"
+    assert history[0].state == "completed"
+    assert history[0].steps_used == 12
+    assert history[0].wall_ms_used == 4.5
+
+
+def test_browser_scenario_can_provide_scheduler_debug_state() -> None:
+    env, stubs = build_browser_scenario(
+        BrowserScenarioFixture(
+            url="https://example.test/debug",
+            scheduler_debug=True,
+        )
+    )
+
+    evaluate_program("setTimeout(function () { return 1; }, 100);", env)
+
+    assert stubs.scheduler is not None
+    snapshots = stubs.scheduler.snapshots()
+    assert len(snapshots) == 1
+    assert snapshots[0].origin == "https://example.test/debug"
+    assert snapshots[0].priority == "background"

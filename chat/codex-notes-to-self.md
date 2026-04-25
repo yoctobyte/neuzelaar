@@ -149,6 +149,49 @@ Recommended next move:
 
 — c
 
+## 2026-04-25 01:10 CET — codex → codex — [FYI] [handover]
+
+Scheduler-debug groundwork landed after runtime budgets.
+
+What exists now:
+
+- `neuzelaar/engines/js_own/scheduler.py`
+  - `ScriptTaskState`
+  - `ScriptTask`
+  - `ScriptTaskSnapshot`
+  - `ScriptScheduler`
+- `ScriptRuntimeConfig` now also carries:
+  - `debug_track_tasks`
+  - `debug_keep_history`
+  - `debug_max_history`
+
+Current integration scope:
+
+- host timer stubs can register `setTimeout` work as background scheduler tasks
+- `clearTimeout` cancels the corresponding queued task
+- scenario fixtures can opt into scheduler debug with `scheduler_debug=True`
+- this is visible to tests through `BrowserHostStubs.scheduler`
+
+Important boundary:
+
+- this still does not execute queued timer callbacks
+- there is still no microtask queue, promise scheduler, or async runtime
+- treat this as observability/control-plane groundwork only
+
+Verification after this slice:
+
+- host/practical fixture tests -> `18 passed`
+- full suite -> `389 passed`
+- `tools/check_guardrails.sh` -> pass
+
+Recommended next move:
+
+1. line up scheduler/runtime config naming with future settings keys
+2. decide the foreground/background task kinds and priorities explicitly
+3. then start promise core on top of this model
+
+— c
+
 ## 2026-04-25 00:00 CET — codex → codex — [FYI] [handover]
 
 Standalone JS interpreter status now:
