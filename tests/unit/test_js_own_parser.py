@@ -153,3 +153,10 @@ def test_parse_class_getter_and_setter() -> None:
 
     assert isinstance(program.statements[0], ClassDeclaration)
     assert [method.accessor_kind for method in program.statements[0].methods] == ["get", "set"]
+
+
+def test_parse_static_field() -> None:
+    program = parse_program("class Box { static answer = 42; }")
+
+    assert isinstance(program.statements[0], ClassDeclaration)
+    assert program.statements[0].fields[0].is_static is True

@@ -156,6 +156,7 @@ class JavaScriptClass:
         )
         self.static_properties: dict[str, object] = {}
         self.fields: tuple[ClassField, ...] = ()
+        self.static_fields: tuple[ClassField, ...] = ()
         self.constructor: JavaScriptFunction | None = None
         self.install_members(methods=methods, fields=(), closure=closure)
 
@@ -167,9 +168,7 @@ class JavaScriptClass:
         closure: Environment,
     ) -> None:
         self.fields = tuple(field for field in fields if not field.is_static)
-        for field in fields:
-            if field.is_static:
-                self.static_properties[field.name] = None
+        self.static_fields = tuple(field for field in fields if field.is_static)
         for method in methods:
             function = JavaScriptFunction(
                 name=method.name,
@@ -194,6 +193,18 @@ class JavaScriptClass:
                 self.static_properties[method.name] = function
             else:
                 self.prototype[method.name] = function
+
+    def initialize_static_fields(self) -> None:
+        field_env = Environment(parent=self.closure)
+        field_env.declare("this", self, kind="const")
+        if self.superclass is not None:
+            field_env.declare("__super_class__", self.superclass, kind="const")
+            field_env.declare("__super_prototype__", self.superclass.prototype, kind="const")
+        if self.name:
+            field_env.declare(self.name, self, kind="const")
+        for field in self.static_fields:
+            value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
+            self.static_properties[field.name] = value
 
     def initialize_instance_fields(self, instance: dict[str, object]) -> None:
         marker = f"__fields_initialized_{id(self)}"
@@ -256,6 +267,7 @@ def evaluate_class_expr(expr: ClassExpr, environment: Environment) -> JavaScript
     if expr.name is not None:
         class_scope.declare(expr.name, class_object, kind="const")
     class_object.install_members(methods=expr.methods, fields=expr.fields, closure=class_scope)
+    class_object.initialize_static_fields()
     return class_object
 
 

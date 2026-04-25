@@ -444,3 +444,30 @@ def test_super_setter_uses_current_this() -> None:
     )
 
     assert result == 7.0
+
+
+def test_static_field_initializes_on_class_definition() -> None:
+    result = evaluate_program(
+        "class Box { static answer = 42; } "
+        "Box.answer;"
+    )
+
+    assert result == 42.0
+
+
+def test_static_field_initializer_can_use_class_name() -> None:
+    result = evaluate_program(
+        "var Box = class NamedBox { static selfName = String(this.prototype !== null); }; "
+        "Box.selfName;"
+    )
+
+    assert result == "true"
+
+
+def test_static_field_initializer_can_use_static_method() -> None:
+    result = evaluate_program(
+        "class Box { static value() { return 7; } static answer = this.value() + 1; } "
+        "Box.answer;"
+    )
+
+    assert result == 8.0

@@ -58,6 +58,9 @@ CASES = [
     "class Box { static get answer() { return 42; } } Box.answer;",
     "class Base { get value() { return this.x + 1; } } class Child extends Base { constructor() { super(); this.x = 4; } get value() { return super.value + 2; } } new Child().value;",
     "class Base { set value(x) { this.stored = x + 1; } } class Child extends Base { set value(x) { super.value = x + 2; } } var c = new Child(); c.value = 4; c.stored;",
+    "class Box { static answer = 42; } Box.answer;",
+    "var Box = class NamedBox { static selfName = String(this.prototype !== null); }; Box.selfName;",
+    "class Box { static value() { return 7; } static answer = this.value() + 1; } Box.answer;",
 ]
 
 

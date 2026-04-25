@@ -103,6 +103,7 @@ Scope:
 - method declarations
 - instance fields
 - getters/setters
+- static fields
 - static methods
 - `constructor`
 - `new`
@@ -112,7 +113,6 @@ Scope:
 
 Out of scope:
 
-- static fields
 - computed method or field names
 - private fields or methods
 
