@@ -36,10 +36,12 @@ from neuzelaar.engines.js_own.ast import (
     StringLiteral,
     SuperExpr,
     TemplateLiteral,
+    TaggedTemplateExpr,
     ThisExpr,
     ThrowStatement,
     TryStatement,
     UnaryExpr,
+    UpdateExpr,
     VariableDeclaration,
 )
 from neuzelaar.engines.js_own.errors import JavaScriptSyntaxError
@@ -53,6 +55,7 @@ PRECEDENCE = {
     "!=": 4,
     "===": 4,
     "!==": 4,
+    "INSTANCEOF": 5,
     "LT": 5,
     "GT": 5,
     "<=": 5,
@@ -65,6 +68,8 @@ PRECEDENCE = {
     "LPAREN": 9,
     "DOT": 9,
     "LBRACKET": 9,
+    "TEMPLATE": 9,
+    "++": 9,
 }
 
 PROPERTY_NAME_TOKENS = {
@@ -95,6 +100,7 @@ PROPERTY_NAME_TOKENS = {
 class Parser:
     tokens: tuple[Token, ...]
     index: int = 0
+    function_depth: int = 0
 
     def maybe_parse_arrow_expression(self) -> ArrowFunctionExpr | None:
         checkpoint = self.index
@@ -104,7 +110,11 @@ class Parser:
             self.index = checkpoint
             return None
         if self._check("LBRACE"):
-            body: BlockStatement | Expr = self._parse_block_statement()
+            self.function_depth += 1
+            try:
+                body = self._parse_block_statement()
+            finally:
+                self.function_depth -= 1
         else:
             body = self.parse_expression()
         return ArrowFunctionExpr(params=params, body=body, is_async=is_async)
@@ -189,6 +199,8 @@ class Parser:
         return IfStatement(test=test, consequent=consequent, alternate=alternate)
 
     def _parse_return_statement(self) -> ReturnStatement:
+        if self.function_depth <= 0:
+            raise JavaScriptSyntaxError(f"Illegal return statement at offset {self._peek().offset}")
         self._advance()
         if self._check("SEMICOLON") or self._check("RBRACE") or self._check("EOF"):
             self._consume_optional_semicolon()
@@ -338,7 +350,11 @@ class Parser:
                 if not self._match("COMMA"):
                     break
         self._consume("RPAREN", "Expected ')' after method parameters")
-        body = self._parse_block_statement()
+        self.function_depth += 1
+        try:
+            body = self._parse_block_statement()
+        finally:
+            self.function_depth -= 1
         return ClassMethod(
             name=name,
             key_expr=computed_key,
@@ -386,7 +402,11 @@ class Parser:
                 if not self._match("COMMA"):
                     break
         self._consume("RPAREN", "Expected ')' after function parameters")
-        body = self._parse_block_statement()
+        self.function_depth += 1
+        try:
+            body = self._parse_block_statement()
+        finally:
+            self.function_depth -= 1
         return FunctionExpr(name=name, params=tuple(params), body=body, is_async=is_async)
 
     def _parse_prefix(self, token: Token) -> Expr:
@@ -396,13 +416,18 @@ class Parser:
             return StringLiteral(value=str(token.value))
         if token.kind == "TEMPLATE":
             parts: list[str | Expr] = []
+            raw_parts: list[str] = []
             for chunk in token.value:
                 if isinstance(chunk, tuple) and len(chunk) == 2 and chunk[0] == "expr":
                     nested = parse_expression(chunk[1])
                     parts.append(nested)
+                elif isinstance(chunk, tuple) and len(chunk) == 3 and chunk[0] == "text":
+                    parts.append(str(chunk[1]))
+                    raw_parts.append(str(chunk[2]))
                 else:
                     parts.append(str(chunk))
-            return TemplateLiteral(parts=tuple(parts))
+                    raw_parts.append(str(chunk))
+            return TemplateLiteral(parts=tuple(parts), raw_parts=tuple(raw_parts))
         if token.kind in {"TRUE", "FALSE"}:
             return BooleanLiteral(value=bool(token.value))
         if token.kind == "NULL":
@@ -413,6 +438,8 @@ class Parser:
             return ThisExpr()
         if token.kind == "AWAIT":
             return AwaitExpr(value=self.parse_expression(8))
+        if token.kind == "YIELD":
+            raise JavaScriptSyntaxError(f"Unexpected token {token.lexeme!r} at offset {token.offset}")
         if token.kind == "SUPER":
             return SuperExpr()
         if token.kind == "CLASS":
@@ -463,6 +490,15 @@ class Parser:
                         break
             self._consume("RPAREN", "Expected ')' after arguments")
             return CallExpr(callee=left, arguments=tuple(arguments))
+        if token.kind == "TEMPLATE":
+            self.index -= 1
+            template = self._parse_prefix(self._advance())
+            assert isinstance(template, TemplateLiteral)
+            return TaggedTemplateExpr(callee=left, template=template)
+        if token.kind == "++":
+            if not isinstance(left, (Identifier, MemberExpr, IndexExpr)):
+                raise JavaScriptSyntaxError(f"Invalid update target at offset {token.offset}")
+            return UpdateExpr(target=left, operator=token.lexeme, prefix=False)
         if token.kind == "DOT":
             if self._peek().kind in PROPERTY_NAME_TOKENS:
                 property_token = self._advance()

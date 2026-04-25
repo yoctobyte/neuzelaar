@@ -19,6 +19,7 @@ from neuzelaar.engines.js_own.ast import (
     ObjectLiteral,
     ReturnStatement,
     TemplateLiteral,
+    TaggedTemplateExpr,
     ThrowStatement,
     ThisExpr,
     TryStatement,
@@ -26,6 +27,7 @@ from neuzelaar.engines.js_own.ast import (
     VariableDeclaration,
 )
 from neuzelaar.engines.js_own.parser import parse_expression, parse_program
+from neuzelaar.engines.js_own.errors import JavaScriptSyntaxError
 
 
 def test_parse_expression_obeys_operator_precedence() -> None:
@@ -55,6 +57,23 @@ def test_parse_template_literal() -> None:
     assert isinstance(expr.parts[1], Identifier)
     assert expr.parts[2] == " "
     assert isinstance(expr.parts[3], BinaryExpr)
+
+
+def test_parse_tagged_template_call() -> None:
+    expr = parse_expression("(function (s) { return s; })`foo`")
+
+    assert isinstance(expr, TaggedTemplateExpr)
+    assert isinstance(expr.callee, FunctionExpr)
+    assert expr.template.parts == ("foo",)
+
+
+def test_parse_top_level_return_is_syntax_error() -> None:
+    try:
+        parse_program("return;")
+    except JavaScriptSyntaxError:
+        pass
+    else:
+        raise AssertionError("expected JavaScriptSyntaxError")
 
 
 def test_parse_program_handles_expression_sequence() -> None:

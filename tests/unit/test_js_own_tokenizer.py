@@ -32,3 +32,10 @@ def test_tokenize_multi_character_operators() -> None:
         "<=",
         "f",
     ]
+
+
+def test_tokenize_skips_comments_and_handles_unicode_escape_in_strings() -> None:
+    tokens = tokenize('/* frontmatter | */ "1\\u0009+\\u00091" // tail')
+
+    assert [token.kind for token in tokens[:-1]] == ["STRING"]
+    assert tokens[0].value == "1\t+\t1"

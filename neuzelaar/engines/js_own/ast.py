@@ -36,6 +36,7 @@ class NullLiteral(Expr):
 @dataclass(frozen=True, slots=True)
 class TemplateLiteral(Expr):
     parts: tuple[str | Expr, ...]
+    raw_parts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,13 @@ class SuperExpr(Expr):
 class UnaryExpr(Expr):
     operator: str
     operand: Expr
+
+
+@dataclass(frozen=True, slots=True)
+class UpdateExpr(Expr):
+    target: Expr
+    operator: str
+    prefix: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +139,12 @@ class ArrowFunctionExpr(Expr):
 class CallExpr(Expr):
     callee: Expr
     arguments: tuple[Expr, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TaggedTemplateExpr(Expr):
+    callee: Expr
+    template: TemplateLiteral
 
 
 @dataclass(frozen=True, slots=True)

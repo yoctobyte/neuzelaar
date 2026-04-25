@@ -5,6 +5,10 @@ from __future__ import annotations
 import math
 
 
+def is_js_object(value: object) -> bool:
+    return value is not None and not isinstance(value, (bool, int, float, str))
+
+
 def js_truthy(value: object) -> bool:
     if value is None:
         return False

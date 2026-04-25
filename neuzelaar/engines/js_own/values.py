@@ -24,6 +24,35 @@ def _resolve_descriptor(value: object, receiver: object) -> object:
 
 
 def read_property(target: object, property_name: str, *, receiver: object | None = None) -> object:
+    if isinstance(target, HostCallable):
+        return target.properties.get(property_name)
+    if hasattr(target, "call") and not hasattr(target, "static_properties"):
+        prototype = getattr(target, "prototype", None)
+        if property_name == "prototype" and prototype is not None:
+            return prototype
+        if property_name == "call":
+            return HostCallable(
+                "Function.call",
+                lambda args, _this: target.call(tuple(args[1:]), this_value=args[0] if args else None),
+            )
+        if property_name == "apply":
+            return HostCallable(
+                "Function.apply",
+                lambda args, _this: target.call(
+                    tuple(args[1]) if len(args) > 1 and isinstance(args[1], list) else (),
+                    this_value=args[0] if args else None,
+                ),
+            )
+        if property_name == "bind":
+            def _bind(args: tuple[object, ...], _this: object | None) -> object:
+                bound_this = args[0] if args else None
+                bound_args = tuple(args[1:])
+                return HostCallable(
+                    "Function.bound",
+                    lambda call_args, __this: target.call(bound_args + tuple(call_args), this_value=bound_this),
+                )
+
+            return HostCallable("Function.bind", _bind)
     if isinstance(target, HostObject):
         return target.get(property_name)
     if hasattr(target, "static_properties") and hasattr(target, "prototype"):
@@ -50,7 +79,8 @@ def read_index(target: object, index: object) -> object:
     if isinstance(target, HostObject):
         return target.get(str(to_index(index)) if isinstance(index, (int, float)) else str(index))
     if isinstance(target, dict):
-        return _resolve_descriptor(_lookup_dict_property(target, str(index)), target)
+        key = str(to_index(index)) if isinstance(index, (int, float)) else str(index)
+        return _resolve_descriptor(_lookup_dict_property(target, key), target)
     raise TypeError("Cannot index value")
 
 
@@ -64,6 +94,19 @@ def _find_descriptor_holder(target: dict[str, object], property_name: str) -> di
 
 
 def write_property(target: object, property_name: str, value: object, *, receiver: object | None = None) -> object:
+    if isinstance(target, HostCallable):
+        target.properties[property_name] = value
+        return value
+    if hasattr(target, "call") and not hasattr(target, "static_properties"):
+        if property_name == "prototype" and hasattr(target, "prototype"):
+            target.prototype = value
+            return value
+        properties = getattr(target, "properties", None)
+        if isinstance(properties, dict):
+            properties[property_name] = value
+            return value
+        setattr(target, property_name, value)
+        return value
     if isinstance(target, HostObject):
         return target.set(property_name, value)
     if hasattr(target, "static_properties") and hasattr(target, "prototype"):

@@ -30,12 +30,15 @@ KEYWORDS = {
     "try": "TRY",
     "catch": "CATCH",
     "finally": "FINALLY",
+    "instanceof": "INSTANCEOF",
+    "yield": "YIELD",
 }
 
 MULTI_CHAR_OPERATORS = (
     "=>",
     "===",
     "!==",
+    "++",
     "<=",
     ">=",
     "==",
@@ -82,6 +85,12 @@ def tokenize(source: str) -> tuple[Token, ...]:
         char = source[index]
         if char.isspace():
             index += 1
+            continue
+        if source.startswith("//", index):
+            index = _skip_line_comment(source, index + 2)
+            continue
+        if source.startswith("/*", index):
+            index = _skip_block_comment(source, index + 2)
             continue
         matched = _match_operator(source, index)
         if matched is not None:
@@ -155,6 +164,12 @@ def _read_string(source: str, start: int) -> tuple[Token, int]:
             if index >= len(source):
                 break
             escape = source[index]
+            if escape == "u" and index + 4 < len(source):
+                codepoint = source[index + 1 : index + 5]
+                if all(ch in "0123456789abcdefABCDEF" for ch in codepoint):
+                    parts.append(chr(int(codepoint, 16)))
+                    index += 5
+                    continue
             parts.append(
                 {
                     "n": "\n",
@@ -199,13 +214,15 @@ def _read_private_identifier(source: str, start: int) -> tuple[Token, int]:
 
 def _read_template(source: str, start: int) -> tuple[Token, int]:
     index = start + 1
-    parts: list[str] = []
-    chunks: list[str | tuple[str, str]] = []
+    cooked_parts: list[str] = []
+    raw_parts: list[str] = []
+    chunks: list[tuple[str, str, str] | tuple[str, str]] = []
+    last_chunk_was_expr = False
     while index < len(source):
         char = source[index]
         if char == "`":
-            if parts:
-                chunks.append("".join(parts))
+            if cooked_parts or raw_parts or not chunks or last_chunk_was_expr:
+                chunks.append(("text", "".join(cooked_parts), "".join(raw_parts)))
             return (
                 Token(
                     kind="TEMPLATE",
@@ -220,7 +237,15 @@ def _read_template(source: str, start: int) -> tuple[Token, int]:
             if index >= len(source):
                 break
             escape = source[index]
-            parts.append(
+            raw_parts.append("\\" + escape)
+            if escape == "u" and index + 4 < len(source):
+                codepoint = source[index + 1 : index + 5]
+                if all(ch in "0123456789abcdefABCDEF" for ch in codepoint):
+                    cooked_parts.append(chr(int(codepoint, 16)))
+                    raw_parts[-1] = "\\u" + codepoint
+                    index += 5
+                    continue
+            cooked_parts.append(
                 {
                     "n": "\n",
                     "r": "\r",
@@ -233,15 +258,35 @@ def _read_template(source: str, start: int) -> tuple[Token, int]:
             index += 1
             continue
         if char == "$" and index + 1 < len(source) and source[index + 1] == "{":
-            if parts:
-                chunks.append("".join(parts))
-                parts = []
+            if cooked_parts or raw_parts:
+                chunks.append(("text", "".join(cooked_parts), "".join(raw_parts)))
+                cooked_parts = []
+                raw_parts = []
             expr_source, index = _read_template_expression(source, index + 2)
             chunks.append(("expr", expr_source))
+            last_chunk_was_expr = True
             continue
-        parts.append(char)
+        cooked_parts.append(char)
+        raw_parts.append(char)
+        last_chunk_was_expr = False
         index += 1
     raise JavaScriptSyntaxError(f"Unterminated template literal at offset {start}")
+
+
+def _skip_line_comment(source: str, start: int) -> int:
+    index = start
+    while index < len(source) and source[index] not in "\r\n":
+        index += 1
+    return index
+
+
+def _skip_block_comment(source: str, start: int) -> int:
+    index = start
+    while index + 1 < len(source):
+        if source[index] == "*" and source[index + 1] == "/":
+            return index + 2
+        index += 1
+    raise JavaScriptSyntaxError(f"Unterminated block comment at offset {start - 2}")
 
 
 def _read_template_expression(source: str, start: int) -> tuple[str, int]:

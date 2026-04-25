@@ -13,6 +13,7 @@ HostCallableImpl = Callable[[tuple[object, ...], object | None], object]
 class HostCallable:
     name: str
     impl: HostCallableImpl
+    properties: dict[str, object] = field(default_factory=dict)
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         return self.impl(arguments, this_value)

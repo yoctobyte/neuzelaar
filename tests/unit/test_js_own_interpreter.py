@@ -441,6 +441,45 @@ def test_arrow_function_ignores_call_site_this() -> None:
     assert result == 3.0
 
 
+def test_function_call_apply_and_bind_work() -> None:
+    result = evaluate_program(
+        "function read(x) { return this.value + x; } "
+        "var ctx = { value: 4 }; "
+        "var bound = read.bind(ctx, 2); "
+        "read.call(ctx, 1) + read.apply(ctx, [2]) + bound();"
+    )
+
+    assert result == 17.0
+
+
+def test_eval_supports_unicode_escape_whitespace_cases() -> None:
+    assert evaluate_program('eval("1\\u0009+\\u00091");') == 2.0
+
+
+def test_tagged_template_passes_cooked_and_raw_arrays() -> None:
+    result = evaluate_program(
+        "(function (s) { return s[0] + ':' + s.raw[0]; })`foo`;"
+    )
+
+    assert result == "foo:foo"
+
+
+def test_instanceof_checks_constructor_prototype_chain() -> None:
+    result = evaluate_program(
+        "function Box() {} "
+        "var box = new Box(); "
+        "box instanceof Box;"
+    )
+
+    assert result is True
+
+
+def test_postfix_increment_updates_identifier() -> None:
+    result = evaluate_program("var calls = 0; calls++; calls;")
+
+    assert result == 1.0
+
+
 def test_class_constructor_and_method_work() -> None:
     result = evaluate_program(
         "class Point { "

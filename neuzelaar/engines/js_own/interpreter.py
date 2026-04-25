@@ -40,10 +40,12 @@ from neuzelaar.engines.js_own.ast import (
     StringLiteral,
     SuperExpr,
     TemplateLiteral,
+    TaggedTemplateExpr,
     ThisExpr,
     ThrowStatement,
     TryStatement,
     UnaryExpr,
+    UpdateExpr,
     VariableDeclaration,
 )
 from neuzelaar.engines.js_own.environment import Environment
@@ -56,6 +58,7 @@ from neuzelaar.engines.js_own.runtime import (
     js_to_string,
     js_to_number,
     js_truthy,
+    is_js_object,
 )
 from neuzelaar.engines.js_own.values import (
     is_callable,
@@ -97,6 +100,7 @@ class JavaScriptFunction:
         self.super_class = super_class
         self.super_prototype = super_prototype
         self.owner_class = owner_class
+        self.prototype: dict[str, object] = {"constructor": self}
 
     def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
         call_env = Environment(parent=self.closure)
@@ -113,12 +117,17 @@ class JavaScriptFunction:
             value = arguments[index] if index < len(arguments) else None
             call_env.declare(param, value, kind="var")
         try:
-            return evaluate_statement(self.body, call_env)
+            evaluate_statement(self.body, call_env)
+            return None
         except ReturnSignal as signal:
             return signal.value
 
     def construct(self, arguments: tuple[object, ...]) -> object:
-        return self.call(arguments)
+        instance = {"__proto__": self.prototype}
+        result = self.call(arguments, this_value=instance)
+        if is_js_object(result):
+            return result
+        return instance
 
 
 class JavaScriptArrowFunction:
@@ -143,7 +152,8 @@ class JavaScriptArrowFunction:
             call_env.declare(param, value, kind="var")
         if isinstance(self.body, BlockStatement):
             try:
-                return evaluate_statement(self.body, call_env)
+                evaluate_statement(self.body, call_env)
+                return None
             except ReturnSignal as signal:
                 return signal.value
         return evaluate_expr(self.body, call_env)
@@ -1123,6 +1133,26 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return js_to_number(operand)
         if expr.operator == "-":
             return -js_to_number(operand)
+    if isinstance(expr, UpdateExpr):
+        current = None
+        if isinstance(expr.target, Identifier):
+            current = environment.get(expr.target.name)
+            next_value = js_to_number(current) + 1.0
+            environment.assign(expr.target.name, next_value)
+        elif isinstance(expr.target, MemberExpr):
+            target_object = evaluate_expr(expr.target.object, environment)
+            current = read_property(target_object, expr.target.property_name, receiver=target_object)
+            next_value = js_to_number(current) + 1.0
+            write_property(target_object, expr.target.property_name, next_value, receiver=target_object)
+        elif isinstance(expr.target, IndexExpr):
+            target_object = evaluate_expr(expr.target.object, environment)
+            index = evaluate_expr(expr.target.index, environment)
+            current = read_index(target_object, index)
+            next_value = js_to_number(current) + 1.0
+            write_index(target_object, index, next_value)
+        else:
+            raise TypeError("Invalid update target")
+        return next_value if expr.prefix else current
     if isinstance(expr, CallExpr):
         this_value = None
         if isinstance(expr.callee, SuperExpr):
@@ -1158,6 +1188,20 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             raise TypeError("Value is not callable")
         arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
         return callee.call(arguments, this_value=this_value)
+    if isinstance(expr, TaggedTemplateExpr):
+        this_value = None
+        if isinstance(expr.callee, MemberExpr):
+            this_value = evaluate_expr(expr.callee.object, environment)
+            callee = read_property(this_value, expr.callee.property_name, receiver=this_value)
+        elif isinstance(expr.callee, IndexExpr):
+            this_value = evaluate_expr(expr.callee.object, environment)
+            callee = read_index(this_value, evaluate_expr(expr.callee.index, environment))
+        else:
+            callee = evaluate_expr(expr.callee, environment)
+        if not is_callable(callee):
+            raise TypeError("Value is not callable")
+        template_argument = _materialize_tagged_template(expr.template, environment)
+        return callee.call((template_argument,), this_value=this_value)
     if isinstance(expr, NewExpr):
         callee = evaluate_expr(expr.callee, environment)
         arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
@@ -1254,4 +1298,28 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return js_loose_equal(left, right)
         if expr.operator == "!=":
             return not js_loose_equal(left, right)
+        if expr.operator == "instanceof":
+            return _js_instanceof(left, right)
     raise RuntimeError(f"Unsupported expression node: {type(expr).__name__}")
+
+
+def _materialize_tagged_template(template: TemplateLiteral, environment: Environment) -> dict[str, object]:
+    cooked_segments = [part for part in template.parts if isinstance(part, str)]
+    cooked = {str(index): value for index, value in enumerate(cooked_segments)}
+    cooked["length"] = float(len(cooked_segments))
+    raw = {str(index): value for index, value in enumerate(template.raw_parts)}
+    raw["length"] = float(len(template.raw_parts))
+    cooked["raw"] = raw
+    return cooked
+
+
+def _js_instanceof(left: object, right: object) -> bool:
+    prototype = read_property(right, "prototype")
+    if not isinstance(prototype, dict):
+        raise TypeError("Right-hand side of instanceof is not an object")
+    current = left if isinstance(left, dict) else None
+    while isinstance(current, dict):
+        current = current.get("__proto__")
+        if current is prototype:
+            return True
+    return False
