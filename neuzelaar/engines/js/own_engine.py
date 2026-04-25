@@ -35,12 +35,15 @@ class OwnJavaScriptEngine(JavaScriptEngine):
     def execute(self, request: ScriptExecutionRequest) -> ScriptExecutionResult:
         try:
             environment = None
+            scheduler = None
             if self.scenario_fixture is not None:
-                environment, _stubs = build_browser_scenario(self.scenario_fixture)
+                environment, stubs = build_browser_scenario(self.scenario_fixture)
+                scheduler = stubs.scheduler
             evaluate_program_with_config(
                 request.source,
                 environment,
                 runtime_config=self.runtime_config,
+                scheduler=scheduler,
             )
         except JavaScriptSyntaxError as exc:
             return ScriptExecutionResult(

@@ -17,6 +17,8 @@ KEYWORDS = {
     "if": "IF",
     "else": "ELSE",
     "function": "FUNCTION",
+    "async": "ASYNC",
+    "await": "AWAIT",
     "class": "CLASS",
     "extends": "EXTENDS",
     "new": "NEW",

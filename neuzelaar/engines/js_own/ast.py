@@ -39,6 +39,11 @@ class TemplateLiteral(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class AwaitExpr(Expr):
+    value: Expr
+
+
+@dataclass(frozen=True, slots=True)
 class Identifier(Expr):
     name: str
 
@@ -96,6 +101,7 @@ class ClassMethod:
     is_static: bool = False
     accessor_kind: str | None = None
     is_private: bool = False
+    is_async: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,12 +117,14 @@ class FunctionExpr(Expr):
     name: str | None
     params: tuple[str, ...]
     body: "BlockStatement"
+    is_async: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class ArrowFunctionExpr(Expr):
     params: tuple[str, ...]
     body: "BlockStatement | Expr"
+    is_async: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +179,7 @@ class FunctionDeclaration(Stmt):
     name: str
     params: tuple[str, ...]
     body: "BlockStatement"
+    is_async: bool = False
 
 
 @dataclass(frozen=True, slots=True)

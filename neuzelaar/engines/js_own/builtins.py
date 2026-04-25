@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
+from neuzelaar.engines.js_own.promises import create_promise_builtins
 from neuzelaar.engines.js_own.runtime import js_error_object, js_to_number, js_to_string
 
 
@@ -35,3 +36,6 @@ def install_builtins(environment) -> None:
         HostCallable("Error", lambda args, _this: js_error_object(args[0] if args else "")),
         kind="const",
     )
+    promise_constructor, queue_microtask = create_promise_builtins()
+    environment.declare("Promise", promise_constructor, kind="const")
+    environment.declare("queueMicrotask", queue_microtask, kind="const")

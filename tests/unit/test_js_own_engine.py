@@ -63,3 +63,15 @@ def test_own_engine_reports_execution_limit_error() -> None:
 
     assert result.status is ScriptExecutionStatus.ERROR
     assert "ExecutionLimitError:" in result.reason
+
+
+def test_own_engine_runs_async_program() -> None:
+    engine = OwnJavaScriptEngine()
+
+    result = engine.execute(
+        ScriptExecutionRequest(
+            source="async function load() { return await Promise.resolve(3); } load();"
+        )
+    )
+
+    assert result.status is ScriptExecutionStatus.RAN

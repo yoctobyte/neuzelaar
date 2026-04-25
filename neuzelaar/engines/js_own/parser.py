@@ -8,6 +8,7 @@ from neuzelaar.engines.js_own.ast import (
     ArrayLiteral,
     AssignmentExpr,
     ArrowFunctionExpr,
+    AwaitExpr,
     BinaryExpr,
     BlockStatement,
     BooleanLiteral,
@@ -66,6 +67,29 @@ PRECEDENCE = {
     "LBRACKET": 9,
 }
 
+PROPERTY_NAME_TOKENS = {
+    "IDENTIFIER",
+    "TRUE",
+    "FALSE",
+    "NULL",
+    "IF",
+    "ELSE",
+    "FUNCTION",
+    "CLASS",
+    "EXTENDS",
+    "NEW",
+    "RETURN",
+    "SUPER",
+    "STATIC",
+    "THIS",
+    "THROW",
+    "TRY",
+    "CATCH",
+    "FINALLY",
+    "ASYNC",
+    "AWAIT",
+}
+
 
 @dataclass(slots=True)
 class Parser:
@@ -74,6 +98,7 @@ class Parser:
 
     def maybe_parse_arrow_expression(self) -> ArrowFunctionExpr | None:
         checkpoint = self.index
+        is_async = self._match("ASYNC")
         params = self._maybe_parse_arrow_params()
         if params is None or not self._match("=>"):
             self.index = checkpoint
@@ -82,7 +107,7 @@ class Parser:
             body: BlockStatement | Expr = self._parse_block_statement()
         else:
             body = self.parse_expression()
-        return ArrowFunctionExpr(params=params, body=body)
+        return ArrowFunctionExpr(params=params, body=body, is_async=is_async)
 
     def parse_expression(self, precedence: int = 0) -> Expr:
         if precedence == 0:
@@ -127,6 +152,9 @@ class Parser:
             return self._parse_block_statement()
         if self._check("FUNCTION"):
             return self._parse_function_declaration()
+        if self._check("ASYNC") and self.index + 1 < len(self.tokens) and self.tokens[self.index + 1].kind == "FUNCTION":
+            self._advance()
+            return self._parse_function_declaration(is_async=True)
         if self._check("CLASS"):
             return self._parse_class_declaration()
         if self._check("IF"):
@@ -212,13 +240,14 @@ class Parser:
             initializer=initializer,
         )
 
-    def _parse_function_declaration(self) -> FunctionDeclaration:
-        function_expr = self._parse_function_expression(require_name=True)
+    def _parse_function_declaration(self, *, is_async: bool = False) -> FunctionDeclaration:
+        function_expr = self._parse_function_expression(require_name=True, is_async=is_async)
         assert function_expr.name is not None
         return FunctionDeclaration(
             name=function_expr.name,
             params=function_expr.params,
             body=function_expr.body,
+            is_async=function_expr.is_async,
         )
 
     def _parse_class_declaration(self) -> ClassDeclaration:
@@ -237,6 +266,16 @@ class Parser:
         computed_key: Expr | None = None
         name: str | None = None
         is_private = False
+        is_async = False
+        if (
+            self._check("ASYNC")
+            and self.index + 2 < len(self.tokens)
+            and self.tokens[self.index + 1].kind in {"IDENTIFIER", "PRIVATE_IDENTIFIER", "STRING", "LBRACKET"}
+        ):
+            next_kind = self.tokens[self.index + 2].kind
+            if next_kind == "LPAREN" or (self.tokens[self.index + 1].kind == "LBRACKET"):
+                is_async = True
+                self._advance()
         if (
             self._check("IDENTIFIER")
             and str(self._peek().value) in {"get", "set"}
@@ -308,6 +347,7 @@ class Parser:
             is_static=is_static,
             accessor_kind=accessor_kind,
             is_private=is_private,
+            is_async=is_async,
         )
 
     def _parse_class_expression(self, *, require_name: bool) -> ClassExpr:
@@ -330,7 +370,7 @@ class Parser:
         self._consume("RBRACE", "Expected '}' after class body")
         return ClassExpr(name=name, superclass=superclass, methods=tuple(methods), fields=tuple(fields))
 
-    def _parse_function_expression(self, *, require_name: bool) -> FunctionExpr:
+    def _parse_function_expression(self, *, require_name: bool, is_async: bool = False) -> FunctionExpr:
         self._consume("FUNCTION", "Expected 'function'")
         name: str | None = None
         if self._check("IDENTIFIER"):
@@ -347,7 +387,7 @@ class Parser:
                     break
         self._consume("RPAREN", "Expected ')' after function parameters")
         body = self._parse_block_statement()
-        return FunctionExpr(name=name, params=tuple(params), body=body)
+        return FunctionExpr(name=name, params=tuple(params), body=body, is_async=is_async)
 
     def _parse_prefix(self, token: Token) -> Expr:
         if token.kind == "NUMBER":
@@ -371,11 +411,17 @@ class Parser:
             return Identifier(name=str(token.value))
         if token.kind == "THIS":
             return ThisExpr()
+        if token.kind == "AWAIT":
+            return AwaitExpr(value=self.parse_expression(8))
         if token.kind == "SUPER":
             return SuperExpr()
         if token.kind == "CLASS":
             self.index -= 1
             return self._parse_class_expression(require_name=False)
+        if token.kind == "ASYNC":
+            if self._check("FUNCTION"):
+                return self._parse_function_expression(require_name=False, is_async=True)
+            raise JavaScriptSyntaxError(f"Unexpected token {token.lexeme!r} at offset {token.offset}")
         if token.kind == "FUNCTION":
             self.index -= 1
             return self._parse_function_expression(require_name=False)
@@ -418,7 +464,7 @@ class Parser:
             self._consume("RPAREN", "Expected ')' after arguments")
             return CallExpr(callee=left, arguments=tuple(arguments))
         if token.kind == "DOT":
-            if self._check("IDENTIFIER"):
+            if self._peek().kind in PROPERTY_NAME_TOKENS:
                 property_token = self._advance()
                 return MemberExpr(object=left, property_name=str(property_token.value))
             if self._check("PRIVATE_IDENTIFIER"):

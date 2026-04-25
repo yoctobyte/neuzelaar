@@ -21,10 +21,25 @@ class HostCallable:
 @dataclass(slots=True)
 class HostObject:
     properties: dict[str, object] = field(default_factory=dict)
+    prototype: "HostObject | None" = None
 
     def get(self, name: str) -> object:
-        return self.properties.get(name)
+        if name in self.properties:
+            return self.properties.get(name)
+        if self.prototype is not None:
+            return self.prototype.get(name)
+        return None
 
     def set(self, name: str, value: object) -> object:
         self.properties[name] = value
         return value
+
+
+@dataclass(slots=True)
+class ConstructibleHostObject(HostObject):
+    construct_impl: Callable[[tuple[object, ...]], object] | None = None
+
+    def construct(self, arguments: tuple[object, ...]) -> object:
+        if self.construct_impl is None:
+            raise TypeError("Value is not a constructor")
+        return self.construct_impl(arguments)

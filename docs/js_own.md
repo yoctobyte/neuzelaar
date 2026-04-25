@@ -162,6 +162,28 @@ Status:
 - initial host bridge implemented
 - thin `JavaScriptEngine` adapter implemented for isolated tests
 
+### Async Core
+
+Scope:
+
+- `Promise`
+  - `new Promise(...)`
+  - `Promise.resolve(...)`
+  - `Promise.reject(...)`
+  - `.then(...)`
+  - `.catch(...)`
+  - `.finally(...)`
+- `queueMicrotask(...)`
+- `async function`
+- async arrow functions
+- async class methods
+- `await`
+
+Status:
+
+- implemented for the current standalone/runtime-controlled path
+- still not wired into live browser execution
+
 ## Runtime Control
 
 The standalone interpreter now has a minimal runtime-control surface:
@@ -204,9 +226,7 @@ Current scope:
 
 This is still debug/runtime-plumbing only:
 
-- no promise queue
-- no microtask semantics
-- no async/await lowering
+- microtask queue is now present for promise reactions and `queueMicrotask(...)`
 - no live browser scheduler yet
 
 ## Current Reference

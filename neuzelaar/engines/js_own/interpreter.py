@@ -5,12 +5,15 @@ from __future__ import annotations
 from neuzelaar.engines.js_own.builtins import install_builtins
 from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
 from neuzelaar.engines.js_own.execution import budget_tick, execution_budget
+from neuzelaar.engines.js_own.promises import JavaScriptPromise, await_value, promise_resolve
 from neuzelaar.engines.js_own.errors import JavaScriptThrownValue
 from neuzelaar.engines.js_own.host import HostCallable
+from neuzelaar.engines.js_own.runtime_state import runtime_session
 from neuzelaar.engines.js_own.ast import (
     ArrayLiteral,
     AssignmentExpr,
     ArrowFunctionExpr,
+    AwaitExpr,
     BinaryExpr,
     BlockStatement,
     BooleanLiteral,
@@ -114,6 +117,9 @@ class JavaScriptFunction:
         except ReturnSignal as signal:
             return signal.value
 
+    def construct(self, arguments: tuple[object, ...]) -> object:
+        return self.call(arguments)
+
 
 class JavaScriptArrowFunction:
     def __init__(
@@ -141,6 +147,59 @@ class JavaScriptArrowFunction:
             except ReturnSignal as signal:
                 return signal.value
         return evaluate_expr(self.body, call_env)
+
+    def construct(self, arguments: tuple[object, ...]) -> object:
+        return self.call(arguments)
+
+
+class JavaScriptAsyncFunction(JavaScriptFunction):
+    def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
+        call_env = Environment(parent=self.closure)
+        call_env.declare("this", this_value, kind="const")
+        if self.super_class is not None:
+            call_env.declare("__super_class__", self.super_class, kind="const")
+        if self.super_prototype is not None:
+            call_env.declare("__super_prototype__", self.super_prototype, kind="const")
+        if self.owner_class is not None:
+            call_env.declare("__current_class__", self.owner_class, kind="const")
+        if self.name is not None:
+            call_env.declare(self.name, self, kind="const")
+        for index, param in enumerate(self.params):
+            value = arguments[index] if index < len(arguments) else None
+            call_env.declare(param, value, kind="var")
+        promise = JavaScriptPromise()
+        _evaluate_async_statement(
+            self.body,
+            call_env,
+            on_complete=lambda result: _resolve_async_completion(promise, result),
+            on_error=lambda reason: promise.reject(reason),
+        )
+        return promise
+
+
+class JavaScriptAsyncArrowFunction(JavaScriptArrowFunction):
+    def call(self, arguments: tuple[object, ...], *, this_value: object = None) -> object:
+        call_env = Environment(parent=self.closure)
+        call_env.declare("this", self.lexical_this, kind="const")
+        for index, param in enumerate(self.params):
+            value = arguments[index] if index < len(arguments) else None
+            call_env.declare(param, value, kind="var")
+        promise = JavaScriptPromise()
+        if isinstance(self.body, BlockStatement):
+            _evaluate_async_statement(
+                self.body,
+                call_env,
+                on_complete=lambda result: _resolve_async_completion(promise, result),
+                on_error=lambda reason: promise.reject(reason),
+            )
+        else:
+            _evaluate_async_expr(
+                self.body,
+                call_env,
+                on_value=promise.fulfill,
+                on_error=promise.reject,
+            )
+        return promise
 
 
 class JavaScriptClass:
@@ -182,7 +241,8 @@ class JavaScriptClass:
         self.private_static_fields = tuple(field for field in fields if field.is_static and field.is_private)
         for method in methods:
             property_name = _class_member_name(method, closure)
-            function = JavaScriptFunction(
+            function_cls = JavaScriptAsyncFunction if method.is_async else JavaScriptFunction
+            function = function_cls(
                 name=property_name,
                 params=method.params,
                 body=method.body,
@@ -406,6 +466,447 @@ def _private_name_set(fields: tuple[ClassField, ...]) -> set[str]:
     return {field.name for field in fields if field.name is not None}
 
 
+def _current_this(environment: Environment) -> object:
+    try:
+        return environment.get("this")
+    except Exception:
+        return None
+
+
+def _resolve_async_completion(promise: JavaScriptPromise, result: tuple[str, object]) -> None:
+    kind, value = result
+    if kind == "return":
+        if isinstance(value, JavaScriptPromise):
+            await_value(value, promise.fulfill, promise.reject)
+            return
+        promise.fulfill(value)
+        return
+    promise.fulfill(value)
+
+
+def _evaluate_async_statement(statement: Stmt, environment: Environment, *, on_complete, on_error) -> None:
+    if isinstance(statement, ExpressionStatement):
+        _evaluate_async_expr(statement.expression, environment, on_value=lambda value: on_complete(("normal", value)), on_error=on_error)
+        return
+    if isinstance(statement, VariableDeclaration):
+        if statement.initializer is None:
+            environment.declare(statement.name, None, kind=statement.kind)
+            on_complete(("normal", None))
+            return
+        _evaluate_async_expr(
+            statement.initializer,
+            environment,
+            on_value=lambda value: on_complete(("normal", environment.declare(statement.name, value, kind=statement.kind))),
+            on_error=on_error,
+        )
+        return
+    if isinstance(statement, FunctionDeclaration):
+        function_cls = JavaScriptAsyncFunction if statement.is_async else JavaScriptFunction
+        function = function_cls(
+            name=statement.name,
+            params=statement.params,
+            body=statement.body,
+            closure=environment,
+        )
+        environment.declare(statement.name, function, kind="var")
+        on_complete(("normal", function))
+        return
+    if isinstance(statement, ClassDeclaration):
+        js_class = evaluate_class_expr(
+            ClassExpr(
+                name=statement.name,
+                superclass=statement.superclass,
+                methods=statement.methods,
+                fields=statement.fields,
+            ),
+            environment,
+        )
+        environment.declare(statement.name, js_class, kind="let")
+        on_complete(("normal", js_class))
+        return
+    if isinstance(statement, BlockStatement):
+        block_env = environment.child_block()
+        _evaluate_async_statement_list(list(statement.statements), block_env, on_complete=on_complete, on_error=on_error)
+        return
+    if isinstance(statement, IfStatement):
+        _evaluate_async_expr(
+            statement.test,
+            environment,
+            on_value=lambda test: _evaluate_async_statement(
+                statement.consequent if js_truthy(test) else (statement.alternate or ExpressionStatement(NullLiteral())),
+                environment,
+                on_complete=on_complete,
+                on_error=on_error,
+            ),
+            on_error=on_error,
+        )
+        return
+    if isinstance(statement, ReturnStatement):
+        if statement.value is None:
+            on_complete(("return", None))
+            return
+        _evaluate_async_expr(statement.value, environment, on_value=lambda value: on_complete(("return", value)), on_error=on_error)
+        return
+    if isinstance(statement, ThrowStatement):
+        _evaluate_async_expr(statement.value, environment, on_value=on_error, on_error=on_error)
+        return
+    if isinstance(statement, TryStatement):
+        def run_finally(next_step) -> None:
+            if statement.finally_body is None:
+                next_step()
+                return
+            _evaluate_async_statement(
+                statement.finally_body,
+                environment,
+                on_complete=lambda result: next_step() if result[0] == "normal" else on_complete(result),
+                on_error=on_error,
+            )
+
+        def handle_body_complete(result: tuple[str, object]) -> None:
+            run_finally(lambda: on_complete(result))
+
+        def handle_body_error(reason: object) -> None:
+            if statement.catch_body is None:
+                run_finally(lambda: on_error(reason))
+                return
+            catch_env = environment.child_block()
+            assert statement.catch_name is not None
+            catch_env.declare(statement.catch_name, reason, kind="let")
+            _evaluate_async_statement(
+                statement.catch_body,
+                catch_env,
+                on_complete=lambda result: run_finally(lambda: on_complete(result)),
+                on_error=lambda catch_reason: run_finally(lambda: on_error(catch_reason)),
+            )
+
+        _evaluate_async_statement(statement.body, environment, on_complete=handle_body_complete, on_error=handle_body_error)
+        return
+    raise RuntimeError(f"Unsupported async statement node: {type(statement).__name__}")
+
+
+def _evaluate_async_statement_list(statements: list[Stmt], environment: Environment, *, on_complete, on_error, last_value: object = None) -> None:
+    if not statements:
+        on_complete(("normal", last_value))
+        return
+    statement = statements[0]
+    _evaluate_async_statement(
+        statement,
+        environment,
+        on_complete=lambda result: on_complete(result)
+        if result[0] != "normal"
+        else _evaluate_async_statement_list(statements[1:], environment, on_complete=on_complete, on_error=on_error, last_value=result[1]),
+        on_error=on_error,
+    )
+
+
+def _evaluate_async_expr(expr: Expr, environment: Environment, *, on_value, on_error) -> None:
+    if isinstance(expr, AwaitExpr):
+        _evaluate_async_expr(expr.value, environment, on_value=lambda value: await_value(value, on_value, on_error), on_error=on_error)
+        return
+    if isinstance(expr, (NumberLiteral, StringLiteral, BooleanLiteral, NullLiteral, Identifier, ThisExpr, SuperExpr, FunctionExpr, ArrowFunctionExpr, ClassExpr)):
+        try:
+            on_value(evaluate_expr(expr, environment))
+        except ThrowSignal as signal:
+            on_error(signal.value)
+        except Exception as exc:
+            on_error(exc)
+        return
+    if isinstance(expr, TemplateLiteral):
+        _evaluate_template_literal_async(expr, environment, on_value=on_value, on_error=on_error)
+        return
+    if isinstance(expr, ArrayLiteral):
+        _evaluate_async_value_list(list(expr.elements), environment, on_value=lambda values: on_value(list(values)), on_error=on_error)
+        return
+    if isinstance(expr, ObjectLiteral):
+        _evaluate_async_object_literal(expr, environment, on_value=on_value, on_error=on_error)
+        return
+    if isinstance(expr, UnaryExpr):
+        _evaluate_async_expr(
+            expr.operand,
+            environment,
+            on_value=lambda operand: on_value(
+                not js_truthy(operand)
+                if expr.operator == "!"
+                else js_to_number(operand)
+                if expr.operator == "+"
+                else -js_to_number(operand)
+            ),
+            on_error=on_error,
+        )
+        return
+    if isinstance(expr, BinaryExpr):
+        _evaluate_async_binary(expr, environment, on_value=on_value, on_error=on_error)
+        return
+    if isinstance(expr, CallExpr):
+        _evaluate_async_call(expr, environment, on_value=on_value, on_error=on_error)
+        return
+    if isinstance(expr, NewExpr):
+        _evaluate_async_expr(
+            expr.callee,
+            environment,
+            on_value=lambda callee: _evaluate_async_value_list(
+                list(expr.arguments),
+                environment,
+                on_value=lambda arguments: on_value(
+                    callee.call(tuple(arguments))
+                    if isinstance(callee, JavaScriptClass)
+                    else callee.construct(tuple(arguments))
+                    if hasattr(callee, "construct")
+                    else _raise_type_error("Value is not a constructor")
+                ),
+                on_error=on_error,
+            ),
+            on_error=on_error,
+        )
+        return
+    if isinstance(expr, AssignmentExpr):
+        _evaluate_async_assignment(expr, environment, on_value=on_value, on_error=on_error)
+        return
+    if isinstance(expr, MemberExpr):
+        _evaluate_async_expr(
+            expr.object,
+            environment,
+            on_value=lambda target: on_value(
+                _read_member_value(expr, environment, target)
+            ),
+            on_error=on_error,
+        )
+        return
+    if isinstance(expr, IndexExpr):
+        _evaluate_async_expr(
+            expr.object,
+            environment,
+            on_value=lambda target: _evaluate_async_expr(
+                expr.index,
+                environment,
+                on_value=lambda index: on_value(read_index(target, index)),
+                on_error=on_error,
+            ),
+            on_error=on_error,
+        )
+        return
+    raise RuntimeError(f"Unsupported async expression node: {type(expr).__name__}")
+
+
+def _evaluate_template_literal_async(expr: TemplateLiteral, environment: Environment, *, on_value, on_error) -> None:
+    parts = list(expr.parts)
+    rendered: list[str] = []
+
+    def step(index: int) -> None:
+        if index >= len(parts):
+            on_value("".join(rendered))
+            return
+        part = parts[index]
+        if isinstance(part, str):
+            rendered.append(part)
+            step(index + 1)
+            return
+        _evaluate_async_expr(part, environment, on_value=lambda value: (rendered.append(js_to_string(value)), step(index + 1)), on_error=on_error)
+
+    step(0)
+
+
+def _evaluate_async_value_list(expressions: list[Expr], environment: Environment, *, on_value, on_error, collected: list[object] | None = None) -> None:
+    items = [] if collected is None else collected
+    if not expressions:
+        on_value(tuple(items))
+        return
+    head, *tail = expressions
+    _evaluate_async_expr(
+        head,
+        environment,
+        on_value=lambda value: (_evaluate_async_value_list(tail, environment, on_value=on_value, on_error=on_error, collected=items + [value])),
+        on_error=on_error,
+    )
+
+
+def _evaluate_async_object_literal(expr: ObjectLiteral, environment: Environment, *, on_value, on_error, index: int = 0, collected: dict[str, object] | None = None) -> None:
+    result = {} if collected is None else dict(collected)
+    if index >= len(expr.properties):
+        on_value(result)
+        return
+    prop = expr.properties[index]
+    _evaluate_async_expr(
+        prop.value,
+        environment,
+        on_value=lambda value: _evaluate_async_object_literal(
+            expr,
+            environment,
+            on_value=on_value,
+            on_error=on_error,
+            index=index + 1,
+            collected={**result, prop.key: value},
+        ),
+        on_error=on_error,
+    )
+
+
+def _evaluate_async_binary(expr: BinaryExpr, environment: Environment, *, on_value, on_error) -> None:
+    if expr.operator == "&&":
+        _evaluate_async_expr(
+            expr.left,
+            environment,
+            on_value=lambda left: on_value(left)
+            if not js_truthy(left)
+            else _evaluate_async_expr(expr.right, environment, on_value=on_value, on_error=on_error),
+            on_error=on_error,
+        )
+        return
+    if expr.operator == "||":
+        _evaluate_async_expr(
+            expr.left,
+            environment,
+            on_value=lambda left: on_value(left)
+            if js_truthy(left)
+            else _evaluate_async_expr(expr.right, environment, on_value=on_value, on_error=on_error),
+            on_error=on_error,
+        )
+        return
+    _evaluate_async_expr(
+        expr.left,
+        environment,
+        on_value=lambda left: _evaluate_async_expr(
+            expr.right,
+            environment,
+            on_value=lambda right: on_value(_apply_binary_operator(expr.operator, left, right)),
+            on_error=on_error,
+        ),
+        on_error=on_error,
+    )
+
+
+def _evaluate_async_call(expr: CallExpr, environment: Environment, *, on_value, on_error) -> None:
+    def invoke(callee: object, this_value: object | None) -> None:
+        if not is_callable(callee):
+            on_error(TypeError("Value is not callable"))
+            return
+        _evaluate_async_value_list(
+            list(expr.arguments),
+            environment,
+            on_value=lambda arguments: on_value(callee.call(tuple(arguments), this_value=this_value)),
+            on_error=on_error,
+        )
+
+    if isinstance(expr.callee, SuperExpr):
+        super_class = environment.get("__super_class__")
+        if not isinstance(super_class, JavaScriptClass):
+            on_error(TypeError("super() is not available here"))
+            return
+        this_value = environment.get("this")
+        _evaluate_async_value_list(
+            list(expr.arguments),
+            environment,
+            on_value=lambda arguments: on_value(super_class.call(tuple(arguments), this_value=this_value)),
+            on_error=on_error,
+        )
+        return
+    if isinstance(expr.callee, MemberExpr):
+        _evaluate_async_expr(
+            expr.callee.object,
+            environment,
+            on_value=lambda this_value: invoke(_read_member_value(expr.callee, environment, this_value), this_value),
+            on_error=on_error,
+        )
+        return
+    if isinstance(expr.callee, IndexExpr):
+        _evaluate_async_expr(
+            expr.callee.object,
+            environment,
+            on_value=lambda this_value: _evaluate_async_expr(
+                expr.callee.index,
+                environment,
+                on_value=lambda index: invoke(read_index(this_value, index), this_value),
+                on_error=on_error,
+            ),
+            on_error=on_error,
+        )
+        return
+    _evaluate_async_expr(expr.callee, environment, on_value=lambda callee: invoke(callee, None), on_error=on_error)
+
+
+def _evaluate_async_assignment(expr: AssignmentExpr, environment: Environment, *, on_value, on_error) -> None:
+    _evaluate_async_expr(
+        expr.value,
+        environment,
+        on_value=lambda value: on_value(_assign_target(expr.target, value, environment)),
+        on_error=on_error,
+    )
+
+
+def _apply_binary_operator(operator: str, left: object, right: object) -> object:
+    if operator == "+":
+        return js_add(left, right)
+    if operator == "-":
+        return js_to_number(left) - js_to_number(right)
+    if operator == "*":
+        return js_to_number(left) * js_to_number(right)
+    if operator == "/":
+        return js_to_number(left) / js_to_number(right)
+    if operator == "%":
+        return js_to_number(left) % js_to_number(right)
+    if operator == "<":
+        return js_to_number(left) < js_to_number(right)
+    if operator == ">":
+        return js_to_number(left) > js_to_number(right)
+    if operator == "<=":
+        return js_to_number(left) <= js_to_number(right)
+    if operator == ">=":
+        return js_to_number(left) >= js_to_number(right)
+    if operator == "===":
+        return js_strict_equal(left, right)
+    if operator == "!==":
+        return not js_strict_equal(left, right)
+    if operator == "==":
+        return js_loose_equal(left, right)
+    if operator == "!=":
+        return not js_loose_equal(left, right)
+    raise RuntimeError(f"Unsupported binary operator: {operator}")
+
+
+def _read_member_value(expr: MemberExpr, environment: Environment, target: object) -> object:
+    if expr.is_private:
+        owner_class = environment.get("__current_class__")
+        if not isinstance(owner_class, JavaScriptClass):
+            raise TypeError(f"Private member #{expr.property_name} is not available here")
+        return owner_class.read_private(target, expr.property_name, receiver=target)
+    if isinstance(expr.object, SuperExpr):
+        receiver = environment.get("this")
+        target = environment.get("__super_prototype__")
+        return read_property(target, expr.property_name, receiver=receiver)
+    return read_property(target, expr.property_name, receiver=target)
+
+
+def _assign_target(target: Expr, value: object, environment: Environment) -> object:
+    if isinstance(target, Identifier):
+        return environment.assign(target.name, value)
+    if isinstance(target, MemberExpr):
+        if target.is_private:
+            owner_class = environment.get("__current_class__")
+            if not isinstance(owner_class, JavaScriptClass):
+                raise TypeError(f"Private member #{target.property_name} is not available here")
+            target_object = evaluate_expr(target.object, environment)
+            owner_class.write_private(target_object, target.property_name, value, receiver=target_object)
+            return value
+        if isinstance(target.object, SuperExpr):
+            target_object = environment.get("__super_prototype__")
+            receiver = environment.get("this")
+            write_property(target_object, target.property_name, value, receiver=receiver)
+            return value
+        target_object = evaluate_expr(target.object, environment)
+        write_property(target_object, target.property_name, value, receiver=target_object)
+        return value
+    if isinstance(target, IndexExpr):
+        target_object = evaluate_expr(target.object, environment)
+        index = evaluate_expr(target.index, environment)
+        write_index(target_object, index, value)
+        return value
+    raise RuntimeError(f"Unsupported assignment target: {type(target).__name__}")
+
+
+def _raise_type_error(message: str) -> object:
+    raise TypeError(message)
+
+
 def evaluate_class_expr(expr: ClassExpr, environment: Environment) -> JavaScriptClass:
     superclass = None
     if expr.superclass is not None:
@@ -440,11 +941,15 @@ def evaluate_expression_with_config(
     source: str,
     environment: Environment | None = None,
     runtime_config: ScriptRuntimeConfig | None = None,
+    scheduler=None,
 ) -> object:
     env = environment or create_global_environment()
     try:
         with execution_budget(runtime_config):
-            return evaluate_expr(parse_expression_ast(source), env)
+            with runtime_session(runtime_config, scheduler=scheduler) as state:
+                value = evaluate_expr(parse_expression_ast(source), env)
+                state.drain_microtasks()
+                return value
     except ThrowSignal as signal:
         raise JavaScriptThrownValue(signal.value) from None
 
@@ -453,12 +958,16 @@ def evaluate_program_with_config(
     source: str,
     environment: Environment | None = None,
     runtime_config: ScriptRuntimeConfig | None = None,
+    scheduler=None,
 ) -> object:
     env = environment or create_global_environment()
     program = parse_program_ast(source)
     try:
         with execution_budget(runtime_config):
-            return evaluate_ast_program(program, env)
+            with runtime_session(runtime_config, scheduler=scheduler) as state:
+                value = evaluate_ast_program(program, env)
+                state.drain_microtasks()
+                return value
     except ThrowSignal as signal:
         raise JavaScriptThrownValue(signal.value) from None
 
@@ -480,7 +989,8 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
         environment.declare(statement.name, value, kind=statement.kind)
         return value
     if isinstance(statement, FunctionDeclaration):
-        function = JavaScriptFunction(
+        function_cls = JavaScriptAsyncFunction if statement.is_async else JavaScriptFunction
+        function = function_cls(
             name=statement.name,
             params=statement.params,
             body=statement.body,
@@ -569,15 +1079,19 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         return environment.get("this")
     if isinstance(expr, SuperExpr):
         return environment.get("__super_prototype__")
+    if isinstance(expr, AwaitExpr):
+        raise TypeError("await is only valid inside async functions")
     if isinstance(expr, ArrowFunctionExpr):
-        return JavaScriptArrowFunction(
+        function_cls = JavaScriptAsyncArrowFunction if expr.is_async else JavaScriptArrowFunction
+        return function_cls(
             params=expr.params,
             body=expr.body,
             closure=environment,
-            lexical_this=environment.get("this"),
+            lexical_this=_current_this(environment),
         )
     if isinstance(expr, FunctionExpr):
-        function = JavaScriptFunction(
+        function_cls = JavaScriptAsyncFunction if expr.is_async else JavaScriptFunction
+        function = function_cls(
             name=expr.name,
             params=expr.params,
             body=expr.body,
@@ -638,10 +1152,12 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         return callee.call(arguments, this_value=this_value)
     if isinstance(expr, NewExpr):
         callee = evaluate_expr(expr.callee, environment)
-        if not isinstance(callee, JavaScriptClass):
-            raise TypeError("Value is not a constructor")
         arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)
-        return callee.call(arguments)
+        if isinstance(callee, JavaScriptClass):
+            return callee.call(arguments)
+        if hasattr(callee, "construct"):
+            return callee.construct(arguments)
+        raise TypeError("Value is not a constructor")
     if isinstance(expr, AssignmentExpr):
         value = evaluate_expr(expr.value, environment)
         if isinstance(expr.target, Identifier):

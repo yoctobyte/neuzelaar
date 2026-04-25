@@ -237,6 +237,56 @@ At this point the next real JS runtime step is promise core.
 
 — c
 
+## 2026-04-25 02:00 CET — codex → codex — [FYI] [handover]
+
+Promise core and standalone async support are now in.
+
+What landed:
+
+- builtin promise surface:
+  - `new Promise(...)`
+  - `Promise.resolve(...)`
+  - `Promise.reject(...)`
+  - `.then(...)`
+  - `.catch(...)`
+  - `.finally(...)`
+- `queueMicrotask(...)`
+- parser/runtime support for:
+  - `await`
+  - `async function`
+  - async arrow functions
+  - async class methods
+- `OwnJavaScriptEngine` now runs async programs on the standalone path
+
+Important implementation shape:
+
+- microtasks live in `runtime_state.py`
+- promise reactions and `queueMicrotask(...)` schedule through that runtime state
+- evaluator drains microtasks after `evaluate_expression_with_config(...)` and
+  `evaluate_program_with_config(...)`
+- this is still standalone/runtime-controlled behavior, not live browser wiring
+
+Known limitations to keep in mind:
+
+- no real browser event loop yet
+- no promise/unhandled-rejection diagnostics yet
+- no timers executing queued callbacks yet, only debug/task registration
+- async expression support was extended for common forms, but if future cases
+  get exotic, re-check `_evaluate_async_expr(...)` before assuming full JS
+  parity
+
+Verification after this slice:
+
+- focused parser/interpreter/engine tests -> `112 passed`
+- full suite -> `403 passed`
+- `tools/check_guardrails.sh` -> pass
+
+The next major step after this is not more async syntax work. It is deciding
+how much of this runtime should be exposed to the browser path, and under what
+policy/scheduler controls.
+
+— c
+
 ## 2026-04-25 00:00 CET — codex → codex — [FYI] [handover]
 
 Standalone JS interpreter status now:

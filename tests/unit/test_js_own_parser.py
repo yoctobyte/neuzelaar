@@ -2,6 +2,7 @@ from neuzelaar.engines.js_own.ast import (
     ArrayLiteral,
     AssignmentExpr,
     ArrowFunctionExpr,
+    AwaitExpr,
     BinaryExpr,
     BlockStatement,
     CallExpr,
@@ -123,6 +124,23 @@ def test_parse_arrow_function_expressions() -> None:
     assert expr2.params == ("x", "y")
 
 
+def test_parse_async_function_and_await() -> None:
+    program = parse_program("async function load(x) { return await x; }")
+
+    assert isinstance(program.statements[0], FunctionDeclaration)
+    assert program.statements[0].is_async is True
+    assert isinstance(program.statements[0].body.statements[0], ReturnStatement)
+    assert isinstance(program.statements[0].body.statements[0].value, AwaitExpr)
+
+
+def test_parse_async_arrow_function() -> None:
+    expr = parse_expression("async x => await x")
+
+    assert isinstance(expr, ArrowFunctionExpr)
+    assert expr.is_async is True
+    assert isinstance(expr.body, AwaitExpr)
+
+
 def test_parse_class_declaration_and_new_expression() -> None:
     program = parse_program(
         "class Point { constructor(x) { this.x = x; } getX() { return this.x; } }"
@@ -164,6 +182,13 @@ def test_parse_class_getter_and_setter() -> None:
 
     assert isinstance(program.statements[0], ClassDeclaration)
     assert [method.accessor_kind for method in program.statements[0].methods] == ["get", "set"]
+
+
+def test_parse_async_class_method() -> None:
+    program = parse_program("class Box { async load(x) { return await x; } }")
+
+    assert isinstance(program.statements[0], ClassDeclaration)
+    assert program.statements[0].methods[0].is_async is True
 
 
 def test_parse_static_field() -> None:

@@ -10,7 +10,9 @@ from neuzelaar.engines.js_own.errors import (
     JavaScriptThrownValue,
 )
 from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
+from neuzelaar.engines.js_own.builtins import install_builtins
 from neuzelaar.engines.js_own.interpreter import (
+    JavaScriptPromise,
     evaluate_expression,
     evaluate_expression_with_config,
     evaluate_program,
@@ -328,6 +330,78 @@ def test_execution_step_budget_allows_small_program() -> None:
         )
         == 3.0
     )
+
+
+def test_promise_then_updates_environment_after_microtask_drain() -> None:
+    env = Environment()
+    install_builtins(env)
+
+    result = evaluate_program("var seen = 0; Promise.resolve(2).then(x => { seen = x + 1; }); seen;", env)
+
+    assert result == 0.0
+    assert env.get("seen") == 3.0
+
+
+def test_promise_catch_recovers_rejection() -> None:
+    env = Environment()
+    install_builtins(env)
+
+    evaluate_program("var seen = 0; Promise.reject(2).catch(x => { seen = x + 1; });", env)
+
+    assert env.get("seen") == 3.0
+
+
+def test_queue_microtask_runs_after_program() -> None:
+    env = Environment()
+    install_builtins(env)
+
+    result = evaluate_program("var seen = 0; queueMicrotask(() => { seen = 7; }); seen;", env)
+
+    assert result == 0.0
+    assert env.get("seen") == 7.0
+
+
+def test_new_promise_executor_resolves() -> None:
+    promise = evaluate_program("new Promise((resolve, reject) => { resolve(4); });")
+
+    assert isinstance(promise, JavaScriptPromise)
+    assert promise.state == "fulfilled"
+    assert promise.value == 4.0
+
+
+def test_async_function_resolves_fulfilled_promise() -> None:
+    promise = evaluate_program("async function load() { return await Promise.resolve(5); } load();")
+
+    assert isinstance(promise, JavaScriptPromise)
+    assert promise.state == "fulfilled"
+    assert promise.value == 5.0
+
+
+def test_async_function_rejects_on_awaited_rejection() -> None:
+    promise = evaluate_program('async function load() { return await Promise.reject("boom"); } load();')
+
+    assert isinstance(promise, JavaScriptPromise)
+    assert promise.state == "rejected"
+    assert promise.value == "boom"
+
+
+def test_async_arrow_function_works() -> None:
+    promise = evaluate_program("var load = async x => await Promise.resolve(x + 1); load(4);")
+
+    assert isinstance(promise, JavaScriptPromise)
+    assert promise.state == "fulfilled"
+    assert promise.value == 5.0
+
+
+def test_async_method_works() -> None:
+    promise = evaluate_program(
+        "class Box { async load(x) { return await Promise.resolve(x + 2); } } "
+        "new Box().load(5);"
+    )
+
+    assert isinstance(promise, JavaScriptPromise)
+    assert promise.state == "fulfilled"
+    assert promise.value == 7.0
 
 
 def test_math_and_primitive_builtins_work() -> None:
