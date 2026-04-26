@@ -553,38 +553,7 @@ The picture now: real-world JS programs that fit in this language
 subset can run end-to-end. Core language is mostly there; stdlib
 is broad enough to hold up.
 
-### Things worth knowing
-
-- **`for(let i=...)` does not yet create a per-iteration binding.**
-  Closures over `i` see the final value (3,3,3 not 0,1,2). Behavior
-  matches `var`. Documented in the commit message; spec calls for
-  per-iter scope. Needs the loop to copy the let-bindings into a
-  fresh child block at each iteration, and re-bind the update's
-  result into the next iteration's child. Real bug, real work.
-
-- **Async loops with `await` inside don't work.** The async path
-  delegates `while`/`for` to the sync evaluator, which raises on
-  `AwaitExpr`. Loops without await are fine. Fixing this needs a
-  continuation-style loop in the async path — handle `await` as a
-  resumption point, evaluate test/update through `_evaluate_async_expr`,
-  re-enter the body lambda each iteration. Non-trivial.
-
-- **Compound assignment double-evaluates index targets.**
-  `arr[fn()] += 1` calls `fn()` twice (once for read, once for write).
-  Identifier and MemberExpr targets are safe; only IndexExpr with a
-  side-effecting key has this hole. Fix: evaluate the index once,
-  cache, then read+write on the cached index. ~10 lines.
-
-- **`**` parses with our standard precedence but allows
-  `-2 ** 3`.** JS spec calls this a SyntaxError because of the
-  ambiguity between unary `-` and binary `**`. We just accept it
-  and produce `-8`. Documented gap.
-
-- **`??` mixes freely with `||` and `&&`.** JS spec requires
-  parentheses (`a ?? b || c` is a SyntaxError in real JS). We don't
-  enforce that — the operators chain by their precedence numbers.
-  Pragmatic; reverse if you ever expand the test262 surface to
-  include the parse-time check.
+### Things worth knowing (session-specific)
 
 - **The arrow-speculative-parse fix in `994c414` is a genuine
   upstream bug fix** unrelated to ternary. `(a = 5)` used to abort
@@ -600,37 +569,14 @@ is broad enough to hold up.
   (you probably don't), the filter is in `_is_internal_key` in
   `builtins.py` and `_enumerable_keys` in `_build_object`.
 
-### Remaining language gaps (in rough priority order)
+### Remaining gaps and known limitations
 
-These all syntax-error or are simply absent today. None are
-blocking the current MVP; queue for the next slice.
-
-1. **`for...of` and `for...in`** — major real-world unlock.
-   Needs an iterator protocol (or special-cased forms for arrays
-   and objects) since we don't have Symbol.iterator yet.
-2. **`switch`/`case`** — common in real code. Fall-through,
-   `default`, `break` interaction.
-3. **Destructuring** — `let {a, b} = obj`, `let [x, y] = arr`,
-   defaults, rest. Parser-heavy.
-4. **Default and rest function parameters** — `function f(x=1, ...rest)`.
-5. **Spread in calls/arrays/objects** — `f(...args)`,
-   `[...a, ...b]`, `{...other}`.
-6. **Computed object keys + shorthand** — `{[k]: v}`, `{x}` (for
-   `{x: x}`), method shorthand on object literals.
-7. **Optional chaining `?.`** — small but propagates undefined
-   through the chain. Pairs naturally with the `??` already in.
-8. **Bitwise operators** — `& | ^ ~ << >> >>>`. JS semantics use
-   32-bit signed ints with ToInt32 / ToUint32 coercions.
-9. **`delete`, `void`** — small individual fixes.
-10. **Regex literals + `RegExp` builtin** — could lean on Python
-    `re`, but the `/` token disambiguation needs lookback context
-    in the tokenizer (currently `/` is always SLASH).
-11. **Async-aware loops** (per the note above).
-12. **Per-iteration `let` binding in `for`** (per the note above).
-13. **Iterator/generator protocol** — `function*`, `yield`. Big.
-14. **Map / Set / WeakMap / WeakSet** — moderate.
-15. **Symbol** — moderate.
-16. **`Date`** — small for basics, large for full impl.
+Moved out of this chat note into `docs/scripting_todo.md`. That
+doc now has the full picture: what's implemented, the prioritised
+list of language features still missing, and the caveats on
+features that landed but with quirks (per-iter `let`, async-loop
+with `await`, compound-assign double-eval, `**` unary ambiguity,
+`??` mixing with `||`/`&&`).
 
 ### What I deliberately did NOT do
 
@@ -640,7 +586,8 @@ blocking the current MVP; queue for the next slice.
 - Did not touch `engines/js/wpt.py` or test262 runner — they keep
   passing.
 - Did not migrate `script-budget-*` config keys. Still your migration.
-- Did not implement any of the "remaining language gaps" above.
-  Each one should be a focused commit when it gets a turn.
+- Did not implement any of the language gaps in
+  `docs/scripting_todo.md`. Each one should be a focused commit
+  when it gets a turn.
 
 — c

@@ -8,16 +8,57 @@ already in, what is still missing, and the recommended order from here.
 Implemented on the standalone `js_own` path:
 
 - language core:
-  - expressions
+  - expressions and operators (incl. `**`, `??`, `?:`, `--`, `+=`/`-=`/`*=`/`/=`/`%=`)
   - variables / blocks / `if`
-  - `while`
+  - `while`, `for`, `break`, `continue`
+  - var and function-declaration hoisting
+  - `let` / `const` re-declaration is a SyntaxError
   - functions / closures / `return`
   - objects / arrays / property access / indexing
-  - exceptions
-  - template literals
+  - exceptions (`throw`, `try` / `catch` / `finally`)
+  - template literals (incl. tagged templates for the supported slice)
   - arrow functions
-  - classes
-  - private fields / methods / accessors
+  - classes (incl. private fields / methods / accessors,
+    inheritance, `super`, static members, computed names)
+- runtime semantics:
+  - distinct `null` and `undefined` (singleton sentinel)
+  - reference identity for `===` on objects and arrays
+  - IEEE 754 division/modulo (`1/0` is `Infinity`, `0/0` is `NaN`,
+    `5 % -2` matches JS)
+  - deep recursion surfaces as a catchable JS RangeError
+  - `typeof` on an undeclared identifier returns `"undefined"`
+- stdlib surface:
+  - **strings**: `length`, indexing, `charAt`, `charCodeAt`,
+    `indexOf`, `lastIndexOf`, `includes`, `startsWith`,
+    `endsWith`, `slice`, `substring`, `toUpperCase`,
+    `toLowerCase`, `trim`/`trimStart`/`trimEnd`, `split`,
+    `replace` (first match), `replaceAll`, `repeat`, `concat`,
+    `padStart`, `padEnd`, `toString`, `valueOf`
+  - **arrays**: `push`, `pop`, `shift`, `unshift`, `indexOf`,
+    `lastIndexOf`, `includes`, `slice`, `concat`, `join`,
+    `reverse`, `forEach`, `map`, `filter`, `find`, `findIndex`,
+    `some`, `every`, `reduce`, `sort`, `flat`
+  - **`Math`**: `abs`, `floor`, `ceil`, `round`, `trunc`, `sign`,
+    `sqrt`, `log`, `log2`, `log10`, `exp`, `sin`, `cos`, `tan`,
+    `asin`, `acos`, `atan`, `atan2`, `pow`, `min`, `max`,
+    `random`, plus `PI`, `E`, `LN2`, `LN10`, `LOG2E`, `LOG10E`,
+    `SQRT2`, `SQRT1_2`
+  - **`Number`**: `isFinite`, `isNaN`, `isInteger`, plus
+    `MAX_SAFE_INTEGER` / `MIN_SAFE_INTEGER` / `MAX_VALUE` /
+    `MIN_VALUE` / `EPSILON` / `POSITIVE_INFINITY` /
+    `NEGATIVE_INFINITY` / `NaN`
+  - **globals**: `parseInt` (with radix and `0x` prefix),
+    `parseFloat`, `isNaN`, `isFinite`, `Infinity`, `NaN`,
+    `undefined`
+  - **`JSON`**: `parse`, `stringify` (whole-number floats render
+    as integers; class internal markers and undefined/function
+    values are skipped; supports the indent argument)
+  - **`Object`**: `create`, `keys`, `values`, `entries`,
+    `assign`, `freeze` (no-op), `fromEntries`
+  - **`Array`**: `isArray`, `from`, `of`
+  - **`Boolean`**: coercion constructor
+  - **error constructors**: `Error`, `TypeError`, `RangeError`,
+    `ReferenceError`, `SyntaxError`
 - async surface:
   - `Promise`
   - `Promise.resolve(...)`
@@ -104,12 +145,66 @@ Related strategy docs:
 
 ### Language surface still deferred
 
-- modules
-- generators
-- `for` / `switch`
-- destructuring
-- classes beyond current supported slice if needed
-- private static methods/fields edge-case hardening
+In rough priority order — landing any one of these unlocks a real
+chunk of programs.
+
+1. **`for...of` / `for...in`** — iterator protocol or special-cased
+   forms for arrays and objects
+2. **`switch` / `case`** — fall-through, `default`, `break`
+3. **destructuring** — `let { a, b } = obj`, `let [x, y] = arr`,
+   defaults, rest
+4. **default and rest function parameters** —
+   `function f(x = 1, ...rest)`
+5. **spread** — `f(...args)`, `[...a, ...b]`, `{...other}`
+6. **computed object keys + shorthand** — `{ [k]: v }`, `{ x }`,
+   method shorthand on object literals, getters/setters in object
+   literals
+7. **optional chaining `?.`** — pairs naturally with the existing
+   `??`
+8. **bitwise** — `& | ^ ~ << >> >>>` (JS uses 32-bit signed ints
+   with ToInt32/ToUint32 coercions)
+9. **`delete`, `void`** — small individual fixes
+10. **regex literals + `RegExp` builtin** — could lean on Python
+    `re`, but the `/` token disambiguation needs lookback context
+    in the tokenizer (today `/` is always SLASH)
+11. **iterators and generators** — `function*`, `yield`. Big.
+12. **Symbol** — moderate. Required by full iterator protocol.
+13. **`Map` / `Set` / `WeakMap` / `WeakSet`** — moderate
+14. **`Date`** — small for basics, large for full impl
+15. **modules** (`import` / `export`) — large
+16. **classes**: private static method/field edge cases,
+    decorators, `static {}` blocks
+17. **labeled statements** + labeled `break` / `continue`
+
+### Known limitations of currently-implemented features
+
+These are landed but with caveats worth fixing in their own slices.
+
+- **`for (let i = 0; ...)` does not yet create a per-iteration
+  binding.** Closures over `i` see the final value (3,3,3 not
+  0,1,2). Behavior matches `var`. Spec calls for per-iter scope:
+  copy the let-bindings into a fresh child block at each iteration,
+  and re-bind the update's result into the next iteration's child.
+- **Async loops with `await` inside don't work.** The async path
+  delegates `while` / `for` to the sync evaluator, which raises on
+  `AwaitExpr`. Loops without await are fine. Fixing this needs a
+  continuation-style loop in the async path — handle `await` as a
+  resumption point, evaluate test/update through
+  `_evaluate_async_expr`, re-enter the body lambda each iteration.
+- **Compound assignment double-evaluates index targets.**
+  `arr[fn()] += 1` calls `fn()` twice (read + write). Identifier
+  and MemberExpr targets are safe. Fix: cache the index between
+  the read and the write.
+- **`-2 ** 3` parses to `-8`.** JS spec calls this a SyntaxError
+  because of the unary-vs-binary ambiguity. We accept it.
+- **`??` mixes freely with `||` and `&&`.** JS spec requires
+  parentheses (`a ?? b || c` is a SyntaxError); we don't enforce
+  the parse-time check.
+- **Function self-name binding inside `JavaScriptFunction.call` is
+  `kind="const"`.** A `var <fn-name> = ...` inside the function
+  body would raise SyntaxError under the new redecl check. Rare
+  but exists; demote to a special internal kind if a real program
+  hits it.
 
 ## Recommended Order
 
