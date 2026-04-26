@@ -1344,3 +1344,113 @@ def test_array_method_chain() -> None:
     assert evaluate_program(
         "[1,2,3,4,5].filter(x => x > 1).map(x => x * 10).reduce((a, b) => a + b, 0);"
     ) == 140.0
+
+
+def test_math_floor_ceil_round() -> None:
+    assert evaluate_expression("Math.floor(3.7)") == 3.0
+    assert evaluate_expression("Math.ceil(3.2)") == 4.0
+    assert evaluate_expression("Math.round(3.5)") == 4.0
+
+
+def test_math_sqrt_pow_pi() -> None:
+    assert evaluate_expression("Math.sqrt(16)") == 4.0
+    assert evaluate_expression("Math.pow(2, 10)") == 1024.0
+    assert evaluate_expression("Math.PI > 3.14 && Math.PI < 3.15") is True
+
+
+def test_math_min_max_with_nan() -> None:
+    assert evaluate_expression("Math.min(3, 1, 2)") == 1.0
+    assert evaluate_expression("Math.max(1, 2, 3)") == 3.0
+    result = evaluate_expression("Math.min(1, NaN)")
+    assert isinstance(result, float)
+    assert math.isnan(result)
+
+
+def test_parse_int_decimal() -> None:
+    assert evaluate_expression('parseInt("42")') == 42.0
+
+
+def test_parse_int_hex_prefix() -> None:
+    assert evaluate_expression('parseInt("0xff")') == 255.0
+
+
+def test_parse_int_with_radix() -> None:
+    assert evaluate_expression('parseInt("ff", 16)') == 255.0
+    assert evaluate_expression('parseInt("101", 2)') == 5.0
+
+
+def test_parse_float_with_trailing_garbage() -> None:
+    assert evaluate_expression('parseFloat("3.14abc")') == 3.14
+
+
+def test_global_isnan_and_isfinite() -> None:
+    assert evaluate_expression('isNaN("abc")') is True
+    assert evaluate_expression('isNaN("123")') is False
+    assert evaluate_expression('isFinite(1)') is True
+    assert evaluate_expression('isFinite(1/0)') is False
+
+
+def test_number_isnan_strict() -> None:
+    # Number.isNaN does NOT coerce; only true NaN qualifies.
+    assert evaluate_expression("Number.isNaN(NaN)") is True
+    assert evaluate_expression('Number.isNaN("abc")') is False
+
+
+def test_number_is_integer() -> None:
+    assert evaluate_expression("Number.isInteger(3)") is True
+    assert evaluate_expression("Number.isInteger(3.5)") is False
+
+
+def test_object_keys_values_entries() -> None:
+    assert evaluate_program("Object.keys({a:1, b:2, c:3});") == ["a", "b", "c"]
+    assert evaluate_program("Object.values({a:1, b:2, c:3});") == [1.0, 2.0, 3.0]
+    assert evaluate_program("Object.entries({a:1, b:2});") == [["a", 1.0], ["b", 2.0]]
+
+
+def test_object_assign_merges_sources() -> None:
+    result = evaluate_program("Object.assign({a:1}, {b:2}, {c:3});")
+    assert result == {"a": 1.0, "b": 2.0, "c": 3.0}
+
+
+def test_object_keys_skips_internal_markers_on_class_instance() -> None:
+    result = evaluate_program(
+        "class P { constructor() { this.x = 1; this.y = 2; } } "
+        "Object.keys(new P());"
+    )
+    assert result == ["x", "y"]
+
+
+def test_array_is_array_and_from() -> None:
+    assert evaluate_expression("Array.isArray([1,2,3])") is True
+    assert evaluate_expression('Array.isArray("abc")') is False
+    assert evaluate_program('Array.from("abc");') == ["a", "b", "c"]
+
+
+def test_json_stringify_basic() -> None:
+    # Whole-number floats render without the .0 suffix.
+    assert evaluate_program('JSON.stringify({a:1, b:[2,3]});') == '{"a":1,"b":[2,3]}'
+
+
+def test_json_stringify_skips_class_internal_markers() -> None:
+    result = evaluate_program(
+        "class P { constructor() { this.x = 1; this.y = 2; } } "
+        "JSON.stringify(new P());"
+    )
+    assert result == '{"x":1,"y":2}'
+
+
+def test_json_parse_basic() -> None:
+    result = evaluate_program('JSON.parse(\'{"a":1,"b":[2,3]}\');')
+    assert result == {"a": 1.0, "b": [2.0, 3.0]}
+
+
+def test_json_round_trip() -> None:
+    result = evaluate_program(
+        'JSON.parse(JSON.stringify({x:1, y:[2,3], z:"hi"}));'
+    )
+    assert result == {"x": 1.0, "y": [2.0, 3.0], "z": "hi"}
+
+
+def test_json_stringify_with_indent() -> None:
+    result = evaluate_program("JSON.stringify({a:1}, null, 2);")
+    assert result == '{\n  "a": 1\n}'
