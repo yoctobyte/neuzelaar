@@ -163,7 +163,42 @@ def test_ifc_white_space_pre_preserves_newlines_and_spaces() -> None:
     _, placements = layout_block(root, viewport_width=400)
 
     texts = [p for p in placements if isinstance(p, TextPlacement)]
-    assert len(texts) == 2
-    assert texts[0].text == "one  two"
-    assert texts[1].text == "three"
-    assert texts[1].y > texts[0].y
+    lines: dict[int, str] = {}
+    for item in texts:
+        lines.setdefault(item.y, "")
+        lines[item.y] += item.text
+    ordered = [lines[y] for y in sorted(lines)]
+    assert ordered == ["one  two", "three"]
+
+
+def test_ifc_white_space_pre_wrap_wraps_long_preserved_text() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"style": "white-space: pre-wrap"})
+    append_child(document, paragraph)
+    append_child(paragraph, Text(id=NodeId("t"), data="alpha  beta  gamma  delta"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=100)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    assert len({p.y for p in texts}) >= 2
+
+
+def test_ifc_white_space_pre_line_collapses_spaces_but_keeps_newlines() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"style": "white-space: pre-line"})
+    append_child(document, paragraph)
+    append_child(paragraph, Text(id=NodeId("t"), data="one   two\nthree"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=400)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    lines: dict[int, str] = {}
+    for item in texts:
+        lines.setdefault(item.y, "")
+        lines[item.y] += item.text
+    ordered = [lines[y] for y in sorted(lines)]
+    assert ordered == ["one two", "three"]

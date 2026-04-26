@@ -752,10 +752,27 @@ def _preserved_text_fragments(
         normalized = "\n".join(" ".join(line.split()) for line in normalized.split("\n"))
     parts = normalized.split("\n")
     for index, part in enumerate(parts):
-        if part:
-            fragments.append(_InlineFragment(kind="text", text=part, style=style))
+        fragments.extend(_preserved_line_fragments(part, style))
         if index < len(parts) - 1:
             fragments.append(_InlineFragment(kind="break", style=style))
+    return fragments
+
+
+def _preserved_line_fragments(text: str, style: ComputedStyle) -> list[_InlineFragment]:
+    if text == "":
+        return []
+    fragments: list[_InlineFragment] = []
+    token = text[0]
+    token_is_space = text[0].isspace()
+    for char in text[1:]:
+        is_space = char.isspace()
+        if is_space == token_is_space:
+            token += char
+            continue
+        fragments.append(_InlineFragment(kind="text", text=token, style=style))
+        token = char
+        token_is_space = is_space
+    fragments.append(_InlineFragment(kind="text", text=token, style=style))
     return fragments
 
 
@@ -869,7 +886,8 @@ def _layout_inline_context(
             word_width = _measure_text(fragment.text, fs)
             white_space = (fragment.style or parent_style).white_space
             no_wrap = white_space in {"nowrap", "pre"}
-            space_width = _measure_text(" ", fs) if line_items and fragment.leading_space else 0
+            preserve_spaces = white_space in {"pre", "pre-wrap", "pre-line"}
+            space_width = 0 if preserve_spaces else (_measure_text(" ", fs) if line_items and fragment.leading_space else 0)
             # Wrap if this word would overflow. Always place at least
             # one fragment on an empty line, even if oversized.
             if not no_wrap and cursor_x + space_width + word_width > line_x_start + line_max_width and line_items:

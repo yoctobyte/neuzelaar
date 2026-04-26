@@ -512,6 +512,44 @@ def test_compute_styles_supports_last_child_pseudo_class() -> None:
     assert styles[NodeId("second")].color == "teal"
 
 
+def test_compute_styles_supports_nth_child_numeric() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    first = Element(id=NodeId("first"), tag="p")
+    second = Element(id=NodeId("second"), tag="p")
+    third = Element(id=NodeId("third"), tag="p")
+    append_child(document, body)
+    append_child(body, first)
+    append_child(body, second)
+    append_child(body, third)
+
+    styles = compute_styles(document, parse_stylesheet("p:nth-child(2) { color: purple }"))
+
+    assert styles[NodeId("first")].color != "purple"
+    assert styles[NodeId("second")].color == "purple"
+    assert styles[NodeId("third")].color != "purple"
+
+
+def test_compute_styles_supports_nth_child_odd_even() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    first = Element(id=NodeId("first"), tag="p")
+    second = Element(id=NodeId("second"), tag="p")
+    third = Element(id=NodeId("third"), tag="p")
+    append_child(document, body)
+    append_child(body, first)
+    append_child(body, second)
+    append_child(body, third)
+
+    odd_styles = compute_styles(document, parse_stylesheet("p:nth-child(odd) { color: brown }"))
+    even_styles = compute_styles(document, parse_stylesheet("p:nth-child(even) { color: navy }"))
+
+    assert odd_styles[NodeId("first")].color == "brown"
+    assert odd_styles[NodeId("second")].color != "brown"
+    assert odd_styles[NodeId("third")].color == "brown"
+    assert even_styles[NodeId("second")].color == "navy"
+
+
 def test_compute_styles_keeps_text_decoration() -> None:
     document = Document(id=NodeId("doc"))
     link = Element(id=NodeId("link"), tag="a")

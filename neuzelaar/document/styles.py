@@ -690,10 +690,12 @@ def _matches_simple_selector(node: Element, selector: str) -> bool:
             if not _matches_attribute(actual, operator, expected):
                 return False
     if parsed.pseudo_classes:
-        for pseudo in parsed.pseudo_classes:
+        for pseudo, arg in parsed.pseudo_classes:
             if pseudo == "first-child" and _previous_element_sibling(node) is not None:
                 return False
             if pseudo == "last-child" and _next_element_sibling(node) is not None:
+                return False
+            if pseudo == "nth-child" and not _matches_nth_child(node, arg):
                 return False
     return (
         parsed.tag is not None
@@ -769,7 +771,7 @@ class _SimpleSelector:
     id_name: str | None
     classes: tuple[str, ...]
     attributes: tuple[tuple[str, str, str | None], ...]
-    pseudo_classes: tuple[str, ...]
+    pseudo_classes: tuple[tuple[str, str | None], ...]
 
 
 def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
@@ -780,7 +782,7 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
     id_name: str | None = None
     classes: list[str] = []
     attributes: list[tuple[str, str, str | None]] = []
-    pseudo_classes: list[str] = []
+    pseudo_classes: list[tuple[str, str | None]] = []
     token = ""
     mode = "tag"
     index = 0
@@ -823,12 +825,19 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
                     classes.append(token)
             token = ""
             end = index + 1
-            while end < len(text) and text[end] not in "#.:[":  # pseudo-class only
+            while end < len(text) and text[end] not in "#.:[(":
                 end += 1
             pseudo = text[index + 1 : end].strip().lower()
-            if pseudo not in {"first-child", "last-child"}:
+            arg: str | None = None
+            if end < len(text) and text[end] == "(":
+                close = text.find(")", end)
+                if close == -1:
+                    return None
+                arg = text[end + 1 : close].strip().lower()
+                end = close + 1
+            if pseudo not in {"first-child", "last-child", "nth-child"}:
                 return None
-            pseudo_classes.append(pseudo)
+            pseudo_classes.append((pseudo, arg))
             mode = "tag"
             index = end
             continue
@@ -951,6 +960,35 @@ def _next_element_sibling(node: Element) -> Element | None:
             continue
         if seen and isinstance(child, Element):
             return child
+    return None
+
+
+def _matches_nth_child(node: Element, arg: str | None) -> bool:
+    if arg is None:
+        return False
+    index = _element_child_index(node)
+    if index is None:
+        return False
+    if arg == "odd":
+        return index % 2 == 1
+    if arg == "even":
+        return index % 2 == 0
+    try:
+        return index == int(arg)
+    except ValueError:
+        return False
+
+
+def _element_child_index(node: Element) -> int | None:
+    parent = node.parent
+    if not isinstance(parent, (Document, Element)):
+        return None
+    index = 0
+    for child in parent.children:
+        if isinstance(child, Element):
+            index += 1
+        if child is node:
+            return index
     return None
 
 
