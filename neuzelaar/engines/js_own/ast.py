@@ -45,6 +45,13 @@ class AwaitExpr(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class ConditionalExpr(Expr):
+    test: Expr
+    consequent: Expr
+    alternate: Expr
+
+
+@dataclass(frozen=True, slots=True)
 class Identifier(Expr):
     name: str
 

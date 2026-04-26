@@ -23,6 +23,7 @@ from neuzelaar.engines.js_own.ast import (
     ClassExpr,
     ClassField,
     ClassMethod,
+    ConditionalExpr,
     ContinueStatement,
     Expr,
     ExpressionStatement,
@@ -774,6 +775,19 @@ def _evaluate_async_expr(expr: Expr, environment: Environment, *, on_value, on_e
     if isinstance(expr, BinaryExpr):
         _evaluate_async_binary(expr, environment, on_value=on_value, on_error=on_error)
         return
+    if isinstance(expr, ConditionalExpr):
+        _evaluate_async_expr(
+            expr.test,
+            environment,
+            on_value=lambda test: _evaluate_async_expr(
+                expr.consequent if js_truthy(test) else expr.alternate,
+                environment,
+                on_value=on_value,
+                on_error=on_error,
+            ),
+            on_error=on_error,
+        )
+        return
     if isinstance(expr, CallExpr):
         _evaluate_async_call(expr, environment, on_value=on_value, on_error=on_error)
         return
@@ -1470,6 +1484,10 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             evaluate_expr(expr.object, environment),
             evaluate_expr(expr.index, environment),
         )
+    if isinstance(expr, ConditionalExpr):
+        if js_truthy(evaluate_expr(expr.test, environment)):
+            return evaluate_expr(expr.consequent, environment)
+        return evaluate_expr(expr.alternate, environment)
     if isinstance(expr, BinaryExpr):
         if expr.operator == "&&":
             left = evaluate_expr(expr.left, environment)

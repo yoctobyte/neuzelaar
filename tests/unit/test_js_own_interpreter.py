@@ -1064,3 +1064,41 @@ def test_decrement_works_in_for_loop_update() -> None:
 
 def test_decrement_works_on_index_target() -> None:
     assert evaluate_program("var a = [3, 3]; a[0]--; a[0];") == 2.0
+
+
+def test_ternary_conditional_basic() -> None:
+    assert evaluate_expression('1 < 2 ? "yes" : "no"') == "yes"
+    assert evaluate_expression('1 > 2 ? "yes" : "no"') == "no"
+
+
+def test_ternary_is_right_associative() -> None:
+    assert (
+        evaluate_program('var x = 2; x === 1 ? "one" : x === 2 ? "two" : "other";')
+        == "two"
+    )
+
+
+def test_ternary_lower_precedence_than_addition() -> None:
+    # 1 + 2 binds first; the truthy 3 selects "yes".
+    assert evaluate_expression('1 + 2 ? "yes" : "no"') == "yes"
+
+
+def test_ternary_works_inside_async_function() -> None:
+    promise = evaluate_program(
+        'async function f() { return 1 < 2 ? "yes" : "no"; } f();'
+    )
+    assert promise.state == "fulfilled"
+    assert promise.value == "yes"
+
+
+def test_ternary_branches_can_contain_assignments() -> None:
+    result = evaluate_program(
+        "var a = 0; var b = 0; true ? (a = 1) : (b = 1); a + b * 10;"
+    )
+    assert result == 1.0
+
+
+def test_parenthesised_assignment_no_longer_misparsed_as_arrow() -> None:
+    # Used to fail: (a = 5) entered the arrow-detection path and raised
+    # before the speculative parse could roll back.
+    assert evaluate_program("var a; (a = 5); a;") == 5.0

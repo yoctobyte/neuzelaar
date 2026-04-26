@@ -18,6 +18,7 @@ from neuzelaar.engines.js_own.ast import (
     ClassExpr,
     ClassField,
     ClassMethod,
+    ConditionalExpr,
     ContinueStatement,
     Expr,
     ExpressionStatement,
@@ -53,6 +54,7 @@ from neuzelaar.engines.js_own.tokenizer import Token, tokenize
 
 PRECEDENCE = {
     "EQUAL": 1,
+    "QUESTION": 1,
     "||": 2,
     "&&": 3,
     "==": 4,
@@ -154,7 +156,8 @@ class Parser:
                 params.append(str(self._advance().value))
                 if not self._match("COMMA"):
                     break
-        self._consume("RPAREN", "Expected ')' after arrow parameters")
+        if not self._match("RPAREN"):
+            return None
         return tuple(params)
 
     def parse_program(self) -> Program:
@@ -591,6 +594,11 @@ class Parser:
             if not isinstance(left, (Identifier, MemberExpr, IndexExpr)):
                 raise JavaScriptSyntaxError(f"Invalid assignment target at offset {token.offset}")
             return AssignmentExpr(target=left, value=self.parse_expression(PRECEDENCE["EQUAL"] - 1))
+        if token.kind == "QUESTION":
+            consequent = self.parse_expression()
+            self._consume("COLON", "Expected ':' in ternary expression")
+            alternate = self.parse_expression()
+            return ConditionalExpr(test=left, consequent=consequent, alternate=alternate)
         precedence = PRECEDENCE[token.kind]
         right = self.parse_expression(precedence)
         return BinaryExpr(left=left, operator=token.lexeme, right=right)

@@ -73,6 +73,7 @@ SINGLE_CHAR_TOKENS = {
     ";": "SEMICOLON",
     "<": "LT",
     ">": "GT",
+    "?": "QUESTION",
 }
 
 
