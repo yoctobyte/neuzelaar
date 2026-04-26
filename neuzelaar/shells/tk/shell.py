@@ -118,6 +118,11 @@ class TkShell:
                 config.set("ui.zoom", f"{snapped:g}")
                 self.settings.zoom = float(snapped)
 
+        action_bar = ttk.Frame(root)
+        action_bar.pack(side=tk.TOP, fill=tk.X)
+        action_separator = ttk.Separator(root, orient=tk.HORIZONTAL)
+        action_separator.pack(side=tk.TOP, fill=tk.X)
+
         split = ttk.PanedWindow(root, orient=tk.HORIZONTAL)
         split.pack(fill=tk.BOTH, expand=True)
 
@@ -351,6 +356,50 @@ class TkShell:
                     show_error(exc)
 
         config.subscribe("policy.profile", on_profile_changed)
+
+        # -- action bar: content toggles + profile selector ----------
+        # Wired here (rather than at action_bar creation time) because
+        # the toggle handlers need access to present/show_error and the
+        # reload helpers, which are defined above.
+
+        def make_toggle(label: str, key: str) -> ttk.Checkbutton:
+            var = tk.BooleanVar(value=bool(config.get(key)))
+
+            def on_click() -> None:
+                try:
+                    config.set(key, var.get())
+                except (KeyError, ValueError):
+                    var.set(not var.get())
+                    return
+                if last_result[0] is not None:
+                    try:
+                        present(*self.reload_to_frame(width=current_width[0]))
+                    except Exception as exc:
+                        show_error(exc)
+
+            btn = ttk.Checkbutton(action_bar, text=label, variable=var, command=on_click)
+            btn.pack(side=tk.LEFT, padx=4, pady=4)
+            config.subscribe(key, lambda value: var.set(bool(value)))
+            return btn
+
+        ttk.Label(action_bar, text="Allow:").pack(side=tk.LEFT, padx=(8, 4), pady=4)
+        make_toggle("JavaScript", "content.javascript.enabled")
+        make_toggle("CSS", "content.css.enabled")
+        make_toggle("Images", "content.images.enabled")
+        make_toggle("Iframes", "content.iframes.enabled")
+
+        ttk.Separator(action_bar, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, fill=tk.Y, padx=8, pady=4
+        )
+        ttk.Label(action_bar, text="Profile:").pack(side=tk.LEFT, padx=(0, 4), pady=4)
+        for profile in (PolicyProfile.STRICT, PolicyProfile.BALANCED, PolicyProfile.COMPATIBILITY):
+            ttk.Radiobutton(
+                action_bar,
+                text=profile.value.capitalize(),
+                value=profile.value,
+                variable=profile_var,
+                command=switch_profile,
+            ).pack(side=tk.LEFT, padx=2, pady=4)
 
         menubar = tk.Menu(root)
         file_menu = tk.Menu(menubar, tearoff=False)
