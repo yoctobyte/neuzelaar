@@ -467,10 +467,22 @@ class TkShell:
         reload_button.configure(command=reload_page)
         address_entry.bind("<Return>", open_from_entry)
 
+        # Show the window first; defer the initial page load until after
+        # the event loop is running so the user sees the shell immediately
+        # instead of staring at an unrendered window while we fetch + lay out.
+        status_var.set(f"Loading {initial_url}…")
+        root.update_idletasks()
+        split.sashpos(0, self.default_split_position(window_width))
+
+        def load_initial() -> None:
+            try:
+                present(*self.render_url_to_frame(initial_url, width=current_width[0]))
+            except Exception as exc:
+                show_error(exc)
+
+        root.after(0, load_initial)
+
         try:
-            present(*self.render_url_to_frame(initial_url, width=current_width[0]))
-            root.update_idletasks()
-            split.sashpos(0, self.default_split_position(window_width))
             root.mainloop()
         finally:
             signal.signal(signal.SIGINT, previous_sigint)
