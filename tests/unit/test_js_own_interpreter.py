@@ -801,3 +801,37 @@ def test_computed_getter_and_setter_work() -> None:
     )
 
     assert result == 5.0
+
+
+def test_division_by_zero_yields_infinity() -> None:
+    assert evaluate_expression("1 / 0") == math.inf
+    assert evaluate_expression("-1 / 0") == -math.inf
+
+
+def test_zero_divided_by_zero_yields_nan() -> None:
+    result = evaluate_expression("0 / 0")
+    assert isinstance(result, float)
+    assert math.isnan(result)
+
+
+def test_modulo_by_zero_yields_nan() -> None:
+    result = evaluate_expression("5 % 0")
+    assert isinstance(result, float)
+    assert math.isnan(result)
+
+
+def test_modulo_with_negative_divisor_uses_truncated_division() -> None:
+    # JS: 5 % -2 === 1 (truncated division), not Python's -1 (floored).
+    assert evaluate_expression("5 % -2") == 1.0
+
+
+def test_nan_global_is_available() -> None:
+    result = evaluate_expression("NaN")
+    assert isinstance(result, float)
+    assert math.isnan(result)
+
+
+def test_infinity_globals_format_correctly_in_strings() -> None:
+    assert evaluate_expression('"" + (1 / 0)') == "Infinity"
+    assert evaluate_expression('"" + (-1 / 0)') == "-Infinity"
+    assert evaluate_expression('"" + NaN') == "NaN"

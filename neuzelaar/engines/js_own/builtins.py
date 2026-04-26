@@ -85,6 +85,7 @@ def install_builtins(environment) -> None:
     environment.declare("eval", HostCallable("eval", _eval), kind="const")
     environment.declare("undefined", None, kind="const")
     environment.declare("Infinity", float("inf"), kind="const")
+    environment.declare("NaN", float("nan"), kind="const")
     promise_constructor, queue_microtask = create_promise_builtins()
     environment.declare("Promise", promise_constructor, kind="const")
     environment.declare("queueMicrotask", queue_microtask, kind="const")

@@ -79,6 +79,31 @@ def js_add(left: object, right: object) -> object:
     return js_to_number(left) + js_to_number(right)
 
 
+def js_divide(left: object, right: object) -> float:
+    numerator = js_to_number(left)
+    divisor = js_to_number(right)
+    if math.isnan(numerator) or math.isnan(divisor):
+        return math.nan
+    if divisor == 0.0:
+        if numerator == 0.0:
+            return math.nan
+        sign = math.copysign(1.0, numerator) * math.copysign(1.0, divisor)
+        return math.copysign(math.inf, sign)
+    return numerator / divisor
+
+
+def js_modulo(left: object, right: object) -> float:
+    numerator = js_to_number(left)
+    divisor = js_to_number(right)
+    if math.isnan(numerator) or math.isnan(divisor):
+        return math.nan
+    if divisor == 0.0 or math.isinf(numerator):
+        return math.nan
+    if math.isinf(divisor):
+        return numerator
+    return math.fmod(numerator, divisor)
+
+
 def js_to_string(value: object) -> str:
     if value is None:
         return "null"
@@ -87,6 +112,10 @@ def js_to_string(value: object) -> str:
     if value is False:
         return "false"
     if isinstance(value, float):
+        if math.isnan(value):
+            return "NaN"
+        if math.isinf(value):
+            return "Infinity" if value > 0 else "-Infinity"
         if value.is_integer():
             return str(int(value))
         return str(value)

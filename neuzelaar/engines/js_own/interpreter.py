@@ -54,8 +54,10 @@ from neuzelaar.engines.js_own.parser import parse_expression as parse_expression
 from neuzelaar.engines.js_own.parser import parse_program as parse_program_ast
 from neuzelaar.engines.js_own.runtime import (
     js_add,
+    js_divide,
     js_error_object,
     js_loose_equal,
+    js_modulo,
     js_strict_equal,
     js_typeof,
     js_to_string,
@@ -860,9 +862,9 @@ def _apply_binary_operator(operator: str, left: object, right: object) -> object
     if operator == "*":
         return js_to_number(left) * js_to_number(right)
     if operator == "/":
-        return js_to_number(left) / js_to_number(right)
+        return js_divide(left, right)
     if operator == "%":
-        return js_to_number(left) % js_to_number(right)
+        return js_modulo(left, right)
     if operator == "<":
         return js_to_number(left) < js_to_number(right)
     if operator == ">":
@@ -1306,9 +1308,9 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         if expr.operator == "*":
             return js_to_number(left) * js_to_number(right)
         if expr.operator == "/":
-            return js_to_number(left) / js_to_number(right)
+            return js_divide(left, right)
         if expr.operator == "%":
-            return js_to_number(left) % js_to_number(right)
+            return js_modulo(left, right)
         if expr.operator == "<":
             return js_to_number(left) < js_to_number(right)
         if expr.operator == ">":
