@@ -919,3 +919,31 @@ def test_typeof_in_async_function_handles_undeclared() -> None:
     promise = evaluate_program("async function f() { return typeof undeclaredAsyncVar; } f();")
     assert promise.state == "fulfilled"
     assert promise.value == "undefined"
+
+
+def test_function_declaration_is_hoisted_above_first_call() -> None:
+    result = evaluate_program("var r = f(); function f() { return 42; } r;")
+    assert result == 42.0
+
+
+def test_var_is_hoisted_so_typeof_returns_undefined_before_init() -> None:
+    result = evaluate_program("function h() { return typeof y; var y = 1; } h();")
+    assert result == "undefined"
+
+
+def test_var_assignment_before_declaration_in_function_body() -> None:
+    result = evaluate_program("function g() { y = 5; var y; return y; } g();")
+    assert result == 5.0
+
+
+def test_function_decl_in_if_block_is_hoisted_to_function_scope() -> None:
+    result = evaluate_program(
+        "function w() { if (true) { function inner() { return 7; } } return inner(); } w();"
+    )
+    assert result == 7.0
+
+
+def test_bare_var_after_function_decl_does_not_overwrite() -> None:
+    # function f(){} var f;  — JS leaves f as the function (var without init is a no-op)
+    result = evaluate_program("function z() { return 9; } var z; typeof z;")
+    assert result == "function"

@@ -124,6 +124,7 @@ class JavaScriptFunction:
         for index, param in enumerate(self.params):
             value = arguments[index] if index < len(arguments) else JS_UNDEFINED
             call_env.declare(param, value, kind="var")
+        _hoist_declarations(self.body.statements, call_env)
         try:
             evaluate_statement(self.body, call_env)
             return JS_UNDEFINED
@@ -160,6 +161,7 @@ class JavaScriptArrowFunction:
             value = arguments[index] if index < len(arguments) else JS_UNDEFINED
             call_env.declare(param, value, kind="var")
         if isinstance(self.body, BlockStatement):
+            _hoist_declarations(self.body.statements, call_env)
             try:
                 evaluate_statement(self.body, call_env)
                 return JS_UNDEFINED
@@ -188,6 +190,7 @@ class JavaScriptAsyncFunction(JavaScriptFunction):
         for index, param in enumerate(self.params):
             value = arguments[index] if index < len(arguments) else JS_UNDEFINED
             call_env.declare(param, value, kind="var")
+        _hoist_declarations(self.body.statements, call_env)
         promise = JavaScriptPromise()
         _evaluate_async_statement(
             self.body,
@@ -208,6 +211,7 @@ class JavaScriptAsyncArrowFunction(JavaScriptArrowFunction):
             call_env.declare(param, value, kind="var")
         promise = JavaScriptPromise()
         if isinstance(self.body, BlockStatement):
+            _hoist_declarations(self.body.statements, call_env)
             _evaluate_async_statement(
                 self.body,
                 call_env,
@@ -459,6 +463,57 @@ def create_global_environment() -> Environment:
     return env
 
 
+def _hoist_declarations(statements: tuple[Stmt, ...] | list[Stmt], environment: Environment) -> None:
+    """Pre-declare var bindings and function declarations.
+
+    Mirrors JS hoisting: var bindings appear at function/program scope as
+    undefined before any statement runs; function declarations bind to the
+    function value before any statement runs (so calls earlier in source
+    can reach them). Walks into block-shaped statements (block, if/else,
+    while, try) but never into nested function or class bodies.
+    """
+    for statement in statements:
+        _hoist_one(statement, environment)
+
+
+def _hoist_one(statement: Stmt, environment: Environment) -> None:
+    if isinstance(statement, FunctionDeclaration):
+        function_cls = JavaScriptAsyncFunction if statement.is_async else JavaScriptFunction
+        function = function_cls(
+            name=statement.name,
+            params=statement.params,
+            body=statement.body,
+            closure=environment,
+        )
+        environment.declare(statement.name, function, kind="var")
+        return
+    if isinstance(statement, VariableDeclaration):
+        if statement.kind == "var":
+            target = environment.var_scope
+            assert target is not None
+            if statement.name not in target.values:
+                environment.declare(statement.name, JS_UNDEFINED, kind="var")
+        return
+    if isinstance(statement, BlockStatement):
+        _hoist_declarations(statement.statements, environment)
+        return
+    if isinstance(statement, IfStatement):
+        _hoist_one(statement.consequent, environment)
+        if statement.alternate is not None:
+            _hoist_one(statement.alternate, environment)
+        return
+    if isinstance(statement, WhileStatement):
+        _hoist_one(statement.body, environment)
+        return
+    if isinstance(statement, TryStatement):
+        _hoist_one(statement.body, environment)
+        if statement.catch_body is not None:
+            _hoist_one(statement.catch_body, environment)
+        if statement.finally_body is not None:
+            _hoist_one(statement.finally_body, environment)
+        return
+
+
 def _class_member_name(member: ClassMethod | ClassField, environment: Environment) -> str:
     if member.key_expr is None:
         assert member.name is not None
@@ -512,6 +567,9 @@ def _evaluate_async_statement(statement: Stmt, environment: Environment, *, on_c
         return
     if isinstance(statement, VariableDeclaration):
         if statement.initializer is None:
+            if statement.kind == "var":
+                on_complete(("normal", environment.get(statement.name)))
+                return
             environment.declare(statement.name, JS_UNDEFINED, kind=statement.kind)
             on_complete(("normal", JS_UNDEFINED))
             return
@@ -1021,6 +1079,7 @@ def evaluate_program_with_config(
 
 def evaluate_ast_program(program: Program, environment: Environment | None = None) -> object:
     env = environment or Environment()
+    _hoist_declarations(program.statements, env)
     value: object = None
     for statement in program.statements:
         value = evaluate_statement(statement, env)
@@ -1032,9 +1091,16 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
     if isinstance(statement, ExpressionStatement):
         return evaluate_expr(statement.expression, environment)
     if isinstance(statement, VariableDeclaration):
-        value = JS_UNDEFINED if statement.initializer is None else evaluate_expr(statement.initializer, environment)
-        environment.declare(statement.name, value, kind=statement.kind)
-        return value
+        if statement.initializer is not None:
+            value = evaluate_expr(statement.initializer, environment)
+            environment.declare(statement.name, value, kind=statement.kind)
+            return value
+        # No initializer: var was hoisted, so leave its current value alone.
+        # let without init declares undefined.
+        if statement.kind == "var":
+            return environment.get(statement.name)
+        environment.declare(statement.name, JS_UNDEFINED, kind=statement.kind)
+        return JS_UNDEFINED
     if isinstance(statement, FunctionDeclaration):
         function_cls = JavaScriptAsyncFunction if statement.is_async else JavaScriptFunction
         function = function_cls(
