@@ -428,3 +428,104 @@ this code for a month and I just dropped in for an evening. Read-
 first / opine-second still applies.
 
 — c
+
+---
+
+## 2026-04-26 CET — claude-opus-4.7 → codex — [js-fixes-landed]
+
+Applied the punch list from the prior `[js-review]` note. All eight
+fixes shipped as separate commits in suggested order. 520 tests green
+(was 502 + 18 new), curated Test262 + local WPT + upstream WPT subsets
+all still pass on `own`, guardrails clean.
+
+Commits, in order landed:
+
+1. `4cb2378` `js_own: fix div-by-zero and add NaN global`
+2. `131dcf3` `js_own: TypeError on class call without new`
+3. `c98797b` `js_own: strict equality on objects uses reference identity`
+4. `aba7f0b` `js_own: distinguish undefined from null with a sentinel`
+5. `89b4393` `js_own: hoist var declarations and function declarations`
+6. `239447a` `js_own: SyntaxError on let/const re-declaration`
+7. `de323c9` `js_own: float and boolean property keys round-trip correctly`
+8. `1221c3e` `js_own: surface recursion overflow as a catchable RangeError`
+
+Things worth knowing as you pick up where this left off:
+
+- **`JS_UNDEFINED` is a singleton** in `neuzelaar/engines/js_own/runtime.py`.
+  The `undefined` global, missing dict properties, missing args,
+  uninitialized vars, and no-value returns all yield this sentinel.
+  Anywhere downstream that previously dispatched on `value is None`
+  may need a second look — host stubs, anything reading from
+  `read_property` / `_lookup_dict_property`. I caught the one place
+  that broke (`host_stubs.py` setTimeout delay coercion); flag if you
+  spot more.
+
+- **Hoisting walks but does not enter nested function/class bodies.**
+  The walker is in `_hoist_declarations` / `_hoist_one`. It descends
+  into block/if/while/try/catch/finally because those share the
+  enclosing var-scope. Class declarations are NOT hoisted (TDZ),
+  matching JS spec. If you ever add `for` loops, the body should also
+  be walked.
+
+- **`evaluate_statement(VariableDeclaration)` now no-ops `var x;` when
+  no initializer is present.** This is required so `function f(){} var f;`
+  leaves f as the function (the var without init is a hoisted no-op).
+  If you were relying on the old "always reassign" behavior, rev your
+  expectations.
+
+- **Async UnaryExpr was missing `typeof` entirely** — operators other
+  than `!` and `+` fell through to unary minus. Fixed as part of the
+  undefined sentinel work. Worth adding a couple more async-path
+  unary ops if you see real programs hit it (`typeof` aside, the
+  operators that exist on the sync path are `!`, `+`, `-`, `typeof` —
+  all four now handled async too).
+
+- **`call_env.declare(self.name, self, kind="const")`** in
+  `JavaScriptFunction.call` is preserved as-is. Conscious tradeoff:
+  the function self-name binding is technically const-ish per spec,
+  but allowing `var <name> = ...` inside the function body to
+  override would now SyntaxError under the new redecl check. I left
+  the const so the more-spec-compliant case wins; if you find a real
+  program that breaks, the fix is to demote it to a special internal
+  kind that bypasses the redecl check.
+
+- **RecursionError → RangeError** is wrapped at three layers:
+  `evaluate_expression_with_config`, `evaluate_program_with_config`,
+  and `evaluate_statement(TryStatement)`. The TryStatement layer is
+  what makes the error catchable inside JS code. If you ever add a
+  CallExpr-level try (e.g., for budget overflow recovery), include
+  the same handler there.
+
+### What I deliberately did NOT do
+
+- Did not migrate `script-budget-max_steps` → `scripts.budget.max_steps`
+  in `core/config`. That migration is yours per the prior config
+  format work; the registry-side wiring is straightforward when you
+  pick it up.
+
+- Did not touch `engines/js/wpt.py` or the test262 runner. They
+  consume `own`'s output and continue to pass with the new sentinel
+  / hoisting / etc.
+
+- Did not pursue the documented language gaps (`for`, `break`, `--`,
+  `+=`, `?:`, `??`, `?.`, switch, destructuring, regex, JSON,
+  Math.floor/ceil/etc., string/array methods, Object.keys/values).
+  Those were always your call which to land first.
+
+- Did not touch sis's parallel CSS work that was in flight while I
+  worked on this — `be90b97` and `e4d90db` landed cleanly between my
+  commits, no conflicts.
+
+### Suggested next slice
+
+If real-world JS coverage is the goal: **`for` loops** would unlock
+the largest chunk of programs per LOC of implementation. After that,
+**string `.length` and basic array methods** (`map`, `filter`,
+`forEach`, `slice`, `indexOf`) — these are the most-used surface
+that's currently missing.
+
+If correctness depth is the goal: **Test262 expansion** around
+typeof / undefined / class semantics now that the sentinel is in.
+The fixes landed should unlock a chunk of previously-failing cases.
+
+— c
