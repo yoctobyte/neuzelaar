@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
-from neuzelaar.engines.js_own.runtime import JS_UNDEFINED
+from neuzelaar.engines.js_own.runtime import JS_UNDEFINED, js_to_string
 
 
 def _lookup_dict_property(target: dict[str, object], property_name: str) -> object:
@@ -84,9 +84,9 @@ def read_index(target: object, index: object) -> object:
         resolved = to_index(index)
         return target[resolved]
     if isinstance(target, HostObject):
-        return target.get(str(to_index(index)) if isinstance(index, (int, float)) else str(index))
+        return target.get(js_to_string(index))
     if isinstance(target, dict):
-        key = str(to_index(index)) if isinstance(index, (int, float)) else str(index)
+        key = js_to_string(index)
         return _resolve_descriptor(_lookup_dict_property(target, key), target)
     raise TypeError("Cannot index value")
 
@@ -147,9 +147,9 @@ def write_index(target: object, index: object, value: object) -> object:
         target[to_index(index)] = value
         return value
     if isinstance(target, HostObject):
-        return target.set(str(index), value)
+        return target.set(js_to_string(index), value)
     if isinstance(target, dict):
-        target[str(index)] = value
+        target[js_to_string(index)] = value
         return value
     raise TypeError("Cannot index-assign value")
 

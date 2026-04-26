@@ -966,3 +966,17 @@ def test_let_in_different_blocks_does_not_clash() -> None:
 
 def test_var_can_still_be_redeclared() -> None:
     assert evaluate_program("var x = 1; var x = 2; x;") == 2.0
+
+
+def test_float_property_key_round_trips() -> None:
+    assert evaluate_program('var o = {}; o[1.5] = "x"; o[1.5];') == "x"
+
+
+def test_integer_and_float_property_keys_collapse_for_whole_numbers() -> None:
+    # JS: o[1] and o[1.0] are the same key "1"
+    assert evaluate_program('var o = {}; o[1] = "a"; o[1.0];') == "a"
+
+
+def test_boolean_property_key_coerces_to_string() -> None:
+    # JS: o[true] === o["true"]
+    assert evaluate_program('var o = {}; o[true] = "b"; o["true"];') == "b"
