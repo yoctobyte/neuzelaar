@@ -730,7 +730,7 @@ def _layout_inline_context(
     def refresh_line_bounds() -> None:
         nonlocal line_x_start, line_max_width, cursor_x
         # Estimate a default line height for float overlap testing.
-        probe_h = _line_height(line_max_font_size or _font_size_px(parent_style))
+        probe_h = _line_height_px(parent_style, fallback_font_size=line_max_font_size or _font_size_px(parent_style))
         avail_left, avail_right = state.floats.constrain(
             cursor_y, probe_h, x0, x0 + content_width,
         )
@@ -744,11 +744,17 @@ def _layout_inline_context(
         nonlocal cursor_x, cursor_y, line_items, line_max_height, line_max_font_size
         if not line_items:
             if force:
-                cursor_y += _line_height(line_max_font_size or _font_size_px(parent_style))
+                cursor_y += _line_height_px(
+                    parent_style,
+                    fallback_font_size=line_max_font_size or _font_size_px(parent_style),
+                )
                 line_max_height = 0
                 line_max_font_size = 0
             return
-        line_box_height = max(line_max_height, _line_height(line_max_font_size or _font_size_px(parent_style)))
+        line_box_height = max(
+            line_max_height,
+            _line_height_px(parent_style, fallback_font_size=line_max_font_size or _font_size_px(parent_style)),
+        )
         # Baseline-align text / image fragments to the bottom of the
         # line box. Simple alphabetic baseline approximation: smaller
         # fonts lift up so their bottoms align with the tallest.
@@ -808,7 +814,10 @@ def _layout_inline_context(
             line_items.append((cursor_x, fragment))
             cursor_x += word_width
             line_max_font_size = max(line_max_font_size, fs)
-            line_max_height = max(line_max_height, _line_height(fs))
+            line_max_height = max(
+                line_max_height,
+                _line_height_px(fragment.style or parent_style, fallback_font_size=fs),
+            )
         else:  # image
             if cursor_x + fragment.width > line_x_start + line_max_width and line_items:
                 flush_line()
@@ -867,7 +876,7 @@ def _place_inline_or_text(
                 text_align=style.text_align,
             )
         )
-        return y + _line_height(font_size)
+        return y + _line_height_px(style, fallback_font_size=font_size)
 
     if box.kind == BoxKind.REPLACED and box.tag == "img":
         label = (box.element.attr("alt") if box.element is not None else None) or (
@@ -1077,5 +1086,28 @@ def _font_size_px(style: ComputedStyle) -> int:
     return 16
 
 
-def _line_height(font_size: int) -> int:
+def _line_height_px(style: ComputedStyle, *, fallback_font_size: int | None = None) -> int:
+    font_size = fallback_font_size if fallback_font_size is not None else _font_size_px(style)
+    value = style.line_height.strip().lower()
+    if not value or value == "normal":
+        return max(int(round(font_size * 1.3)), 10)
+    try:
+        return max(int(round(font_size * float(value))), 1)
+    except ValueError:
+        pass
+    if value.endswith("px"):
+        try:
+            return max(int(round(float(value[:-2]))), 1)
+        except ValueError:
+            return max(int(round(font_size * 1.3)), 10)
+    if value.endswith("em"):
+        try:
+            return max(int(round(font_size * float(value[:-2]))), 1)
+        except ValueError:
+            return max(int(round(font_size * 1.3)), 10)
+    if value.endswith("%"):
+        try:
+            return max(int(round(font_size * float(value[:-1]) / 100)), 1)
+        except ValueError:
+            return max(int(round(font_size * 1.3)), 10)
     return max(int(round(font_size * 1.3)), 10)

@@ -435,3 +435,38 @@ def test_compute_styles_supports_compound_attribute_selector() -> None:
     )
 
     assert styles[NodeId("p")].color == "crimson"
+
+
+def test_compute_styles_supports_attribute_contains_word_selector() -> None:
+    document = Document(id=NodeId("doc"))
+    item = Element(id=NodeId("item"), tag="div", attrs={"data-tags": "alpha beta gamma"})
+    append_child(document, item)
+
+    styles = compute_styles(document, parse_stylesheet('div[data-tags~="beta"] { color: seagreen }'))
+
+    assert styles[NodeId("item")].color == "seagreen"
+
+
+def test_compute_styles_supports_attribute_dash_prefix_selector() -> None:
+    document = Document(id=NodeId("doc"))
+    item = Element(id=NodeId("item"), tag="div", attrs={"lang": "en-US"})
+    append_child(document, item)
+
+    styles = compute_styles(document, parse_stylesheet('div[lang|="en"] { color: steelblue }'))
+
+    assert styles[NodeId("item")].color == "steelblue"
+
+
+def test_compute_styles_supports_attribute_prefix_suffix_and_substring_selectors() -> None:
+    document = Document(id=NodeId("doc"))
+    image = Element(id=NodeId("img"), tag="img", attrs={"src": "/assets/icons/logo-dark.png"})
+    append_child(document, image)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet(
+            'img[src^="/assets"][src*="logo"][src$=".png"] { color: orange }'
+        ),
+    )
+
+    assert styles[NodeId("img")].color == "orange"

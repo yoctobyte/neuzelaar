@@ -21,6 +21,7 @@ class ComputedStyle:
     font_weight: str = "normal"
     font_style: str = "normal"
     font_size: str = "16px"
+    line_height: str = "normal"
     display: str = "block"
     margin: str = "0"
     padding: str = "0"
@@ -50,6 +51,7 @@ SUPPORTED_PROPERTIES = {
     "font-weight",
     "height",
     "left",
+    "line-height",
     "margin",
     "margin-bottom",
     "margin-left",
@@ -76,6 +78,7 @@ INHERITED_PROPERTIES = {
     "font-size",
     "font-style",
     "font-weight",
+    "line-height",
     "text-align",
 }
 
@@ -226,6 +229,10 @@ def _style_from_declarations(
             _resolve_property_value("font-size", declarations, parent_style, initial_values),
             parent_style.font_size,
         ),
+        line_height=_normalize_line_height(
+            _resolve_property_value("line-height", declarations, parent_style, initial_values),
+            parent_style.line_height,
+        ),
         display=_normalize_display(
             _resolve_property_value("display", declarations, parent_style, initial_values)
         ),
@@ -284,6 +291,7 @@ def _initial_style_values() -> dict[str, str]:
         "font-weight": DEFAULT_FONT_WEIGHT,
         "height": "auto",
         "left": "auto",
+        "line-height": "normal",
         "margin": "0",
         "margin-bottom": "0",
         "margin-left": "0",
@@ -420,6 +428,27 @@ def _normalize_font_size(value: str, fallback: str) -> str:
     text = value.strip().lower()
     if text:
         return text
+    return fallback
+
+
+def _normalize_line_height(value: str, fallback: str) -> str:
+    text = value.strip().lower()
+    if not text:
+        return fallback
+    if text == "normal":
+        return text
+    try:
+        float(text)
+        return text
+    except ValueError:
+        pass
+    for suffix in ("px", "em", "%"):
+        if text.endswith(suffix):
+            try:
+                float(text[: -len(suffix)])
+                return text
+            except ValueError:
+                return fallback
     return fallback
 
 
@@ -623,11 +652,11 @@ def _matches_simple_selector(node: Element, selector: str) -> bool:
         if not all(name in classes for name in parsed.classes):
             return False
     if parsed.attributes:
-        for name, expected in parsed.attributes:
+        for name, operator, expected in parsed.attributes:
             actual = node.attr(name)
             if actual is None:
                 return False
-            if expected is not None and actual != expected:
+            if not _matches_attribute(actual, operator, expected):
                 return False
     return (
         parsed.tag is not None
@@ -701,7 +730,7 @@ class _SimpleSelector:
     tag: str | None
     id_name: str | None
     classes: tuple[str, ...]
-    attributes: tuple[tuple[str, str | None], ...]
+    attributes: tuple[tuple[str, str, str | None], ...]
 
 
 def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
@@ -711,7 +740,7 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
     tag: str | None = None
     id_name: str | None = None
     classes: list[str] = []
-    attributes: list[tuple[str, str | None]] = []
+    attributes: list[tuple[str, str, str | None]] = []
     token = ""
     mode = "tag"
     index = 0
@@ -793,24 +822,45 @@ def _find_attribute_selector_end(text: str, start: int) -> int | None:
     return None
 
 
-def _parse_attribute_selector(text: str) -> tuple[str, str | None] | None:
+def _parse_attribute_selector(text: str) -> tuple[str, str, str | None] | None:
     content = text.strip()
     if not content:
         return None
-    if "=" not in content:
-        return (content.lower(), None)
-    name, value = content.split("=", 1)
-    normalized_name = name.strip().lower()
-    normalized_value = value.strip()
-    if not normalized_name:
-        return None
-    if (
-        len(normalized_value) >= 2
-        and normalized_value[0] == normalized_value[-1]
-        and normalized_value[0] in {'"', "'"}
-    ):
-        normalized_value = normalized_value[1:-1]
-    return (normalized_name, normalized_value)
+    for operator in ("~=", "|=", "^=", "$=", "*=", "="):
+        if operator in content:
+            name, value = content.split(operator, 1)
+            normalized_name = name.strip().lower()
+            normalized_value = value.strip()
+            if not normalized_name:
+                return None
+            if (
+                len(normalized_value) >= 2
+                and normalized_value[0] == normalized_value[-1]
+                and normalized_value[0] in {'"', "'"}
+            ):
+                normalized_value = normalized_value[1:-1]
+            return (normalized_name, operator, normalized_value)
+    return (content.lower(), "exists", None)
+
+
+def _matches_attribute(actual: str, operator: str, expected: str | None) -> bool:
+    if operator == "exists":
+        return True
+    if expected is None:
+        return False
+    if operator == "=":
+        return actual == expected
+    if operator == "~=":
+        return expected in actual.split()
+    if operator == "|=":
+        return actual == expected or actual.startswith(f"{expected}-")
+    if operator == "^=":
+        return actual.startswith(expected)
+    if operator == "$=":
+        return actual.endswith(expected)
+    if operator == "*=":
+        return expected in actual
+    return False
 
 
 def _previous_element_sibling(node: Element) -> Element | None:

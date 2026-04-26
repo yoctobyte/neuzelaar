@@ -102,3 +102,34 @@ def test_ifc_empty_block_has_zero_height_contribution() -> None:
 
     assert not placements
     assert total == 0
+
+
+def test_ifc_line_height_number_increases_line_spacing() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"style": "line-height: 2"})
+    append_child(document, paragraph)
+    append_child(paragraph, Text(id=NodeId("t"), data="one two three four five six seven eight nine ten"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=120)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    first_line_y = min(p.y for p in texts)
+    second_line_y = sorted({p.y for p in texts})[1]
+
+    assert second_line_y - first_line_y >= 28
+
+
+def test_ifc_line_height_px_affects_single_text_box_height() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"style": "line-height: 40px"})
+    append_child(document, paragraph)
+    append_child(paragraph, Text(id=NodeId("t"), data="hello"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    total, placements = layout_block(root, viewport_width=400)
+
+    assert len([p for p in placements if isinstance(p, TextPlacement)]) == 1
+    assert total >= 40
