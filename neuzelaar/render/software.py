@@ -89,6 +89,7 @@ def rasterize(display_list: DisplayList) -> Frame:
             if fully_outside(x, op.y, est_w, op.font_size + 4):
                 continue
             draw.text((x, op.y), op.text, fill=_color_tuple(op.color), font=font)
+            _draw_text_decoration(draw, op, x, font)
         elif isinstance(op, DrawImage):
             if op.y >= clamped_height:
                 continue
@@ -132,6 +133,20 @@ def _aligned_text_x(op: DrawText, font) -> int:
     if op.align == "right":
         return op.x + max(op.max_width - text_width, 0)
     return op.x
+
+
+def _draw_text_decoration(draw, op: DrawText, x: int, font) -> None:
+    decoration = op.text_decoration.strip().lower()
+    if decoration == "none" or not decoration:
+        return
+    text_width = int(round(font.getlength(op.text)))
+    color = _color_tuple(op.color)
+    if "underline" in decoration:
+        y = op.y + max(int(round(op.font_size * 1.05)), op.font_size)
+        draw.line((x, y, x + text_width, y), fill=color, width=max(op.font_size // 14, 1))
+    if "line-through" in decoration:
+        y = op.y + max(int(round(op.font_size * 0.55)), 1)
+        draw.line((x, y, x + text_width, y), fill=color, width=max(op.font_size // 14, 1))
 
 
 @lru_cache(maxsize=16)

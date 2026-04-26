@@ -470,3 +470,43 @@ def test_compute_styles_supports_attribute_prefix_suffix_and_substring_selectors
     )
 
     assert styles[NodeId("img")].color == "orange"
+
+
+def test_compute_styles_supports_first_child_pseudo_class() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    first = Element(id=NodeId("first"), tag="p")
+    second = Element(id=NodeId("second"), tag="p")
+    append_child(document, body)
+    append_child(body, first)
+    append_child(body, second)
+
+    styles = compute_styles(document, parse_stylesheet("p:first-child { color: navy }"))
+
+    assert styles[NodeId("first")].color == "navy"
+    assert styles[NodeId("second")].color != "navy"
+
+
+def test_compute_styles_supports_last_child_pseudo_class() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    first = Element(id=NodeId("first"), tag="p")
+    second = Element(id=NodeId("second"), tag="p")
+    append_child(document, body)
+    append_child(body, first)
+    append_child(body, second)
+
+    styles = compute_styles(document, parse_stylesheet("p:last-child { color: teal }"))
+
+    assert styles[NodeId("first")].color != "teal"
+    assert styles[NodeId("second")].color == "teal"
+
+
+def test_compute_styles_keeps_text_decoration() -> None:
+    document = Document(id=NodeId("doc"))
+    link = Element(id=NodeId("link"), tag="a")
+    append_child(document, link)
+
+    styles = compute_styles(document, parse_stylesheet("a { text-decoration: underline }"))
+
+    assert styles[NodeId("link")].text_decoration == "underline"

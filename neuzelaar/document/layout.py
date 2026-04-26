@@ -46,6 +46,7 @@ class LayoutText:
     font_size: int
     font_weight: str = "normal"
     font_style: str = "normal"
+    text_decoration: str = "none"
     max_width: int = 0
     text_align: str = "left"
 
@@ -116,6 +117,7 @@ def layout_document(
                 font_size=title_font_size,
                 font_weight=base_style.font_weight,
                 font_style=base_style.font_style,
+                text_decoration=base_style.text_decoration,
                 max_width=viewport_width,
                 text_align=base_style.text_align,
             )
@@ -151,6 +153,7 @@ def _to_layout_item(placement, *, dx: int, dy: int) -> LayoutItem:
             font_size=placement.font_size,
             font_weight=placement.font_weight,
             font_style=placement.font_style,
+            text_decoration=placement.text_decoration,
             max_width=placement.max_width,
             text_align=placement.text_align,
         )

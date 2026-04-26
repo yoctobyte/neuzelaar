@@ -75,3 +75,14 @@ def test_build_display_list_preserves_font_weight_and_style() -> None:
 
     assert text_op.font_weight == "bold"
     assert text_op.font_style == "italic"
+
+
+def test_build_display_list_preserves_text_decoration() -> None:
+    display_list = build_display_list(
+        document_from_fixture("example.html"),
+        root_style=ComputedStyle(text_decoration="underline"),
+    )
+
+    text_op = next(op for op in display_list.ops if isinstance(op, DrawText))
+
+    assert text_op.text_decoration == "underline"

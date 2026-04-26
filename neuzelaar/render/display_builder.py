@@ -63,6 +63,7 @@ def build_display_list(
                     sx(item.font_size),
                     font_weight=item.font_weight,
                     font_style=item.font_style,
+                    text_decoration=item.text_decoration,
                     max_width=sx(item.max_width),
                     align=item.text_align,
                 )

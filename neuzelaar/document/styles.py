@@ -22,6 +22,7 @@ class ComputedStyle:
     font_style: str = "normal"
     font_size: str = "16px"
     line_height: str = "normal"
+    text_decoration: str = "none"
     display: str = "block"
     margin: str = "0"
     padding: str = "0"
@@ -66,6 +67,7 @@ SUPPORTED_PROPERTIES = {
     "position",
     "right",
     "text-align",
+    "text-decoration",
     "top",
     "width",
     "z-index",
@@ -233,6 +235,9 @@ def _style_from_declarations(
             _resolve_property_value("line-height", declarations, parent_style, initial_values),
             parent_style.line_height,
         ),
+        text_decoration=_normalize_text_decoration(
+            _resolve_property_value("text-decoration", declarations, parent_style, initial_values)
+        ),
         display=_normalize_display(
             _resolve_property_value("display", declarations, parent_style, initial_values)
         ),
@@ -306,6 +311,7 @@ def _initial_style_values() -> dict[str, str]:
         "position": "static",
         "right": "auto",
         "text-align": "left",
+        "text-decoration": "none",
         "top": "auto",
         "width": "auto",
         "z-index": "auto",
@@ -452,6 +458,16 @@ def _normalize_line_height(value: str, fallback: str) -> str:
     return fallback
 
 
+def _normalize_text_decoration(value: str) -> str:
+    text = " ".join(value.strip().lower().split())
+    if not text:
+        return "none"
+    if text == "none":
+        return text
+    supported = [part for part in text.split() if part in {"underline", "line-through"}]
+    return " ".join(supported) if supported else "none"
+
+
 def _normalize_display(value: str) -> str:
     text = value.strip().lower()
     if text:
@@ -541,7 +557,7 @@ def _selector_specificity(selector: str) -> tuple[int, int, int]:
         if parsed is None:
             continue
         ids += 1 if parsed.id_name is not None else 0
-        classes += len(parsed.classes) + len(parsed.attributes)
+        classes += len(parsed.classes) + len(parsed.attributes) + len(parsed.pseudo_classes)
         tags += 1 if parsed.tag not in (None, "*") else 0
     return (ids, classes, tags)
 
@@ -658,11 +674,18 @@ def _matches_simple_selector(node: Element, selector: str) -> bool:
                 return False
             if not _matches_attribute(actual, operator, expected):
                 return False
+    if parsed.pseudo_classes:
+        for pseudo in parsed.pseudo_classes:
+            if pseudo == "first-child" and _previous_element_sibling(node) is not None:
+                return False
+            if pseudo == "last-child" and _next_element_sibling(node) is not None:
+                return False
     return (
         parsed.tag is not None
         or parsed.id_name is not None
         or bool(parsed.classes)
         or bool(parsed.attributes)
+        or bool(parsed.pseudo_classes)
     )
 
 
@@ -731,6 +754,7 @@ class _SimpleSelector:
     id_name: str | None
     classes: tuple[str, ...]
     attributes: tuple[tuple[str, str, str | None], ...]
+    pseudo_classes: tuple[str, ...]
 
 
 def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
@@ -741,6 +765,7 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
     id_name: str | None = None
     classes: list[str] = []
     attributes: list[tuple[str, str, str | None]] = []
+    pseudo_classes: list[str] = []
     token = ""
     mode = "tag"
     index = 0
@@ -768,6 +793,29 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
             attributes.append(attribute)
             mode = "tag"
             index = end + 1
+            continue
+        if char == ":":
+            if token:
+                if mode == "tag":
+                    if tag is not None:
+                        return None
+                    tag = token.lower()
+                elif mode == "id":
+                    if id_name is not None:
+                        return None
+                    id_name = token
+                else:
+                    classes.append(token)
+            token = ""
+            end = index + 1
+            while end < len(text) and text[end] not in "#.:[":  # pseudo-class only
+                end += 1
+            pseudo = text[index + 1 : end].strip().lower()
+            if pseudo not in {"first-child", "last-child"}:
+                return None
+            pseudo_classes.append(pseudo)
+            mode = "tag"
+            index = end
             continue
         if char in {"#", "."}:
             if token:
@@ -803,6 +851,7 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
         id_name=id_name,
         classes=tuple(classes),
         attributes=tuple(attributes),
+        pseudo_classes=tuple(pseudo_classes),
     )
 
 
@@ -873,6 +922,20 @@ def _previous_element_sibling(node: Element) -> Element | None:
             return previous
         if isinstance(child, Element):
             previous = child
+    return None
+
+
+def _next_element_sibling(node: Element) -> Element | None:
+    parent = node.parent
+    if not isinstance(parent, (Document, Element)):
+        return None
+    seen = False
+    for child in parent.children:
+        if child is node:
+            seen = True
+            continue
+        if seen and isinstance(child, Element):
+            return child
     return None
 
 
