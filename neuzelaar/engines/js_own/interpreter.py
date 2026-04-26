@@ -798,6 +798,9 @@ def _evaluate_async_binary(expr: BinaryExpr, environment: Environment, *, on_val
 
 def _evaluate_async_call(expr: CallExpr, environment: Environment, *, on_value, on_error) -> None:
     def invoke(callee: object, this_value: object | None) -> None:
+        if isinstance(callee, JavaScriptClass):
+            on_error(TypeError(f"Class constructor {callee.name} cannot be invoked without 'new'"))
+            return
         if not is_callable(callee):
             on_error(TypeError("Value is not callable"))
             return
@@ -1213,6 +1216,8 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             callee = read_index(this_value, evaluate_expr(expr.callee.index, environment))
         else:
             callee = evaluate_expr(expr.callee, environment)
+        if isinstance(callee, JavaScriptClass):
+            raise TypeError(f"Class constructor {callee.name} cannot be invoked without 'new'")
         if not is_callable(callee):
             raise TypeError("Value is not callable")
         arguments = tuple(evaluate_expr(argument, environment) for argument in expr.arguments)

@@ -835,3 +835,22 @@ def test_infinity_globals_format_correctly_in_strings() -> None:
     assert evaluate_expression('"" + (1 / 0)') == "Infinity"
     assert evaluate_expression('"" + (-1 / 0)') == "-Infinity"
     assert evaluate_expression('"" + NaN') == "NaN"
+
+
+def test_calling_class_without_new_raises_type_error() -> None:
+    with pytest.raises(JavaScriptThrownValue) as info:
+        evaluate_program(
+            "class Foo { constructor() { this.x = 1; } } "
+            "try { Foo(); } catch (e) { throw e; }"
+        )
+    error = info.value.value
+    assert isinstance(error, dict)
+    assert error.get("name") == "TypeError"
+    assert "Foo" in str(error.get("message", ""))
+
+
+def test_class_can_still_be_constructed_with_new() -> None:
+    result = evaluate_program(
+        "class Foo { constructor(n) { this.n = n; } } new Foo(7).n;"
+    )
+    assert result == 7.0
