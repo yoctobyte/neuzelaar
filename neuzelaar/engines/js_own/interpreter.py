@@ -1342,21 +1342,22 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         if expr.operator == "-":
             return -js_to_number(operand)
     if isinstance(expr, UpdateExpr):
+        delta = 1.0 if expr.operator == "++" else -1.0
         current = None
         if isinstance(expr.target, Identifier):
             current = environment.get(expr.target.name)
-            next_value = js_to_number(current) + 1.0
+            next_value = js_to_number(current) + delta
             environment.assign(expr.target.name, next_value)
         elif isinstance(expr.target, MemberExpr):
             target_object = evaluate_expr(expr.target.object, environment)
             current = read_property(target_object, expr.target.property_name, receiver=target_object)
-            next_value = js_to_number(current) + 1.0
+            next_value = js_to_number(current) + delta
             write_property(target_object, expr.target.property_name, next_value, receiver=target_object)
         elif isinstance(expr.target, IndexExpr):
             target_object = evaluate_expr(expr.target.object, environment)
             index = evaluate_expr(expr.target.index, environment)
             current = read_index(target_object, index)
-            next_value = js_to_number(current) + 1.0
+            next_value = js_to_number(current) + delta
             write_index(target_object, index, next_value)
         else:
             raise TypeError("Invalid update target")

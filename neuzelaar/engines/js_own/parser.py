@@ -74,6 +74,7 @@ PRECEDENCE = {
     "LBRACKET": 9,
     "TEMPLATE": 9,
     "++": 9,
+    "--": 9,
 }
 
 PROPERTY_NAME_TOKENS = {
@@ -530,7 +531,7 @@ class Parser:
             return UnaryExpr(operator=token.lexeme, operand=self.parse_expression(8))
         if token.kind == "TYPEOF":
             return UnaryExpr(operator="typeof", operand=self.parse_expression(8))
-        if token.kind == "++":
+        if token.kind in ("++", "--"):
             target = self.parse_expression(8)
             if not isinstance(target, (Identifier, MemberExpr, IndexExpr)):
                 raise JavaScriptSyntaxError(f"Invalid update target at offset {token.offset}")
@@ -570,7 +571,7 @@ class Parser:
             template = self._parse_prefix(self._advance())
             assert isinstance(template, TemplateLiteral)
             return TaggedTemplateExpr(callee=left, template=template)
-        if token.kind == "++":
+        if token.kind in ("++", "--"):
             if not isinstance(left, (Identifier, MemberExpr, IndexExpr)):
                 raise JavaScriptSyntaxError(f"Invalid update target at offset {token.offset}")
             return UpdateExpr(target=left, operator=token.lexeme, prefix=False)

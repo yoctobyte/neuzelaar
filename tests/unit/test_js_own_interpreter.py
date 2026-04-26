@@ -1048,3 +1048,19 @@ def test_for_loop_inside_async_function_works() -> None:
     )
     assert promise.state == "fulfilled"
     assert promise.value == 10.0
+
+
+def test_postfix_decrement_returns_old_value() -> None:
+    assert evaluate_program("var x = 5; var y = x--; x + y * 10;") == 54.0
+
+
+def test_prefix_decrement_returns_new_value() -> None:
+    assert evaluate_program("var x = 5; var y = --x; x + y * 10;") == 44.0
+
+
+def test_decrement_works_in_for_loop_update() -> None:
+    assert evaluate_program("var s = 0; for (var i = 5; i > 0; i--) s = s + i; s;") == 15.0
+
+
+def test_decrement_works_on_index_target() -> None:
+    assert evaluate_program("var a = [3, 3]; a[0]--; a[0];") == 2.0
