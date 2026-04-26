@@ -18,6 +18,7 @@ from neuzelaar.engines.js_own.ast import (
     ClassExpr,
     ClassField,
     ClassMethod,
+    CompoundAssignmentExpr,
     ConditionalExpr,
     ContinueStatement,
     Expr,
@@ -55,6 +56,11 @@ from neuzelaar.engines.js_own.tokenizer import Token, tokenize
 PRECEDENCE = {
     "EQUAL": 1,
     "QUESTION": 1,
+    "+=": 1,
+    "-=": 1,
+    "*=": 1,
+    "/=": 1,
+    "%=": 1,
     "||": 2,
     "&&": 3,
     "==": 4,
@@ -594,6 +600,14 @@ class Parser:
             if not isinstance(left, (Identifier, MemberExpr, IndexExpr)):
                 raise JavaScriptSyntaxError(f"Invalid assignment target at offset {token.offset}")
             return AssignmentExpr(target=left, value=self.parse_expression(PRECEDENCE["EQUAL"] - 1))
+        if token.kind in ("+=", "-=", "*=", "/=", "%="):
+            if not isinstance(left, (Identifier, MemberExpr, IndexExpr)):
+                raise JavaScriptSyntaxError(f"Invalid assignment target at offset {token.offset}")
+            return CompoundAssignmentExpr(
+                target=left,
+                operator=token.kind,
+                value=self.parse_expression(PRECEDENCE[token.kind] - 1),
+            )
         if token.kind == "QUESTION":
             consequent = self.parse_expression()
             self._consume("COLON", "Expected ':' in ternary expression")

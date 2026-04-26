@@ -52,6 +52,13 @@ class ConditionalExpr(Expr):
 
 
 @dataclass(frozen=True, slots=True)
+class CompoundAssignmentExpr(Expr):
+    target: Expr
+    operator: str
+    value: Expr
+
+
+@dataclass(frozen=True, slots=True)
 class Identifier(Expr):
     name: str
 

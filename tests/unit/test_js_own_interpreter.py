@@ -1102,3 +1102,49 @@ def test_parenthesised_assignment_no_longer_misparsed_as_arrow() -> None:
     # Used to fail: (a = 5) entered the arrow-detection path and raised
     # before the speculative parse could roll back.
     assert evaluate_program("var a; (a = 5); a;") == 5.0
+
+
+def test_compound_assignment_plus_eq() -> None:
+    assert evaluate_program("var x = 5; x += 3; x;") == 8.0
+
+
+def test_compound_assignment_minus_eq() -> None:
+    assert evaluate_program("var x = 10; x -= 4; x;") == 6.0
+
+
+def test_compound_assignment_times_eq() -> None:
+    assert evaluate_program("var x = 2; x *= 5; x;") == 10.0
+
+
+def test_compound_assignment_div_eq() -> None:
+    assert evaluate_program("var x = 10; x /= 2; x;") == 5.0
+
+
+def test_compound_assignment_mod_eq() -> None:
+    assert evaluate_program("var x = 10; x %= 3; x;") == 1.0
+
+
+def test_compound_assignment_works_on_member_target() -> None:
+    assert evaluate_program("var o = { count: 0 }; o.count += 5; o.count;") == 5.0
+
+
+def test_compound_assignment_works_on_index_target() -> None:
+    assert evaluate_program("var a = [10]; a[0] += 5; a[0];") == 15.0
+
+
+def test_compound_assignment_string_concatenation() -> None:
+    assert evaluate_program('var s = "hi "; s += "world"; s;') == "hi world"
+
+
+def test_compound_assignment_chains_right_associatively() -> None:
+    # a = (b += 5)
+    result = evaluate_program("var a = 0; var b = 0; a = b += 5; a + b * 10;")
+    assert result == 55.0
+
+
+def test_compound_assignment_with_await_on_rhs() -> None:
+    promise = evaluate_program(
+        "async function f() { var x = 10; x += await Promise.resolve(7); return x; } f();"
+    )
+    assert promise.state == "fulfilled"
+    assert promise.value == 17.0

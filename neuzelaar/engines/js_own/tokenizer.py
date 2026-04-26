@@ -51,6 +51,11 @@ MULTI_CHAR_OPERATORS = (
     "!=",
     "&&",
     "||",
+    "+=",
+    "-=",
+    "*=",
+    "/=",
+    "%=",
 )
 
 SINGLE_CHAR_TOKENS = {

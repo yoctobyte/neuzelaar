@@ -23,6 +23,7 @@ from neuzelaar.engines.js_own.ast import (
     ClassExpr,
     ClassField,
     ClassMethod,
+    CompoundAssignmentExpr,
     ConditionalExpr,
     ContinueStatement,
     Expr,
@@ -813,6 +814,36 @@ def _evaluate_async_expr(expr: Expr, environment: Environment, *, on_value, on_e
     if isinstance(expr, AssignmentExpr):
         _evaluate_async_assignment(expr, environment, on_value=on_value, on_error=on_error)
         return
+    if isinstance(expr, CompoundAssignmentExpr):
+        def apply(rhs: object) -> None:
+            try:
+                op = _COMPOUND_OP_MAP[expr.operator]
+                target = expr.target
+                if isinstance(target, Identifier):
+                    current = environment.get(target.name)
+                    new_value = _apply_binary_operator(op, current, rhs)
+                    environment.assign(target.name, new_value)
+                elif isinstance(target, MemberExpr):
+                    target_object = evaluate_expr(target.object, environment)
+                    current = read_property(target_object, target.property_name, receiver=target_object)
+                    new_value = _apply_binary_operator(op, current, rhs)
+                    write_property(target_object, target.property_name, new_value, receiver=target_object)
+                elif isinstance(target, IndexExpr):
+                    target_object = evaluate_expr(target.object, environment)
+                    index = evaluate_expr(target.index, environment)
+                    current = read_index(target_object, index)
+                    new_value = _apply_binary_operator(op, current, rhs)
+                    write_index(target_object, index, new_value)
+                else:
+                    raise RuntimeError(f"Unsupported compound-assignment target: {type(target).__name__}")
+                on_value(new_value)
+            except ThrowSignal as signal:
+                on_error(signal.value)
+            except Exception as exc:
+                on_error(exc)
+
+        _evaluate_async_expr(expr.value, environment, on_value=apply, on_error=on_error)
+        return
     if isinstance(expr, MemberExpr):
         _evaluate_async_expr(
             expr.object,
@@ -1488,6 +1519,8 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         if js_truthy(evaluate_expr(expr.test, environment)):
             return evaluate_expr(expr.consequent, environment)
         return evaluate_expr(expr.alternate, environment)
+    if isinstance(expr, CompoundAssignmentExpr):
+        return _evaluate_compound_assignment(expr, environment)
     if isinstance(expr, BinaryExpr):
         if expr.operator == "&&":
             left = evaluate_expr(expr.left, environment)
@@ -1530,6 +1563,40 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
         if expr.operator == "instanceof":
             return _js_instanceof(left, right)
     raise RuntimeError(f"Unsupported expression node: {type(expr).__name__}")
+
+
+_COMPOUND_OP_MAP = {
+    "+=": "+",
+    "-=": "-",
+    "*=": "*",
+    "/=": "/",
+    "%=": "%",
+}
+
+
+def _evaluate_compound_assignment(expr: CompoundAssignmentExpr, environment: Environment) -> object:
+    op = _COMPOUND_OP_MAP[expr.operator]
+    rhs = evaluate_expr(expr.value, environment)
+    target = expr.target
+    if isinstance(target, Identifier):
+        current = environment.get(target.name)
+        new_value = _apply_binary_operator(op, current, rhs)
+        environment.assign(target.name, new_value)
+        return new_value
+    if isinstance(target, MemberExpr):
+        target_object = evaluate_expr(target.object, environment)
+        current = read_property(target_object, target.property_name, receiver=target_object)
+        new_value = _apply_binary_operator(op, current, rhs)
+        write_property(target_object, target.property_name, new_value, receiver=target_object)
+        return new_value
+    if isinstance(target, IndexExpr):
+        target_object = evaluate_expr(target.object, environment)
+        index = evaluate_expr(target.index, environment)
+        current = read_index(target_object, index)
+        new_value = _apply_binary_operator(op, current, rhs)
+        write_index(target_object, index, new_value)
+        return new_value
+    raise RuntimeError(f"Unsupported compound-assignment target: {type(target).__name__}")
 
 
 def _materialize_tagged_template(template: TemplateLiteral, environment: Environment) -> dict[str, object]:
