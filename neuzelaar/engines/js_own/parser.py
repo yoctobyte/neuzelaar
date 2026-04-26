@@ -12,13 +12,16 @@ from neuzelaar.engines.js_own.ast import (
     BinaryExpr,
     BlockStatement,
     BooleanLiteral,
+    BreakStatement,
     CallExpr,
     ClassDeclaration,
     ClassExpr,
     ClassField,
     ClassMethod,
+    ContinueStatement,
     Expr,
     ExpressionStatement,
+    ForStatement,
     FunctionDeclaration,
     FunctionExpr,
     Identifier,
@@ -104,6 +107,7 @@ class Parser:
     tokens: tuple[Token, ...]
     index: int = 0
     function_depth: int = 0
+    loop_depth: int = 0
 
     def maybe_parse_arrow_expression(self) -> ArrowFunctionExpr | None:
         checkpoint = self.index
@@ -174,6 +178,12 @@ class Parser:
             return self._parse_if_statement()
         if self._check("WHILE"):
             return self._parse_while_statement()
+        if self._check("FOR"):
+            return self._parse_for_statement()
+        if self._check("BREAK"):
+            return self._parse_break_statement()
+        if self._check("CONTINUE"):
+            return self._parse_continue_statement()
         if self._check("RETURN"):
             return self._parse_return_statement()
         if self._check("THROW"):
@@ -208,8 +218,53 @@ class Parser:
         self._consume("LPAREN", "Expected '(' after while")
         test = self.parse_expression()
         self._consume("RPAREN", "Expected ')' after while condition")
-        body = self.parse_statement()
+        self.loop_depth += 1
+        try:
+            body = self.parse_statement()
+        finally:
+            self.loop_depth -= 1
         return WhileStatement(test=test, body=body)
+
+    def _parse_for_statement(self) -> ForStatement:
+        self._consume("FOR", "Expected 'for'")
+        self._consume("LPAREN", "Expected '(' after for")
+        init: Stmt | None
+        if self._match("SEMICOLON"):
+            init = None
+        elif self._check("VAR") or self._check("LET") or self._check("CONST"):
+            init = self._parse_variable_declaration()
+        else:
+            init_expr = self.parse_expression()
+            self._consume("SEMICOLON", "Expected ';' after for initializer")
+            init = ExpressionStatement(init_expr)
+        test: Expr | None = None
+        if not self._check("SEMICOLON"):
+            test = self.parse_expression()
+        self._consume("SEMICOLON", "Expected ';' after for condition")
+        update: Expr | None = None
+        if not self._check("RPAREN"):
+            update = self.parse_expression()
+        self._consume("RPAREN", "Expected ')' after for clause")
+        self.loop_depth += 1
+        try:
+            body = self.parse_statement()
+        finally:
+            self.loop_depth -= 1
+        return ForStatement(init=init, test=test, update=update, body=body)
+
+    def _parse_break_statement(self) -> BreakStatement:
+        token = self._advance()
+        if self.loop_depth <= 0:
+            raise JavaScriptSyntaxError(f"Illegal break statement at offset {token.offset}")
+        self._consume_optional_semicolon()
+        return BreakStatement()
+
+    def _parse_continue_statement(self) -> ContinueStatement:
+        token = self._advance()
+        if self.loop_depth <= 0:
+            raise JavaScriptSyntaxError(f"Illegal continue statement at offset {token.offset}")
+        self._consume_optional_semicolon()
+        return ContinueStatement()
 
     def _parse_return_statement(self) -> ReturnStatement:
         if self.function_depth <= 0:

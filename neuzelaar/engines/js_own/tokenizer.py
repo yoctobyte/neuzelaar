@@ -34,6 +34,9 @@ KEYWORDS = {
     "yield": "YIELD",
     "typeof": "TYPEOF",
     "while": "WHILE",
+    "for": "FOR",
+    "break": "BREAK",
+    "continue": "CONTINUE",
 }
 
 MULTI_CHAR_OPERATORS = (

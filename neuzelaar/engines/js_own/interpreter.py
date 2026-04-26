@@ -17,13 +17,16 @@ from neuzelaar.engines.js_own.ast import (
     BinaryExpr,
     BlockStatement,
     BooleanLiteral,
+    BreakStatement,
     CallExpr,
     ClassDeclaration,
     ClassExpr,
     ClassField,
     ClassMethod,
+    ContinueStatement,
     Expr,
     ExpressionStatement,
+    ForStatement,
     FunctionDeclaration,
     FunctionExpr,
     Identifier,
@@ -85,6 +88,14 @@ class ThrowSignal(Exception):
     def __init__(self, value: object) -> None:
         super().__init__("throw")
         self.value = value
+
+
+class BreakSignal(Exception):
+    pass
+
+
+class ContinueSignal(Exception):
+    pass
 
 
 class JavaScriptFunction:
@@ -505,6 +516,11 @@ def _hoist_one(statement: Stmt, environment: Environment) -> None:
     if isinstance(statement, WhileStatement):
         _hoist_one(statement.body, environment)
         return
+    if isinstance(statement, ForStatement):
+        if isinstance(statement.init, VariableDeclaration):
+            _hoist_one(statement.init, environment)
+        _hoist_one(statement.body, environment)
+        return
     if isinstance(statement, TryStatement):
         _hoist_one(statement.body, environment)
         if statement.catch_body is not None:
@@ -620,6 +636,33 @@ def _evaluate_async_statement(statement: Stmt, environment: Environment, *, on_c
             ),
             on_error=on_error,
         )
+        return
+    if isinstance(statement, (WhileStatement, ForStatement)):
+        # Loop bodies that don't contain await can be evaluated synchronously.
+        # Loops with await inside would need a continuation-style rewrite —
+        # not supported yet; the sync evaluator will raise on AwaitExpr.
+        try:
+            value = evaluate_statement(statement, environment)
+        except ReturnSignal as signal:
+            on_complete(("return", signal.value))
+            return
+        except ThrowSignal as signal:
+            on_error(signal.value)
+            return
+        except Exception as exc:
+            on_error(exc)
+            return
+        on_complete(("normal", value))
+        return
+    if isinstance(statement, (BreakStatement, ContinueStatement)):
+        # These should be handled inside the enclosing loop's sync evaluation;
+        # if they reach here, the parser did not catch a misuse.
+        try:
+            evaluate_statement(statement, environment)
+        except (BreakSignal, ContinueSignal) as signal:
+            on_error(signal)
+            return
+        on_complete(("normal", JS_UNDEFINED))
         return
     if isinstance(statement, ReturnStatement):
         if statement.value is None:
@@ -1146,8 +1189,34 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
     if isinstance(statement, WhileStatement):
         value: object = None
         while js_truthy(evaluate_expr(statement.test, environment)):
-            value = evaluate_statement(statement.body, environment)
+            try:
+                value = evaluate_statement(statement.body, environment)
+            except BreakSignal:
+                break
+            except ContinueSignal:
+                continue
         return value
+    if isinstance(statement, ForStatement):
+        loop_env = environment.child_block()
+        if statement.init is not None:
+            evaluate_statement(statement.init, loop_env)
+        value: object = None
+        while True:
+            if statement.test is not None and not js_truthy(evaluate_expr(statement.test, loop_env)):
+                break
+            try:
+                value = evaluate_statement(statement.body, loop_env)
+            except BreakSignal:
+                break
+            except ContinueSignal:
+                pass
+            if statement.update is not None:
+                evaluate_expr(statement.update, loop_env)
+        return value
+    if isinstance(statement, BreakStatement):
+        raise BreakSignal()
+    if isinstance(statement, ContinueStatement):
+        raise ContinueSignal()
     if isinstance(statement, ReturnStatement):
         value = JS_UNDEFINED if statement.value is None else evaluate_expr(statement.value, environment)
         raise ReturnSignal(value)

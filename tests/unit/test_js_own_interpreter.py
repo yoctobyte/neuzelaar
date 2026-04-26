@@ -998,3 +998,53 @@ def test_deep_recursion_is_catchable_in_js_try_catch() -> None:
         'try { r(2000); "no"; } catch (e) { e.name + ":" + e.message; }'
     )
     assert result == "RangeError:Maximum call stack size exceeded"
+
+
+def test_classic_for_loop_sums() -> None:
+    assert evaluate_program("var s = 0; for (var i = 1; i <= 10; i = i + 1) s = s + i; s;") == 55.0
+
+
+def test_for_loop_with_let_init() -> None:
+    assert evaluate_program("var s = 0; for (let i = 0; i < 5; i = i + 1) s = s + i; s;") == 10.0
+
+
+def test_break_exits_while_loop() -> None:
+    assert evaluate_program("var i = 0; while (true) { if (i >= 3) break; i = i + 1; } i;") == 3.0
+
+
+def test_continue_skips_iteration() -> None:
+    assert evaluate_program(
+        "var s = 0; for (var i = 0; i < 5; i = i + 1) { if (i === 2) continue; s = s + i; } s;"
+    ) == 8.0
+
+
+def test_break_only_exits_inner_of_nested_loops() -> None:
+    assert evaluate_program(
+        "var s = 0; "
+        "for (var i = 0; i < 3; i = i + 1) { "
+        "  for (var j = 0; j < 3; j = j + 1) { if (j === 1) break; s = s + 10; } "
+        "} "
+        "s;"
+    ) == 30.0
+
+
+def test_for_with_empty_clauses_runs_until_break() -> None:
+    assert evaluate_program("var i = 0; for (;;) { i = i + 1; if (i >= 3) break; } i;") == 3.0
+
+
+def test_break_outside_loop_is_syntax_error() -> None:
+    with pytest.raises(JavaScriptSyntaxError):
+        evaluate_program("break;")
+
+
+def test_continue_outside_loop_is_syntax_error() -> None:
+    with pytest.raises(JavaScriptSyntaxError):
+        evaluate_program("continue;")
+
+
+def test_for_loop_inside_async_function_works() -> None:
+    promise = evaluate_program(
+        "async function f() { var s = 0; for (var i = 0; i < 5; i = i + 1) s = s + i; return s; } f();"
+    )
+    assert promise.state == "fulfilled"
+    assert promise.value == 10.0

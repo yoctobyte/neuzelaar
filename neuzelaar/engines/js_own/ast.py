@@ -223,6 +223,24 @@ class WhileStatement(Stmt):
 
 
 @dataclass(frozen=True, slots=True)
+class ForStatement(Stmt):
+    init: Stmt | None
+    test: Expr | None
+    update: Expr | None
+    body: Stmt
+
+
+@dataclass(frozen=True, slots=True)
+class BreakStatement(Stmt):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class ContinueStatement(Stmt):
+    pass
+
+
+@dataclass(frozen=True, slots=True)
 class ReturnStatement(Stmt):
     value: Expr | None
 
