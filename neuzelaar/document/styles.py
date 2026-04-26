@@ -23,6 +23,7 @@ class ComputedStyle:
     font_size: str = "16px"
     line_height: str = "normal"
     text_decoration: str = "none"
+    white_space: str = "normal"
     display: str = "block"
     margin: str = "0"
     padding: str = "0"
@@ -69,6 +70,7 @@ SUPPORTED_PROPERTIES = {
     "text-align",
     "text-decoration",
     "top",
+    "white-space",
     "width",
     "z-index",
 }
@@ -82,6 +84,7 @@ INHERITED_PROPERTIES = {
     "font-weight",
     "line-height",
     "text-align",
+    "white-space",
 }
 
 DEFAULT_COLOR = "#141414"
@@ -238,6 +241,10 @@ def _style_from_declarations(
         text_decoration=_normalize_text_decoration(
             _resolve_property_value("text-decoration", declarations, parent_style, initial_values)
         ),
+        white_space=_normalize_white_space(
+            _resolve_property_value("white-space", declarations, parent_style, initial_values),
+            parent_style.white_space,
+        ),
         display=_normalize_display(
             _resolve_property_value("display", declarations, parent_style, initial_values)
         ),
@@ -313,6 +320,7 @@ def _initial_style_values() -> dict[str, str]:
         "text-align": "left",
         "text-decoration": "none",
         "top": "auto",
+        "white-space": "normal",
         "width": "auto",
         "z-index": "auto",
     }
@@ -466,6 +474,13 @@ def _normalize_text_decoration(value: str) -> str:
         return text
     supported = [part for part in text.split() if part in {"underline", "line-through"}]
     return " ".join(supported) if supported else "none"
+
+
+def _normalize_white_space(value: str, fallback: str) -> str:
+    text = value.strip().lower()
+    if text in {"normal", "nowrap", "pre", "pre-wrap", "pre-line"}:
+        return text
+    return fallback
 
 
 def _normalize_display(value: str) -> str:

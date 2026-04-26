@@ -646,13 +646,14 @@ class _InlineFragment:
     can still apply per-inline color / weight / size.
     """
 
-    kind: str  # "word" or "image"
+    kind: str  # "text", "image", or "break"
     text: str = ""
     style: ComputedStyle | None = None
     width: int = 0
     height: int = 0
     label: str = ""
     bitmap: ImageAsset | None = None
+    leading_space: bool = False
 
 
 def _flatten_inline(
@@ -663,9 +664,7 @@ def _flatten_inline(
     fragments: list[_InlineFragment] = []
     for child in children:
         if child.kind == BoxKind.TEXT:
-            text = child.text or ""
-            for word in text.split():
-                fragments.append(_InlineFragment(kind="word", text=word, style=style))
+            fragments.extend(_text_fragments(child.text or "", child.style or style))
         elif child.kind == BoxKind.INLINE:
             # Recurse with the inline element's own computed style so
             # nested <strong><em>word</em></strong> picks up the inner
@@ -697,6 +696,45 @@ def _flatten_inline(
                     style=style,
                 )
             )
+    return fragments
+
+
+def _text_fragments(text: str, style: ComputedStyle) -> list[_InlineFragment]:
+    if not text:
+        return []
+    white_space = style.white_space
+    if white_space in {"pre", "pre-wrap", "pre-line"}:
+        return _preserved_text_fragments(text, style, collapse_spaces=(white_space == "pre-line"))
+    words = text.split()
+    fragments: list[_InlineFragment] = []
+    for index, word in enumerate(words):
+        fragments.append(
+            _InlineFragment(
+                kind="text",
+                text=word,
+                style=style,
+                leading_space=index > 0,
+            )
+        )
+    return fragments
+
+
+def _preserved_text_fragments(
+    text: str,
+    style: ComputedStyle,
+    *,
+    collapse_spaces: bool,
+) -> list[_InlineFragment]:
+    fragments: list[_InlineFragment] = []
+    normalized = text
+    if collapse_spaces:
+        normalized = "\n".join(" ".join(line.split()) for line in normalized.split("\n"))
+    parts = normalized.split("\n")
+    for index, part in enumerate(parts):
+        if part:
+            fragments.append(_InlineFragment(kind="text", text=part, style=style))
+        if index < len(parts) - 1:
+            fragments.append(_InlineFragment(kind="break", style=style))
     return fragments
 
 
@@ -763,7 +801,7 @@ def _layout_inline_context(
             if len(state.items) >= MAX_LAYOUT_ITEMS:
                 state.budget_exceeded = True
                 break
-            if fragment.kind == "word":
+            if fragment.kind == "text":
                 fs = _font_size_px(fragment.style)
                 offset = line_box_height - max(int(round(fs * 1.3)), 10)
                 state.items.append(
@@ -802,13 +840,18 @@ def _layout_inline_context(
         if state.budget_exceeded or len(state.items) >= MAX_LAYOUT_ITEMS:
             state.budget_exceeded = True
             return cursor_y
-        if fragment.kind == "word":
+        if fragment.kind == "break":
+            flush_line(force=True)
+            continue
+        if fragment.kind == "text":
             fs = _font_size_px(fragment.style)
             word_width = _measure_text(fragment.text, fs)
-            space_width = _measure_text(" ", fs) if line_items else 0
+            white_space = (fragment.style or parent_style).white_space
+            no_wrap = white_space in {"nowrap", "pre"}
+            space_width = _measure_text(" ", fs) if line_items and fragment.leading_space else 0
             # Wrap if this word would overflow. Always place at least
             # one fragment on an empty line, even if oversized.
-            if cursor_x + space_width + word_width > line_x_start + line_max_width and line_items:
+            if not no_wrap and cursor_x + space_width + word_width > line_x_start + line_max_width and line_items:
                 flush_line()
                 space_width = 0
             if space_width:

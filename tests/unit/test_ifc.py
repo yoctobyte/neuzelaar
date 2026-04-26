@@ -133,3 +133,37 @@ def test_ifc_line_height_px_affects_single_text_box_height() -> None:
 
     assert len([p for p in placements if isinstance(p, TextPlacement)]) == 1
     assert total >= 40
+
+
+def test_ifc_white_space_nowrap_prevents_wrapping() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"style": "white-space: nowrap"})
+    append_child(document, paragraph)
+    append_child(
+        paragraph,
+        Text(id=NodeId("t"), data="one two three four five six seven eight nine ten"),
+    )
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=120)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    assert len({p.y for p in texts}) == 1
+
+
+def test_ifc_white_space_pre_preserves_newlines_and_spaces() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"style": "white-space: pre"})
+    append_child(document, paragraph)
+    append_child(paragraph, Text(id=NodeId("t"), data="one  two\nthree"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=400)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    assert len(texts) == 2
+    assert texts[0].text == "one  two"
+    assert texts[1].text == "three"
+    assert texts[1].y > texts[0].y

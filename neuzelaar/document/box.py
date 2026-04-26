@@ -134,7 +134,7 @@ def build_box_tree(
     Returns None if no renderable element exists (empty document).
     """
     for child in document.children:
-        box = _build_from_node(child, styles)
+        box = _build_from_node(child, styles, parent_style=ComputedStyle())
         if box is not None:
             return box
     return None
@@ -143,17 +143,23 @@ def build_box_tree(
 def _build_from_node(
     node: Node,
     styles: dict[NodeId, ComputedStyle],
+    *,
+    parent_style: ComputedStyle,
 ) -> Box | None:
     if isinstance(node, Text):
         text = node.data
         if text is None:
             return None
+        if text == "":
+            return None
+        if parent_style.white_space in {"pre", "pre-wrap", "pre-line"}:
+            normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+            return Box(kind=BoxKind.TEXT, style=parent_style, text=normalized)
         stripped = text.strip()
         if not stripped:
             return None
-        # Collapse runs of internal whitespace to single spaces for now.
         normalised = " ".join(text.split())
-        return Box(kind=BoxKind.TEXT, style=ComputedStyle(), text=normalised)
+        return Box(kind=BoxKind.TEXT, style=parent_style, text=normalised)
 
     if not isinstance(node, Element):
         return None
@@ -182,7 +188,7 @@ def _build_from_node(
 
     children: list[Box] = []
     for child in node.children:
-        child_box = _build_from_node(child, styles)
+        child_box = _build_from_node(child, styles, parent_style=style)
         if child_box is not None:
             children.append(child_box)
 

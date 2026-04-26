@@ -67,6 +67,16 @@ def test_compute_styles_keeps_spacing_properties() -> None:
     assert styles[NodeId("p")].font_size == "20px"
 
 
+def test_compute_styles_keeps_white_space_property() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("p { white-space: pre }"))
+
+    assert styles[NodeId("p")].white_space == "pre"
+
+
 def test_compute_styles_inherits_color_from_parent() -> None:
     document = Document(id=NodeId("doc"))
     body = Element(id=NodeId("body"), tag="body")
