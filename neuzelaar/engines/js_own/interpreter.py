@@ -1053,6 +1053,10 @@ def evaluate_expression_with_config(
                 return value
     except ThrowSignal as signal:
         raise JavaScriptThrownValue(signal.value) from None
+    except RecursionError:
+        raise JavaScriptThrownValue(
+            {"name": "RangeError", "message": "Maximum call stack size exceeded"}
+        ) from None
 
 
 def evaluate_program_with_config(
@@ -1075,6 +1079,10 @@ def evaluate_program_with_config(
                 return value
     except ThrowSignal as signal:
         raise JavaScriptThrownValue(signal.value) from None
+    except RecursionError:
+        raise JavaScriptThrownValue(
+            {"name": "RangeError", "message": "Maximum call stack size exceeded"}
+        ) from None
 
 
 def evaluate_ast_program(program: Program, environment: Environment | None = None) -> object:
@@ -1168,6 +1176,17 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
                 catch_env.declare(
                     statement.catch_name,
                     {"name": "TypeError", "message": str(exc)},
+                    kind="let",
+                )
+                value = evaluate_statement(statement.catch_body, catch_env)
+            except RecursionError:
+                if statement.catch_body is None:
+                    raise
+                catch_env = environment.child_block()
+                assert statement.catch_name is not None
+                catch_env.declare(
+                    statement.catch_name,
+                    {"name": "RangeError", "message": "Maximum call stack size exceeded"},
                     kind="let",
                 )
                 value = evaluate_statement(statement.catch_body, catch_env)

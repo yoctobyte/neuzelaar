@@ -980,3 +980,21 @@ def test_integer_and_float_property_keys_collapse_for_whole_numbers() -> None:
 def test_boolean_property_key_coerces_to_string() -> None:
     # JS: o[true] === o["true"]
     assert evaluate_program('var o = {}; o[true] = "b"; o["true"];') == "b"
+
+
+def test_deep_recursion_surfaces_as_range_error() -> None:
+    with pytest.raises(JavaScriptThrownValue) as info:
+        evaluate_program(
+            "function r(n) { if (n <= 0) return 0; return 1 + r(n - 1); } r(2000);"
+        )
+    error = info.value.value
+    assert isinstance(error, dict)
+    assert error.get("name") == "RangeError"
+
+
+def test_deep_recursion_is_catchable_in_js_try_catch() -> None:
+    result = evaluate_program(
+        "function r(n) { if (n <= 0) return 0; return 1 + r(n - 1); } "
+        'try { r(2000); "no"; } catch (e) { e.name + ":" + e.message; }'
+    )
+    assert result == "RangeError:Maximum call stack size exceeded"
