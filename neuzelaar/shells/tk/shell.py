@@ -439,6 +439,18 @@ class TkShell:
             )
         menubar.add_cascade(label="Policy", menu=policy_menu)
 
+        help_menu = tk.Menu(menubar, tearoff=False)
+        help_menu.add_command(
+            label="Keyboard shortcuts",
+            command=lambda: self.show_keyboard_shortcuts(root),
+        )
+        help_menu.add_separator()
+        help_menu.add_command(
+            label="About Neuzelaar",
+            command=lambda: self.show_about(root),
+        )
+        menubar.add_cascade(label="Help", menu=help_menu)
+
         root.config(menu=menubar)
 
         root.bind_all("<Control-l>", lambda _e: (address_entry.focus_set(), address_entry.selection_range(0, tk.END)))
@@ -611,6 +623,76 @@ class TkShell:
                 " more third-party assets, then reload.\n",
             )
         text.configure(state=tk.DISABLED)
+
+    def show_keyboard_shortcuts(self, root: tk.Misc) -> None:
+        popup = tk.Toplevel(root)
+        popup.title("Keyboard shortcuts")
+        popup.geometry("420x320")
+        popup.transient(root)
+
+        ttk.Label(
+            popup,
+            text="Keyboard shortcuts",
+            font=("TkDefaultFont", 14, "bold"),
+        ).pack(anchor="w", padx=12, pady=(12, 6))
+
+        rows = [
+            ("Ctrl+L", "Focus address bar"),
+            ("Ctrl+R", "Reload current page"),
+            ("Ctrl+,", "Open Preferences"),
+            ("Ctrl+Q", "Quit"),
+            ("Ctrl+=", "Zoom in"),
+            ("Ctrl+-", "Zoom out"),
+            ("Ctrl+0", "Reset zoom"),
+            ("Alt+Left", "Back"),
+            ("Alt+Right", "Forward"),
+        ]
+        grid = ttk.Frame(popup)
+        grid.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 8))
+        for row_index, (keys, action) in enumerate(rows):
+            ttk.Label(grid, text=keys, font=("TkFixedFont", 11)).grid(
+                row=row_index, column=0, sticky="w", padx=(0, 16), pady=2
+            )
+            ttk.Label(grid, text=action).grid(
+                row=row_index, column=1, sticky="w", pady=2
+            )
+
+        ttk.Button(popup, text="Close", command=popup.destroy).pack(
+            side=tk.BOTTOM, anchor="e", padx=12, pady=(0, 12)
+        )
+
+    def show_about(self, root: tk.Misc) -> None:
+        popup = tk.Toplevel(root)
+        popup.title("About Neuzelaar")
+        popup.geometry("380x220")
+        popup.transient(root)
+
+        ttk.Label(
+            popup,
+            text="Neuzelaar",
+            font=("TkDefaultFont", 16, "bold"),
+        ).pack(anchor="w", padx=16, pady=(16, 4))
+        ttk.Label(popup, text="Version 0.1.0", foreground="#666").pack(
+            anchor="w", padx=16
+        )
+        ttk.Label(
+            popup,
+            text="A policy-first modular browser experiment.",
+            wraplength=340,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(12, 4))
+        ttk.Label(
+            popup,
+            text="Settings live in ~/.config/neuzelaar/. Edit there"
+            " or via File → Preferences.",
+            wraplength=340,
+            justify="left",
+            foreground="#666",
+        ).pack(anchor="w", padx=16)
+
+        ttk.Button(popup, text="Close", command=popup.destroy).pack(
+            side=tk.BOTTOM, anchor="e", padx=12, pady=(0, 12)
+        )
 
 
 class TkShellError(RuntimeError):
