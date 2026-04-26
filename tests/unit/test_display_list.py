@@ -86,3 +86,11 @@ def test_build_display_list_preserves_text_decoration() -> None:
     text_op = next(op for op in display_list.ops if isinstance(op, DrawText))
 
     assert text_op.text_decoration == "underline"
+
+
+def test_build_display_list_contains_list_markers() -> None:
+    display_list = build_display_list(document_from_fixture("basic_lists.html"))
+
+    assert any(isinstance(op, DrawText) and op.text == "•" for op in display_list.ops)
+    assert any(isinstance(op, DrawText) and op.text == "1." for op in display_list.ops)
+    assert any(isinstance(op, DrawText) and op.text == "2." for op in display_list.ops)

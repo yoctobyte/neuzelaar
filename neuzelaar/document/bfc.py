@@ -201,6 +201,7 @@ class LayoutState:
 # Safety cap: stop emitting layout items after this many to prevent
 # runaway computation on huge DOMs.
 MAX_LAYOUT_ITEMS = 10_000
+LIST_MARKER_GUTTER = 24
 
 
 def layout_block(
@@ -327,6 +328,26 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     child_x = box.geometry.x + border.left + padding.left
     child_y = box.geometry.y + border.top + padding.top
     inner_width = content_width
+    marker_gutter = 0
+    if box.list_marker:
+        marker_font_size = _font_size_px(style)
+        marker_gutter = LIST_MARKER_GUTTER
+        state.items.append(
+            TextPlacement(
+                x=child_x + state.relative_offset_x,
+                y=child_y + state.relative_offset_y,
+                text=box.list_marker,
+                color=style.color,
+                font_size=marker_font_size,
+                font_weight=style.font_weight,
+                font_style=style.font_style,
+                text_decoration=style.text_decoration,
+                max_width=marker_gutter,
+                text_align="left",
+            )
+        )
+        child_x += marker_gutter
+        inner_width = max(inner_width - marker_gutter, 0)
 
     cursor_y = child_y
     bfc_left = child_x

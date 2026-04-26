@@ -139,3 +139,33 @@ def test_walk_box_tree_visits_all_boxes_in_document_order() -> None:
         ("div", None),
         (None, "B"),
     ]
+
+
+def test_build_box_tree_marks_unordered_list_items_with_bullets() -> None:
+    document = Document(id=NodeId("doc"))
+    ul = Element(id=NodeId("ul"), tag="ul")
+    li = Element(id=NodeId("li"), tag="li")
+    append_child(document, ul)
+    append_child(ul, li)
+    append_child(li, Text(id=NodeId("t"), data="item"))
+
+    root = build_box_tree(document, compute_styles(document))
+
+    assert root.children[0].list_marker == "•"
+
+
+def test_build_box_tree_numbers_ordered_list_items() -> None:
+    document = Document(id=NodeId("doc"))
+    ol = Element(id=NodeId("ol"), tag="ol")
+    first = Element(id=NodeId("li1"), tag="li")
+    second = Element(id=NodeId("li2"), tag="li")
+    append_child(document, ol)
+    append_child(ol, first)
+    append_child(ol, second)
+    append_child(first, Text(id=NodeId("t1"), data="first"))
+    append_child(second, Text(id=NodeId("t2"), data="second"))
+
+    root = build_box_tree(document, compute_styles(document))
+
+    assert root.children[0].list_marker == "1."
+    assert root.children[1].list_marker == "2."

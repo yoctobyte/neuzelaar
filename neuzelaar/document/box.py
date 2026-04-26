@@ -113,6 +113,7 @@ class Box:
     tag: str | None = None  # original lower-cased tag name, for layout decisions
     text: str | None = None  # populated for TEXT boxes
     element: Element | None = None  # kept for replaced boxes needing attrs
+    list_marker: str | None = None
     children: list["Box"] = field(default_factory=list)
     geometry: BoxGeometry = field(default_factory=BoxGeometry)
 
@@ -202,6 +203,7 @@ def _build_from_node(
         style=style,
         node_id=node.id,
         tag=tag,
+        list_marker=_list_marker_for(node),
         children=children,
     )
 
@@ -253,3 +255,24 @@ def walk_box_tree(root: Box):
     yield root
     for child in root.children:
         yield from walk_box_tree(child)
+
+
+def _list_marker_for(node: Element) -> str | None:
+    if node.tag.lower() != "li":
+        return None
+    parent = node.parent
+    if not isinstance(parent, Element):
+        return None
+    parent_tag = parent.tag.lower()
+    if parent_tag == "ul":
+        return "•"
+    if parent_tag == "ol":
+        index = 0
+        for child in parent.children:
+            if isinstance(child, Element) and child.tag.lower() == "li":
+                index += 1
+            if child is node:
+                break
+        if index > 0:
+            return f"{index}."
+    return None
