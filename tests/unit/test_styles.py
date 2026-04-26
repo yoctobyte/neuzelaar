@@ -67,6 +67,35 @@ def test_compute_styles_keeps_spacing_properties() -> None:
     assert styles[NodeId("p")].font_size == "20px"
 
 
+def test_compute_styles_keeps_border_shorthand_properties() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("p { border: 2px solid #224466 }"))
+
+    assert styles[NodeId("p")].border_width == "2px"
+    assert styles[NodeId("p")].border_style == "solid"
+    assert styles[NodeId("p")].border_color == "#224466"
+
+
+def test_compute_styles_border_longhands_override_shorthand() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet(
+            "p { border: 1px solid #111111; border-left-width: 4px; border-top-color: red }"
+        ),
+    )
+
+    assert styles[NodeId("p")].border_width == "1px 1px 1px 4px"
+    assert styles[NodeId("p")].border_style == "solid"
+    assert styles[NodeId("p")].border_color == "red #111111 #111111"
+
+
 def test_compute_styles_keeps_white_space_property() -> None:
     document = Document(id=NodeId("doc"))
     paragraph = Element(id=NodeId("p"), tag="p")

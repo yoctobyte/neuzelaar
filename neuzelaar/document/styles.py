@@ -18,6 +18,9 @@ class StyleRule:
 class ComputedStyle:
     color: str = "#141414"
     background_color: str = "#ffffff"
+    border_width: str = "0"
+    border_style: str = "none"
+    border_color: str = "currentcolor"
     font_weight: str = "normal"
     font_style: str = "normal"
     font_size: str = "16px"
@@ -43,6 +46,26 @@ class ComputedStyle:
 
 SUPPORTED_PROPERTIES = {
     "background-color",
+    "border",
+    "border-bottom",
+    "border-bottom-color",
+    "border-bottom-style",
+    "border-bottom-width",
+    "border-color",
+    "border-left",
+    "border-left-color",
+    "border-left-style",
+    "border-left-width",
+    "border-right",
+    "border-right-color",
+    "border-right-style",
+    "border-right-width",
+    "border-style",
+    "border-top",
+    "border-top-color",
+    "border-top-style",
+    "border-top-width",
+    "border-width",
     "bottom",
     "clear",
     "color",
@@ -214,13 +237,25 @@ def _style_from_declarations(
     parent_style: ComputedStyle,
 ) -> ComputedStyle:
     initial_values = _initial_style_values()
+    color = _normalize_color(
+        _resolve_property_value("color", declarations, parent_style, initial_values),
+        parent_style.color,
+    )
     return ComputedStyle(
-        color=_normalize_color(
-            _resolve_property_value("color", declarations, parent_style, initial_values),
-            parent_style.color,
-        ),
+        color=color,
         background_color=_normalize_background_color(
             _resolve_property_value("background-color", declarations, parent_style, initial_values)
+        ),
+        border_width=_normalize_border_box(
+            _resolve_border_property("width", declarations, parent_style, initial_values),
+            default="0",
+        ),
+        border_style=_normalize_border_style_box(
+            _resolve_border_property("style", declarations, parent_style, initial_values),
+        ),
+        border_color=_normalize_border_color_box(
+            _resolve_border_property("color", declarations, parent_style, initial_values),
+            color,
         ),
         font_weight=_normalize_font_weight(
             _resolve_property_value("font-weight", declarations, parent_style, initial_values),
@@ -293,6 +328,26 @@ def _style_from_declarations(
 def _initial_style_values() -> dict[str, str]:
     return {
         "background-color": DEFAULT_BACKGROUND_COLOR,
+        "border": "medium none currentcolor",
+        "border-bottom": "medium none currentcolor",
+        "border-bottom-color": "currentcolor",
+        "border-bottom-style": "none",
+        "border-bottom-width": "medium",
+        "border-color": "currentcolor",
+        "border-left": "medium none currentcolor",
+        "border-left-color": "currentcolor",
+        "border-left-style": "none",
+        "border-left-width": "medium",
+        "border-right": "medium none currentcolor",
+        "border-right-color": "currentcolor",
+        "border-right-style": "none",
+        "border-right-width": "medium",
+        "border-style": "none",
+        "border-top": "medium none currentcolor",
+        "border-top-color": "currentcolor",
+        "border-top-style": "none",
+        "border-top-width": "medium",
+        "border-width": "medium",
         "bottom": "auto",
         "clear": "none",
         "color": DEFAULT_COLOR,
@@ -386,6 +441,46 @@ def _resolve_box_property(
     return _compress_box_edges(edges["top"], edges["right"], edges["bottom"], edges["left"])
 
 
+def _resolve_border_property(
+    suffix: str,
+    declarations: dict[str, str],
+    parent_style: ComputedStyle,
+    initial_values: dict[str, str],
+) -> str:
+    shorthand = _resolve_property_value(f"border-{suffix}", declarations, parent_style, initial_values)
+    top, right, bottom, left = _expand_box_tokens(shorthand)
+    edges = {
+        "top": top,
+        "right": right,
+        "bottom": bottom,
+        "left": left,
+    }
+    if "border" in declarations:
+        border_all = _split_border_shorthand(
+            _resolve_property_value("border", declarations, parent_style, initial_values)
+        )
+        if border_all[suffix] is not None:
+            for side in edges:
+                edges[side] = border_all[suffix]
+    for side in ("top", "right", "bottom", "left"):
+        side_name = f"border-{side}"
+        if side_name in declarations:
+            side_shorthand = _split_border_shorthand(
+                _resolve_property_value(side_name, declarations, parent_style, initial_values)
+            )
+            if side_shorthand[suffix] is not None:
+                edges[side] = side_shorthand[suffix]
+        longhand_name = f"border-{side}-{suffix}"
+        if longhand_name in declarations:
+            edges[side] = _resolve_property_value(
+                longhand_name,
+                declarations,
+                parent_style,
+                initial_values,
+            )
+    return _compress_box_edges(edges["top"], edges["right"], edges["bottom"], edges["left"])
+
+
 def _expand_box_tokens(value: str) -> tuple[str, str, str, str]:
     tokens = value.strip().split()
     if not tokens:
@@ -412,6 +507,25 @@ def _compress_box_edges(top: str, right: str, bottom: str, left: str) -> str:
     return f"{top} {right} {bottom} {left}"
 
 
+def _split_border_shorthand(value: str) -> dict[str, str | None]:
+    result: dict[str, str | None] = {
+        "width": None,
+        "style": None,
+        "color": None,
+    }
+    for token in value.strip().split():
+        lowered = token.lower()
+        if result["width"] is None and _is_border_width_token(lowered):
+            result["width"] = lowered
+            continue
+        if result["style"] is None and lowered in _BORDER_STYLE_VALUES:
+            result["style"] = lowered
+            continue
+        if result["color"] is None:
+            result["color"] = token.strip()
+    return result
+
+
 def _normalize_color(value: str, fallback: str) -> str:
     text = value.strip()
     return text or fallback
@@ -420,6 +534,46 @@ def _normalize_color(value: str, fallback: str) -> str:
 def _normalize_background_color(value: str) -> str:
     text = value.strip()
     return text or DEFAULT_BACKGROUND_COLOR
+
+
+def _normalize_border_box(value: str, *, default: str) -> str:
+    edges = []
+    for token in _expand_box_tokens(value):
+        edges.append(_normalize_border_width_token(token, default=default))
+    return _compress_box_edges(*edges)
+
+
+def _normalize_border_width_token(value: str, *, default: str) -> str:
+    text = value.strip().lower()
+    if text in {"thin", "medium", "thick"}:
+        return text
+    if text.endswith("px"):
+        text = text[:-2]
+    try:
+        return f"{max(int(round(float(text))), 0)}px"
+    except ValueError:
+        return default
+
+
+def _normalize_border_style_box(value: str) -> str:
+    edges = []
+    for token in _expand_box_tokens(value):
+        text = token.strip().lower()
+        edges.append(text if text in _BORDER_STYLE_VALUES else "none")
+    return _compress_box_edges(*edges)
+
+
+def _normalize_border_color_box(value: str, fallback_color: str) -> str:
+    edges = []
+    for token in _expand_box_tokens(value):
+        text = token.strip()
+        if not text:
+            edges.append("currentcolor")
+        elif text.lower() == "currentcolor":
+            edges.append(fallback_color)
+        else:
+            edges.append(text)
+    return _compress_box_edges(*edges)
 
 
 def _normalize_font_weight(value: str, fallback: str) -> str:
@@ -625,6 +779,21 @@ _FONT_SIZE_KEYWORDS: dict[str, int] = {
     "x-large": 24,
     "xx-large": 32,
 }
+
+_BORDER_STYLE_VALUES = frozenset(
+    {"none", "solid", "dashed", "dotted", "double", "hidden"}
+)
+
+
+def _is_border_width_token(value: str) -> bool:
+    if value in {"thin", "medium", "thick"}:
+        return True
+    text = value[:-2] if value.endswith("px") else value
+    try:
+        float(text)
+        return True
+    except ValueError:
+        return False
 
 
 def _resolve_font_size(raw: str | None, *, parent_px: int, root_px: int) -> int:

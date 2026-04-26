@@ -159,6 +159,14 @@ class FloatContext:
         return result
 
 
+@dataclass(frozen=True, slots=True)
+class EdgeSizesColors:
+    top: str
+    right: str
+    bottom: str
+    left: str
+
+
 @dataclass(slots=True)
 class _ContainingBlock:
     """Snapshot of a positioned ancestor's content edge. Used as the
@@ -275,7 +283,7 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
 
     margin = _resolve_margin(style)
     padding = _resolve_padding(style)
-    border = EdgeSizes()  # borders not yet supported
+    border = _resolve_border(style)
 
     box.geometry.margin = margin
     box.geometry.padding = padding
@@ -427,6 +435,8 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
         state.cb_stack.pop()
     state.relative_offset_x, state.relative_offset_y = saved_offset
 
+    _maybe_emit_border(box, state)
+
     # Close the clip region opened above, with the now-known content
     # height and a matching pop.
     if clip_open_index is not None:
@@ -471,7 +481,7 @@ def _place_absolute(deferred: _DeferredAbsolute, state: LayoutState) -> None:
 
     margin = _resolve_margin(style)
     padding = _resolve_padding(style)
-    border = EdgeSizes()
+    border = _resolve_border(style)
     box.geometry.margin = margin
     box.geometry.padding = padding
     box.geometry.border = border
@@ -548,6 +558,7 @@ def _place_absolute(deferred: _DeferredAbsolute, state: LayoutState) -> None:
         used_height = max(cursor - child_y, 0)
         content_height = _resolve_height(style, used_height)
         box.geometry.content_height = content_height
+        _maybe_emit_border(box, state)
     finally:
         state.cb_stack.pop()
         state.floats = saved_floats
@@ -570,7 +581,7 @@ def _place_float(
     style = box.style
     margin = _resolve_margin(style)
     padding = _resolve_padding(style)
-    border = EdgeSizes()
+    border = _resolve_border(style)
     box.geometry.margin = margin
     box.geometry.padding = padding
     box.geometry.border = border
@@ -636,6 +647,7 @@ def _place_float(
         used_height = max(cursor - child_y, 0)
         content_height = _resolve_height(style, used_height)
         box.geometry.content_height = content_height
+        _maybe_emit_border(box, state)
     finally:
         state.floats = saved_floats
 
@@ -1042,6 +1054,52 @@ def _maybe_emit_background(box: Box, state: LayoutState) -> None:
     )
 
 
+def _maybe_emit_border(box: Box, state: LayoutState) -> None:
+    geom = box.geometry
+    colors = _resolve_border_colors(box.style)
+    if geom.border.top > 0:
+        state.items.append(
+            BoxPlacement(
+                x=geom.x + state.relative_offset_x,
+                y=geom.y + state.relative_offset_y,
+                width=geom.border_box_width,
+                height=geom.border.top,
+                color=colors.top,
+            )
+        )
+    if geom.border.bottom > 0:
+        state.items.append(
+            BoxPlacement(
+                x=geom.x + state.relative_offset_x,
+                y=geom.y + geom.border_box_height - geom.border.bottom + state.relative_offset_y,
+                width=geom.border_box_width,
+                height=geom.border.bottom,
+                color=colors.bottom,
+            )
+        )
+    inner_height = geom.padding.top + geom.content_height + geom.padding.bottom
+    if geom.border.left > 0 and inner_height > 0:
+        state.items.append(
+            BoxPlacement(
+                x=geom.x + state.relative_offset_x,
+                y=geom.y + geom.border.top + state.relative_offset_y,
+                width=geom.border.left,
+                height=inner_height,
+                color=colors.left,
+            )
+        )
+    if geom.border.right > 0 and inner_height > 0:
+        state.items.append(
+            BoxPlacement(
+                x=geom.x + geom.border_box_width - geom.border.right + state.relative_offset_x,
+                y=geom.y + geom.border.top + state.relative_offset_y,
+                width=geom.border.right,
+                height=inner_height,
+                color=colors.right,
+            )
+        )
+
+
 _BACKGROUND_PLACEHOLDER = -1  # height sentinel for post-pass resolution
 
 
@@ -1115,6 +1173,54 @@ def _expand_shorthand(value: str) -> tuple[int, int, int, int]:
     return (nums[0], nums[1], nums[2], nums[3])
 
 
+def _expand_lengths(value: str) -> tuple[int, int, int, int]:
+    tokens = value.strip().split()
+    if not tokens:
+        return (0, 0, 0, 0)
+    nums = [_border_length_to_px(token) for token in tokens]
+    if len(nums) == 1:
+        v = nums[0]
+        return (v, v, v, v)
+    if len(nums) == 2:
+        t, h = nums
+        return (t, h, t, h)
+    if len(nums) == 3:
+        t, h, b = nums
+        return (t, h, b, h)
+    return (nums[0], nums[1], nums[2], nums[3])
+
+
+def _expand_border_styles(tokens: list[str]) -> tuple[str, str, str, str]:
+    if not tokens:
+        return ("none", "none", "none", "none")
+    if len(tokens) == 1:
+        v = tokens[0]
+        return (v, v, v, v)
+    if len(tokens) == 2:
+        t, h = tokens
+        return (t, h, t, h)
+    if len(tokens) == 3:
+        t, h, b = tokens
+        return (t, h, b, h)
+    return (tokens[0], tokens[1], tokens[2], tokens[3])
+
+
+def _expand_color_tokens(value: str) -> tuple[str, str, str, str]:
+    tokens = value.strip().split()
+    if not tokens:
+        return ("#141414", "#141414", "#141414", "#141414")
+    if len(tokens) == 1:
+        v = tokens[0]
+        return (v, v, v, v)
+    if len(tokens) == 2:
+        t, h = tokens
+        return (t, h, t, h)
+    if len(tokens) == 3:
+        t, h, b = tokens
+        return (t, h, b, h)
+    return (tokens[0], tokens[1], tokens[2], tokens[3])
+
+
 def _resolve_width(
     style: ComputedStyle,
     containing_width: int,
@@ -1129,6 +1235,28 @@ def _resolve_width(
         if explicit > 0:
             return explicit
     return max(available, 0)
+
+
+def _resolve_border(style: ComputedStyle) -> EdgeSizes:
+    widths = _expand_lengths(style.border_width)
+    styles = style.border_style.strip().split()
+    top_style, right_style, bottom_style, left_style = _expand_border_styles(styles)
+    return EdgeSizes(
+        top=0 if top_style in {"none", "hidden"} else widths[0],
+        right=0 if right_style in {"none", "hidden"} else widths[1],
+        bottom=0 if bottom_style in {"none", "hidden"} else widths[2],
+        left=0 if left_style in {"none", "hidden"} else widths[3],
+    )
+
+
+def _resolve_border_colors(style: ComputedStyle) -> EdgeSizesColors:
+    colors = _expand_color_tokens(style.border_color)
+    return EdgeSizesColors(
+        top=colors[0],
+        right=colors[1],
+        bottom=colors[2],
+        left=colors[3],
+    )
 
 
 def _resolve_height(style: ComputedStyle, used_content_height: int) -> int:
@@ -1150,6 +1278,17 @@ def _length_to_px(value: str) -> int:
         return max(int(round(float(text))), 0)
     except ValueError:
         return 0
+
+
+def _border_length_to_px(value: str) -> int:
+    text = value.strip().lower()
+    if text == "thin":
+        return 1
+    if text == "medium":
+        return 3
+    if text == "thick":
+        return 5
+    return _length_to_px(text)
 
 
 def _attr_int(value: str | None) -> int | None:

@@ -107,6 +107,56 @@ def test_bfc_padding_contributes_to_box_geometry() -> None:
     assert rect.height >= 15 + text.y + 15 - text.y
 
 
+def test_bfc_border_contributes_to_geometry_and_paint() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    box = Element(id=NodeId("b"), tag="div")
+    append_child(document, body)
+    append_child(body, box)
+    append_child(box, Text(id=NodeId("t"), data="bordered"))
+    styles = {
+        NodeId("body"): ComputedStyle(),
+        NodeId("b"): ComputedStyle(
+            border_width="2px",
+            border_style="solid",
+            border_color="#cc0000",
+            background_color="#eeeeee",
+        ),
+    }
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=400)
+    placements = finalize_backgrounds(root, placements)
+
+    text = next(p for p in placements if isinstance(p, TextPlacement) and p.text == "bordered")
+    rects = [p for p in placements if isinstance(p, BoxPlacement)]
+
+    assert text.x == 2
+    assert text.y == 2
+    assert sum(1 for rect in rects if rect.color == "#cc0000") == 4
+
+
+def test_bfc_border_none_suppresses_border_width() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    box = Element(id=NodeId("b"), tag="div")
+    append_child(document, body)
+    append_child(body, box)
+    append_child(box, Text(id=NodeId("t"), data="plain"))
+    styles = {
+        NodeId("body"): ComputedStyle(),
+        NodeId("b"): ComputedStyle(border_width="5px", border_style="none"),
+    }
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=400)
+
+    text = next(p for p in placements if isinstance(p, TextPlacement) and p.text == "plain")
+
+    assert text.x == 0
+    assert text.y == 0
+
+
 def test_bfc_anonymous_block_wraps_inline_siblings_when_mixed() -> None:
     document = Document(id=NodeId("doc"))
     body = Element(id=NodeId("body"), tag="body")
