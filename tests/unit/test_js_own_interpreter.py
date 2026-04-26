@@ -1148,3 +1148,46 @@ def test_compound_assignment_with_await_on_rhs() -> None:
     )
     assert promise.state == "fulfilled"
     assert promise.value == 17.0
+
+
+def test_exponentiation_basic() -> None:
+    assert evaluate_expression("2 ** 8") == 256.0
+
+
+def test_exponentiation_is_right_associative() -> None:
+    # 2 ** 3 ** 2  ==  2 ** (3 ** 2)  ==  2 ** 9  ==  512
+    assert evaluate_expression("2 ** 3 ** 2") == 512.0
+
+
+def test_exponentiation_works_in_async() -> None:
+    promise = evaluate_program("async function f() { return 2 ** 8; } f();")
+    assert promise.state == "fulfilled"
+    assert promise.value == 256.0
+
+
+def test_nullish_coalesce_returns_left_for_non_nullish() -> None:
+    assert evaluate_program('"value" ?? "default";') == "value"
+
+
+def test_nullish_coalesce_does_not_short_circuit_on_zero() -> None:
+    assert evaluate_program("0 ?? 99;") == 0.0
+
+
+def test_nullish_coalesce_does_not_short_circuit_on_empty_string() -> None:
+    assert evaluate_program('"" ?? "default";') == ""
+
+
+def test_nullish_coalesce_uses_right_for_null() -> None:
+    assert evaluate_program('null ?? "default";') == "default"
+
+
+def test_nullish_coalesce_uses_right_for_undefined() -> None:
+    assert evaluate_program('undefined ?? "default";') == "default"
+
+
+def test_nullish_coalesce_works_in_async() -> None:
+    promise = evaluate_program(
+        'async function f() { return null ?? await Promise.resolve("via-await"); } f();'
+    )
+    assert promise.state == "fulfilled"
+    assert promise.value == "via-await"

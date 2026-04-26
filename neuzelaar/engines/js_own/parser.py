@@ -62,6 +62,7 @@ PRECEDENCE = {
     "/=": 1,
     "%=": 1,
     "||": 2,
+    "??": 2,
     "&&": 3,
     "==": 4,
     "!=": 4,
@@ -77,6 +78,7 @@ PRECEDENCE = {
     "STAR": 7,
     "SLASH": 7,
     "PERCENT": 7,
+    "**": 8,
     "LPAREN": 9,
     "DOT": 9,
     "LBRACKET": 9,
@@ -613,6 +615,10 @@ class Parser:
             self._consume("COLON", "Expected ':' in ternary expression")
             alternate = self.parse_expression()
             return ConditionalExpr(test=left, consequent=consequent, alternate=alternate)
+        if token.kind == "**":
+            # Right-associative: a ** b ** c parses as a ** (b ** c).
+            right = self.parse_expression(PRECEDENCE["**"] - 1)
+            return BinaryExpr(left=left, operator="**", right=right)
         precedence = PRECEDENCE[token.kind]
         right = self.parse_expression(precedence)
         return BinaryExpr(left=left, operator=token.lexeme, right=right)

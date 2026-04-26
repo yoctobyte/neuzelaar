@@ -944,6 +944,16 @@ def _evaluate_async_binary(expr: BinaryExpr, environment: Environment, *, on_val
             on_error=on_error,
         )
         return
+    if expr.operator == "??":
+        _evaluate_async_expr(
+            expr.left,
+            environment,
+            on_value=lambda left: on_value(left)
+            if left is not None and left is not JS_UNDEFINED
+            else _evaluate_async_expr(expr.right, environment, on_value=on_value, on_error=on_error),
+            on_error=on_error,
+        )
+        return
     _evaluate_async_expr(
         expr.left,
         environment,
@@ -1029,6 +1039,8 @@ def _apply_binary_operator(operator: str, left: object, right: object) -> object
         return js_divide(left, right)
     if operator == "%":
         return js_modulo(left, right)
+    if operator == "**":
+        return js_to_number(left) ** js_to_number(right)
     if operator == "<":
         return js_to_number(left) < js_to_number(right)
     if operator == ">":
@@ -1532,6 +1544,11 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             if js_truthy(left):
                 return left
             return evaluate_expr(expr.right, environment)
+        if expr.operator == "??":
+            left = evaluate_expr(expr.left, environment)
+            if left is None or left is JS_UNDEFINED:
+                return evaluate_expr(expr.right, environment)
+            return left
         left = evaluate_expr(expr.left, environment)
         right = evaluate_expr(expr.right, environment)
         if expr.operator == "+":
@@ -1544,6 +1561,8 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return js_divide(left, right)
         if expr.operator == "%":
             return js_modulo(left, right)
+        if expr.operator == "**":
+            return js_to_number(left) ** js_to_number(right)
         if expr.operator == "<":
             return js_to_number(left) < js_to_number(right)
         if expr.operator == ">":
