@@ -1264,3 +1264,83 @@ def test_string_methods_chain() -> None:
 
 def test_string_char_code_at() -> None:
     assert evaluate_expression('"A".charCodeAt(0)') == 65.0
+
+
+def test_array_map() -> None:
+    assert evaluate_program("[1,2,3].map(function (x) { return x * 2; });") == [2.0, 4.0, 6.0]
+
+
+def test_array_map_with_arrow() -> None:
+    assert evaluate_program("[1,2,3].map(x => x * x);") == [1.0, 4.0, 9.0]
+
+
+def test_array_filter() -> None:
+    assert evaluate_program(
+        "[1,2,3,4,5].filter(function (x) { return x % 2 === 0; });"
+    ) == [2.0, 4.0]
+
+
+def test_array_reduce_with_initial() -> None:
+    assert (
+        evaluate_program("[1,2,3,4].reduce(function (a, b) { return a + b; }, 0);")
+        == 10.0
+    )
+
+
+def test_array_reduce_without_initial() -> None:
+    assert evaluate_program("[1,2,3,4].reduce(function (a, b) { return a + b; });") == 10.0
+
+
+def test_array_for_each_side_effect() -> None:
+    assert evaluate_program(
+        "var s = 0; [1,2,3].forEach(function (x) { s = s + x; }); s;"
+    ) == 6.0
+
+
+def test_array_find_and_find_index() -> None:
+    assert evaluate_program("[1,2,3,4].find(function (x) { return x > 2; });") == 3.0
+    assert evaluate_program("[1,2,3,4].findIndex(function (x) { return x > 2; });") == 2.0
+
+
+def test_array_some_and_every() -> None:
+    assert evaluate_program("[1,2,3].some(function (x) { return x > 2; });") is True
+    assert evaluate_program("[1,2,3].every(function (x) { return x > 0; });") is True
+    assert evaluate_program("[1,2,3].every(function (x) { return x > 1; });") is False
+
+
+def test_array_index_of_and_includes() -> None:
+    assert evaluate_program('["a","b","c"].indexOf("b");') == 1.0
+    assert evaluate_program('["a","b","c"].indexOf("z");') == -1.0
+    assert evaluate_program("[1,2,3].includes(2);") is True
+
+
+def test_array_join_with_separator() -> None:
+    assert evaluate_program('[1,2,3].join("-");') == "1-2-3"
+
+
+def test_array_default_sort_is_lexicographic() -> None:
+    # JS spec default sort converts to strings, so 11 sorts before 2.
+    assert evaluate_program("[3,1,2,11].sort();") == [1.0, 11.0, 2.0, 3.0]
+
+
+def test_array_sort_with_comparator() -> None:
+    assert evaluate_program(
+        "[3,1,2,11].sort(function (a, b) { return a - b; });"
+    ) == [1.0, 2.0, 3.0, 11.0]
+
+
+def test_array_slice_concat() -> None:
+    assert evaluate_program("[1,2,3,4].slice(1,3);") == [2.0, 3.0]
+    assert evaluate_program("[1,2].concat([3,4], 5);") == [1.0, 2.0, 3.0, 4.0, 5.0]
+
+
+def test_array_pop_shift_unshift() -> None:
+    assert evaluate_program("var a = [1,2,3]; var x = a.pop(); a.length === 2 ? x : -1;") == 3.0
+    assert evaluate_program("var a = [1,2,3]; var x = a.shift(); a.length === 2 ? x : -1;") == 1.0
+    assert evaluate_program("var a = [1,2]; a.unshift(0); a;") == [0.0, 1.0, 2.0]
+
+
+def test_array_method_chain() -> None:
+    assert evaluate_program(
+        "[1,2,3,4,5].filter(x => x > 1).map(x => x * 10).reduce((a, b) => a + b, 0);"
+    ) == 140.0

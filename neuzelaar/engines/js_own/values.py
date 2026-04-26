@@ -73,11 +73,9 @@ def read_property(target: object, property_name: str, *, receiver: object | None
     if isinstance(target, list):
         if property_name == "length":
             return float(len(target))
-        if property_name == "push":
-            return HostCallable(
-                "Array.push",
-                lambda args, this_value: _array_push(target if this_value is None else this_value, args),
-            )
+        builder = _ARRAY_PROPERTY_BUILDERS.get(property_name)
+        if builder is not None:
+            return builder(target)
         return JS_UNDEFINED
     if isinstance(target, str):
         return _read_string_property(target, property_name)
@@ -189,6 +187,277 @@ def _array_push(target: object, values: tuple[object, ...]) -> float:
         raise TypeError("Array.push receiver must be an array")
     target.extend(values)
     return float(len(target))
+
+
+def _arr_pop(arr: list[object], _args: tuple[object, ...]) -> object:
+    if not arr:
+        return JS_UNDEFINED
+    return arr.pop()
+
+
+def _arr_shift(arr: list[object], _args: tuple[object, ...]) -> object:
+    if not arr:
+        return JS_UNDEFINED
+    return arr.pop(0)
+
+
+def _arr_unshift(arr: list[object], args: tuple[object, ...]) -> float:
+    for i, value in enumerate(args):
+        arr.insert(i, value)
+    return float(len(arr))
+
+
+def _arr_index_of(arr: list[object], args: tuple[object, ...]) -> float:
+    if not args:
+        return -1.0
+    needle = args[0]
+    start = 0
+    if len(args) > 1:
+        raw = js_to_number(args[1])
+        if not math.isnan(raw):
+            start = int(raw)
+            if start < 0:
+                start = max(0, len(arr) + start)
+    for i in range(start, len(arr)):
+        if _strict_equal_for_array(arr[i], needle):
+            return float(i)
+    return -1.0
+
+
+def _arr_last_index_of(arr: list[object], args: tuple[object, ...]) -> float:
+    if not args:
+        return -1.0
+    needle = args[0]
+    for i in range(len(arr) - 1, -1, -1):
+        if _strict_equal_for_array(arr[i], needle):
+            return float(i)
+    return -1.0
+
+
+def _arr_includes(arr: list[object], args: tuple[object, ...]) -> bool:
+    if not args:
+        return False
+    needle = args[0]
+    for value in arr:
+        if _strict_equal_for_array(value, needle):
+            return True
+    return False
+
+
+def _arr_slice(arr: list[object], args: tuple[object, ...]) -> list[object]:
+    start = int(js_to_number(args[0])) if args and args[0] is not JS_UNDEFINED else 0
+    if len(args) > 1 and args[1] is not JS_UNDEFINED:
+        end = int(js_to_number(args[1]))
+        return list(arr[start:end])
+    return list(arr[start:])
+
+
+def _arr_concat(arr: list[object], args: tuple[object, ...]) -> list[object]:
+    result = list(arr)
+    for arg in args:
+        if isinstance(arg, list):
+            result.extend(arg)
+        else:
+            result.append(arg)
+    return result
+
+
+def _arr_join(arr: list[object], args: tuple[object, ...]) -> str:
+    sep = js_to_string(args[0]) if args and args[0] is not JS_UNDEFINED else ","
+    parts = []
+    for value in arr:
+        if value is None or value is JS_UNDEFINED:
+            parts.append("")
+        else:
+            parts.append(js_to_string(value))
+    return sep.join(parts)
+
+
+def _arr_reverse(arr: list[object], _args: tuple[object, ...]) -> list[object]:
+    arr.reverse()
+    return arr
+
+
+def _arr_for_each(arr: list[object], args: tuple[object, ...]) -> object:
+    callback = args[0] if args else None
+    if callback is None or not hasattr(callback, "call"):
+        raise TypeError("Array.forEach callback must be callable")
+    for index, value in enumerate(list(arr)):
+        callback.call((value, float(index), arr), this_value=None)
+    return JS_UNDEFINED
+
+
+def _arr_map(arr: list[object], args: tuple[object, ...]) -> list[object]:
+    callback = args[0] if args else None
+    if callback is None or not hasattr(callback, "call"):
+        raise TypeError("Array.map callback must be callable")
+    return [callback.call((value, float(index), arr), this_value=None) for index, value in enumerate(list(arr))]
+
+
+def _arr_filter(arr: list[object], args: tuple[object, ...]) -> list[object]:
+    from neuzelaar.engines.js_own.runtime import js_truthy
+
+    callback = args[0] if args else None
+    if callback is None or not hasattr(callback, "call"):
+        raise TypeError("Array.filter callback must be callable")
+    return [
+        value
+        for index, value in enumerate(list(arr))
+        if js_truthy(callback.call((value, float(index), arr), this_value=None))
+    ]
+
+
+def _arr_find(arr: list[object], args: tuple[object, ...]) -> object:
+    from neuzelaar.engines.js_own.runtime import js_truthy
+
+    callback = args[0] if args else None
+    if callback is None or not hasattr(callback, "call"):
+        raise TypeError("Array.find callback must be callable")
+    for index, value in enumerate(arr):
+        if js_truthy(callback.call((value, float(index), arr), this_value=None)):
+            return value
+    return JS_UNDEFINED
+
+
+def _arr_find_index(arr: list[object], args: tuple[object, ...]) -> float:
+    from neuzelaar.engines.js_own.runtime import js_truthy
+
+    callback = args[0] if args else None
+    if callback is None or not hasattr(callback, "call"):
+        raise TypeError("Array.findIndex callback must be callable")
+    for index, value in enumerate(arr):
+        if js_truthy(callback.call((value, float(index), arr), this_value=None)):
+            return float(index)
+    return -1.0
+
+
+def _arr_some(arr: list[object], args: tuple[object, ...]) -> bool:
+    from neuzelaar.engines.js_own.runtime import js_truthy
+
+    callback = args[0] if args else None
+    if callback is None or not hasattr(callback, "call"):
+        raise TypeError("Array.some callback must be callable")
+    return any(
+        js_truthy(callback.call((value, float(index), arr), this_value=None))
+        for index, value in enumerate(arr)
+    )
+
+
+def _arr_every(arr: list[object], args: tuple[object, ...]) -> bool:
+    from neuzelaar.engines.js_own.runtime import js_truthy
+
+    callback = args[0] if args else None
+    if callback is None or not hasattr(callback, "call"):
+        raise TypeError("Array.every callback must be callable")
+    return all(
+        js_truthy(callback.call((value, float(index), arr), this_value=None))
+        for index, value in enumerate(arr)
+    )
+
+
+def _arr_reduce(arr: list[object], args: tuple[object, ...]) -> object:
+    callback = args[0] if args else None
+    if callback is None or not hasattr(callback, "call"):
+        raise TypeError("Array.reduce callback must be callable")
+    has_initial = len(args) > 1
+    if not arr and not has_initial:
+        raise TypeError("Reduce of empty array with no initial value")
+    if has_initial:
+        accumulator = args[1]
+        start_index = 0
+    else:
+        accumulator = arr[0]
+        start_index = 1
+    for index in range(start_index, len(arr)):
+        accumulator = callback.call(
+            (accumulator, arr[index], float(index), arr), this_value=None
+        )
+    return accumulator
+
+
+def _arr_sort(arr: list[object], args: tuple[object, ...]) -> list[object]:
+    comparator = args[0] if args and args[0] is not JS_UNDEFINED else None
+    if comparator is None or not hasattr(comparator, "call"):
+        # Default sort: convert to strings, sort lexicographically.
+        arr.sort(key=js_to_string)
+        return arr
+    import functools
+
+    def compare(a: object, b: object) -> int:
+        result = comparator.call((a, b), this_value=None)
+        n = js_to_number(result)
+        if math.isnan(n) or n == 0:
+            return 0
+        return -1 if n < 0 else 1
+
+    arr.sort(key=functools.cmp_to_key(compare))
+    return arr
+
+
+def _arr_flat(arr: list[object], args: tuple[object, ...]) -> list[object]:
+    depth = int(js_to_number(args[0])) if args and args[0] is not JS_UNDEFINED else 1
+    return _flatten(arr, depth)
+
+
+def _flatten(arr: list[object], depth: int) -> list[object]:
+    out: list[object] = []
+    for value in arr:
+        if isinstance(value, list) and depth > 0:
+            out.extend(_flatten(value, depth - 1))
+        else:
+            out.append(value)
+    return out
+
+
+def _strict_equal_for_array(left: object, right: object) -> bool:
+    # Lightweight strict-equal that avoids importing the runtime module repeatedly.
+    if isinstance(left, float) and math.isnan(left):
+        return False
+    if isinstance(right, float) and math.isnan(right):
+        return False
+    if type(left) is not type(right) and not (
+        isinstance(left, (int, float)) and isinstance(right, (int, float))
+    ):
+        # Allow int/float cross-comparison; keep bool distinct.
+        if isinstance(left, bool) != isinstance(right, bool):
+            return False
+        if not (isinstance(left, (int, float)) and isinstance(right, (int, float))):
+            return False
+    if isinstance(left, (dict, list)) and isinstance(right, (dict, list)):
+        return left is right
+    return left == right
+
+
+def _bind_arr_method(arr: list[object], name: str, fn) -> HostCallable:
+    return HostCallable(
+        f"Array.prototype.{name}",
+        lambda args, this_value: fn(arr if this_value is None else this_value, args),
+    )
+
+
+_ARRAY_PROPERTY_BUILDERS: dict[str, "callable[[list], object]"] = {
+    "push": lambda a: _bind_arr_method(a, "push", lambda arr, args: _array_push(arr, args)),
+    "pop": lambda a: _bind_arr_method(a, "pop", _arr_pop),
+    "shift": lambda a: _bind_arr_method(a, "shift", _arr_shift),
+    "unshift": lambda a: _bind_arr_method(a, "unshift", _arr_unshift),
+    "indexOf": lambda a: _bind_arr_method(a, "indexOf", _arr_index_of),
+    "lastIndexOf": lambda a: _bind_arr_method(a, "lastIndexOf", _arr_last_index_of),
+    "includes": lambda a: _bind_arr_method(a, "includes", _arr_includes),
+    "slice": lambda a: _bind_arr_method(a, "slice", _arr_slice),
+    "concat": lambda a: _bind_arr_method(a, "concat", _arr_concat),
+    "join": lambda a: _bind_arr_method(a, "join", _arr_join),
+    "reverse": lambda a: _bind_arr_method(a, "reverse", _arr_reverse),
+    "forEach": lambda a: _bind_arr_method(a, "forEach", _arr_for_each),
+    "map": lambda a: _bind_arr_method(a, "map", _arr_map),
+    "filter": lambda a: _bind_arr_method(a, "filter", _arr_filter),
+    "find": lambda a: _bind_arr_method(a, "find", _arr_find),
+    "findIndex": lambda a: _bind_arr_method(a, "findIndex", _arr_find_index),
+    "some": lambda a: _bind_arr_method(a, "some", _arr_some),
+    "every": lambda a: _bind_arr_method(a, "every", _arr_every),
+    "reduce": lambda a: _bind_arr_method(a, "reduce", _arr_reduce),
+    "sort": lambda a: _bind_arr_method(a, "sort", _arr_sort),
+    "flat": lambda a: _bind_arr_method(a, "flat", _arr_flat),
+}
 
 
 def _read_string_property(s: str, name: str) -> object:
