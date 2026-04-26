@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from neuzelaar.engines.js_own.host import ConstructibleHostObject, HostCallable, HostObject
 from neuzelaar.engines.js_own.promises import create_promise_builtins
-from neuzelaar.engines.js_own.runtime import js_error_object, js_to_number, js_to_string
+from neuzelaar.engines.js_own.runtime import JS_UNDEFINED, js_error_object, js_to_number, js_to_string
 
 
 class _CallableConstructor(ConstructibleHostObject):
@@ -83,7 +83,7 @@ def install_builtins(environment) -> None:
         return evaluate_program_with_config(source, environment=environment)
 
     environment.declare("eval", HostCallable("eval", _eval), kind="const")
-    environment.declare("undefined", None, kind="const")
+    environment.declare("undefined", JS_UNDEFINED, kind="const")
     environment.declare("Infinity", float("inf"), kind="const")
     environment.declare("NaN", float("nan"), kind="const")
     promise_constructor, queue_microtask = create_promise_builtins()

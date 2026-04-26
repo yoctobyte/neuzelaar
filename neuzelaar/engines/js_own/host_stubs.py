@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
-from neuzelaar.engines.js_own.runtime import js_to_string
+from neuzelaar.engines.js_own.runtime import JS_UNDEFINED, js_to_string
 from neuzelaar.engines.js_own.runtime_state import current_runtime_state
 from neuzelaar.engines.js_own.scheduler import ScriptScheduler
 
@@ -69,7 +69,7 @@ class HostTimers:
     def _schedule(self, arguments: tuple[object, ...], *, repeat: bool) -> object:
         callback = arguments[0] if arguments else None
         delay = arguments[1] if len(arguments) > 1 else 0.0
-        if delay is None:
+        if delay is None or delay is JS_UNDEFINED:
             delay = 0.0
         timer_id = self.next_id
         self.next_id += 1

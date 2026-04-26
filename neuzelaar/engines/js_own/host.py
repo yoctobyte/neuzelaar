@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
+from neuzelaar.engines.js_own.runtime import JS_UNDEFINED
+
 
 HostCallableImpl = Callable[[tuple[object, ...], object | None], object]
 
@@ -29,7 +31,7 @@ class HostObject:
             return self.properties.get(name)
         if self.prototype is not None:
             return self.prototype.get(name)
-        return None
+        return JS_UNDEFINED
 
     def set(self, name: str, value: object) -> object:
         self.properties[name] = value

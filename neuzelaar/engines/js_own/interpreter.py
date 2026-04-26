@@ -6,7 +6,7 @@ from neuzelaar.engines.js_own.builtins import install_builtins
 from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
 from neuzelaar.engines.js_own.execution import budget_tick, execution_budget
 from neuzelaar.engines.js_own.promises import JavaScriptPromise, await_value, promise_resolve
-from neuzelaar.engines.js_own.errors import JavaScriptThrownValue
+from neuzelaar.engines.js_own.errors import JavaScriptReferenceError, JavaScriptThrownValue
 from neuzelaar.engines.js_own.host import HostCallable
 from neuzelaar.engines.js_own.runtime_state import current_runtime_state, runtime_session
 from neuzelaar.engines.js_own.ast import (
@@ -53,6 +53,7 @@ from neuzelaar.engines.js_own.environment import Environment
 from neuzelaar.engines.js_own.parser import parse_expression as parse_expression_ast
 from neuzelaar.engines.js_own.parser import parse_program as parse_program_ast
 from neuzelaar.engines.js_own.runtime import (
+    JS_UNDEFINED,
     js_add,
     js_divide,
     js_error_object,
@@ -121,11 +122,11 @@ class JavaScriptFunction:
         if self.name is not None:
             call_env.declare(self.name, self, kind="const")
         for index, param in enumerate(self.params):
-            value = arguments[index] if index < len(arguments) else None
+            value = arguments[index] if index < len(arguments) else JS_UNDEFINED
             call_env.declare(param, value, kind="var")
         try:
             evaluate_statement(self.body, call_env)
-            return None
+            return JS_UNDEFINED
         except ReturnSignal as signal:
             return signal.value
 
@@ -156,12 +157,12 @@ class JavaScriptArrowFunction:
         call_env.var_scope = call_env
         call_env.declare("this", self.lexical_this, kind="const")
         for index, param in enumerate(self.params):
-            value = arguments[index] if index < len(arguments) else None
+            value = arguments[index] if index < len(arguments) else JS_UNDEFINED
             call_env.declare(param, value, kind="var")
         if isinstance(self.body, BlockStatement):
             try:
                 evaluate_statement(self.body, call_env)
-                return None
+                return JS_UNDEFINED
             except ReturnSignal as signal:
                 return signal.value
         return evaluate_expr(self.body, call_env)
@@ -185,7 +186,7 @@ class JavaScriptAsyncFunction(JavaScriptFunction):
         if self.name is not None:
             call_env.declare(self.name, self, kind="const")
         for index, param in enumerate(self.params):
-            value = arguments[index] if index < len(arguments) else None
+            value = arguments[index] if index < len(arguments) else JS_UNDEFINED
             call_env.declare(param, value, kind="var")
         promise = JavaScriptPromise()
         _evaluate_async_statement(
@@ -203,7 +204,7 @@ class JavaScriptAsyncArrowFunction(JavaScriptArrowFunction):
         call_env.var_scope = call_env
         call_env.declare("this", self.lexical_this, kind="const")
         for index, param in enumerate(self.params):
-            value = arguments[index] if index < len(arguments) else None
+            value = arguments[index] if index < len(arguments) else JS_UNDEFINED
             call_env.declare(param, value, kind="var")
         promise = JavaScriptPromise()
         if isinstance(self.body, BlockStatement):
@@ -397,13 +398,13 @@ class JavaScriptClass:
             self._ensure_static_private_slot()
         for field in self.static_fields:
             property_name = _class_member_name(field, field_env)
-            value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
+            value = JS_UNDEFINED if field.initializer is None else evaluate_expr(field.initializer, field_env)
             self.static_properties[property_name] = value
         if self.private_static_fields:
             private_slot = self._ensure_static_private_slot()
             for field in self.private_static_fields:
                 property_name = _class_member_name(field, field_env)
-                value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
+                value = JS_UNDEFINED if field.initializer is None else evaluate_expr(field.initializer, field_env)
                 private_slot[property_name] = value
 
     def initialize_instance_fields(self, instance: dict[str, object]) -> None:
@@ -421,13 +422,13 @@ class JavaScriptClass:
             self._ensure_instance_private_slot(instance)
         for field in self.fields:
             property_name = _class_member_name(field, field_env)
-            value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
+            value = JS_UNDEFINED if field.initializer is None else evaluate_expr(field.initializer, field_env)
             instance[property_name] = value
         if self.private_fields:
             private_slot = self._ensure_instance_private_slot(instance)
             for field in self.private_fields:
                 property_name = _class_member_name(field, field_env)
-                value = None if field.initializer is None else evaluate_expr(field.initializer, field_env)
+                value = JS_UNDEFINED if field.initializer is None else evaluate_expr(field.initializer, field_env)
                 private_slot[property_name] = value
         instance[marker] = True
 
@@ -511,8 +512,8 @@ def _evaluate_async_statement(statement: Stmt, environment: Environment, *, on_c
         return
     if isinstance(statement, VariableDeclaration):
         if statement.initializer is None:
-            environment.declare(statement.name, None, kind=statement.kind)
-            on_complete(("normal", None))
+            environment.declare(statement.name, JS_UNDEFINED, kind=statement.kind)
+            on_complete(("normal", JS_UNDEFINED))
             return
         _evaluate_async_expr(
             statement.initializer,
@@ -564,7 +565,7 @@ def _evaluate_async_statement(statement: Stmt, environment: Environment, *, on_c
         return
     if isinstance(statement, ReturnStatement):
         if statement.value is None:
-            on_complete(("return", None))
+            on_complete(("return", JS_UNDEFINED))
             return
         _evaluate_async_expr(statement.value, environment, on_value=lambda value: on_complete(("return", value)), on_error=on_error)
         return
@@ -605,7 +606,7 @@ def _evaluate_async_statement(statement: Stmt, environment: Environment, *, on_c
     raise RuntimeError(f"Unsupported async statement node: {type(statement).__name__}")
 
 
-def _evaluate_async_statement_list(statements: list[Stmt], environment: Environment, *, on_complete, on_error, last_value: object = None) -> None:
+def _evaluate_async_statement_list(statements: list[Stmt], environment: Environment, *, on_complete, on_error, last_value: object = JS_UNDEFINED) -> None:
     if not statements:
         on_complete(("normal", last_value))
         return
@@ -642,6 +643,20 @@ def _evaluate_async_expr(expr: Expr, environment: Environment, *, on_value, on_e
         _evaluate_async_object_literal(expr, environment, on_value=on_value, on_error=on_error)
         return
     if isinstance(expr, UnaryExpr):
+        if expr.operator == "typeof":
+            if isinstance(expr.operand, Identifier):
+                try:
+                    on_value(js_typeof(environment.get(expr.operand.name)))
+                except JavaScriptReferenceError:
+                    on_value(js_typeof(JS_UNDEFINED))
+                return
+            _evaluate_async_expr(
+                expr.operand,
+                environment,
+                on_value=lambda operand: on_value(js_typeof(operand)),
+                on_error=on_error,
+            )
+            return
         _evaluate_async_expr(
             expr.operand,
             environment,
@@ -1017,7 +1032,7 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
     if isinstance(statement, ExpressionStatement):
         return evaluate_expr(statement.expression, environment)
     if isinstance(statement, VariableDeclaration):
-        value = None if statement.initializer is None else evaluate_expr(statement.initializer, environment)
+        value = JS_UNDEFINED if statement.initializer is None else evaluate_expr(statement.initializer, environment)
         environment.declare(statement.name, value, kind=statement.kind)
         return value
     if isinstance(statement, FunctionDeclaration):
@@ -1060,7 +1075,7 @@ def evaluate_statement(statement: Stmt, environment: Environment) -> object:
             value = evaluate_statement(statement.body, environment)
         return value
     if isinstance(statement, ReturnStatement):
-        value = None if statement.value is None else evaluate_expr(statement.value, environment)
+        value = JS_UNDEFINED if statement.value is None else evaluate_expr(statement.value, environment)
         raise ReturnSignal(value)
     if isinstance(statement, ThrowStatement):
         raise ThrowSignal(evaluate_expr(statement.value, environment))
@@ -1156,6 +1171,15 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             for prop in expr.properties
         }
     if isinstance(expr, UnaryExpr):
+        if expr.operator == "typeof":
+            if isinstance(expr.operand, Identifier):
+                try:
+                    operand = environment.get(expr.operand.name)
+                except JavaScriptReferenceError:
+                    operand = JS_UNDEFINED
+            else:
+                operand = evaluate_expr(expr.operand, environment)
+            return js_typeof(operand)
         operand = evaluate_expr(expr.operand, environment)
         if expr.operator == "!":
             return not js_truthy(operand)
@@ -1163,8 +1187,6 @@ def evaluate_expr(expr: Expr, environment: Environment) -> object:
             return js_to_number(operand)
         if expr.operator == "-":
             return -js_to_number(operand)
-        if expr.operator == "typeof":
-            return js_typeof(operand)
     if isinstance(expr, UpdateExpr):
         current = None
         if isinstance(expr.target, Identifier):

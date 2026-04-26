@@ -5,11 +5,43 @@ from __future__ import annotations
 import math
 
 
+class _UndefinedType:
+    __slots__ = ()
+    _instance: "_UndefinedType | None" = None
+
+    def __new__(cls) -> "_UndefinedType":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "undefined"
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _UndefinedType)
+
+    def __ne__(self, other: object) -> bool:
+        return not isinstance(other, _UndefinedType)
+
+    def __hash__(self) -> int:
+        return 0xC0DE_DEF
+
+
+JS_UNDEFINED: _UndefinedType = _UndefinedType()
+
+
 def is_js_object(value: object) -> bool:
-    return value is not None and not isinstance(value, (bool, int, float, str))
+    if value is None or isinstance(value, _UndefinedType):
+        return False
+    return not isinstance(value, (bool, int, float, str))
 
 
 def js_typeof(value: object) -> str:
+    if isinstance(value, _UndefinedType):
+        return "undefined"
     if value is None:
         return "object"
     if isinstance(value, bool):
@@ -24,11 +56,11 @@ def js_typeof(value: object) -> str:
 
 
 def js_truthy(value: object) -> bool:
-    if value is None:
+    if value is None or isinstance(value, _UndefinedType):
         return False
     if value is False:
         return False
-    if value == 0 or value == 0.0:
+    if isinstance(value, (int, float)) and value == 0:
         return False
     if isinstance(value, float) and math.isnan(value):
         return False
@@ -54,7 +86,9 @@ def js_strict_equal(left: object, right: object) -> bool:
 
 
 def js_loose_equal(left: object, right: object) -> bool:
-    if left is None and right is None:
+    left_nullish = left is None or isinstance(left, _UndefinedType)
+    right_nullish = right is None or isinstance(right, _UndefinedType)
+    if left_nullish and right_nullish:
         return True
     if js_typeof_equal(left, right):
         return js_strict_equal(left, right)
@@ -66,7 +100,7 @@ def js_loose_equal(left: object, right: object) -> bool:
         return js_loose_equal(_to_number(left), right)
     if isinstance(right, str) and isinstance(left, (int, float)):
         return js_loose_equal(left, _to_number(right))
-    if left is None or right is None:
+    if left_nullish or right_nullish:
         return False
     return False
 
@@ -107,6 +141,8 @@ def js_modulo(left: object, right: object) -> float:
 
 
 def js_to_string(value: object) -> str:
+    if isinstance(value, _UndefinedType):
+        return "undefined"
     if value is None:
         return "null"
     if value is True:
@@ -132,6 +168,8 @@ def js_error_object(message: object) -> dict[str, object]:
 
 
 def _js_type_name(value: object) -> str:
+    if isinstance(value, _UndefinedType):
+        return "undefined"
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -144,6 +182,8 @@ def _js_type_name(value: object) -> str:
 
 
 def _to_number(value: object) -> float:
+    if isinstance(value, _UndefinedType):
+        return math.nan
     if value is None:
         return 0.0
     if value is True:

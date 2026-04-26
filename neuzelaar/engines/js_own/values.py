@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
+from neuzelaar.engines.js_own.runtime import JS_UNDEFINED
 
 
 def _lookup_dict_property(target: dict[str, object], property_name: str) -> object:
@@ -11,7 +12,7 @@ def _lookup_dict_property(target: dict[str, object], property_name: str) -> obje
     prototype = target.get("__proto__")
     if isinstance(prototype, dict):
         return _lookup_dict_property(prototype, property_name)
-    return None
+    return JS_UNDEFINED
 
 
 def _resolve_descriptor(value: object, receiver: object) -> object:
@@ -25,7 +26,7 @@ def _resolve_descriptor(value: object, receiver: object) -> object:
 
 def read_property(target: object, property_name: str, *, receiver: object | None = None) -> object:
     if isinstance(target, HostCallable):
-        return target.properties.get(property_name)
+        return target.properties.get(property_name, JS_UNDEFINED)
     if hasattr(target, "call") and not hasattr(target, "static_properties"):
         prototype = getattr(target, "prototype", None)
         if property_name == "prototype" and prototype is not None:
@@ -59,7 +60,7 @@ def read_property(target: object, property_name: str, *, receiver: object | None
         if property_name == "prototype":
             return target.prototype
         return _resolve_descriptor(
-            target.static_properties.get(property_name),
+            target.static_properties.get(property_name, JS_UNDEFINED),
             target if receiver is None else receiver,
         )
     if isinstance(target, dict):

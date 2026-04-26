@@ -150,10 +150,12 @@ def test_recursive_named_function_works() -> None:
     assert result == 120.0
 
 
-def test_return_without_value_produces_nullish_python_none() -> None:
+def test_return_without_value_produces_undefined() -> None:
+    from neuzelaar.engines.js_own.runtime import JS_UNDEFINED
+
     result = evaluate_program("function f() { return; } f();")
 
-    assert result is None
+    assert result is JS_UNDEFINED
 
 
 def test_calling_non_callable_raises() -> None:
@@ -869,3 +871,51 @@ def test_object_strict_equality_same_reference_is_true() -> None:
 def test_distinct_object_literals_with_same_shape_are_not_equal() -> None:
     assert evaluate_program('var a = {x:1}; var b = {x:1}; a === b;') is False
     assert evaluate_program('var a = [1,2]; var b = [1,2]; a === b;') is False
+
+
+def test_typeof_undeclared_identifier_returns_undefined() -> None:
+    assert evaluate_expression("typeof undeclaredFoo") == "undefined"
+
+
+def test_typeof_distinguishes_undefined_from_null() -> None:
+    assert evaluate_expression("typeof undefined") == "undefined"
+    assert evaluate_expression("typeof null") == "object"
+
+
+def test_typeof_missing_property_is_undefined() -> None:
+    assert evaluate_program("var o = {}; typeof o.missing;") == "undefined"
+
+
+def test_undefined_strict_inequality_to_null() -> None:
+    assert evaluate_expression("null === undefined") is False
+    assert evaluate_expression("null == undefined") is True
+
+
+def test_missing_property_is_strictly_undefined_not_null() -> None:
+    assert evaluate_program("var o = {}; o.x === undefined;") is True
+    assert evaluate_program("var o = {}; o.x === null;") is False
+
+
+def test_uninitialized_var_is_undefined() -> None:
+    assert evaluate_program("var x; x === undefined;") is True
+    assert evaluate_program("let x; x === undefined;") is True
+
+
+def test_function_with_no_return_yields_undefined() -> None:
+    assert evaluate_program("function f() {} f() === undefined;") is True
+
+
+def test_missing_function_argument_is_undefined() -> None:
+    assert evaluate_program("function f(a, b) { return b; } f(1) === undefined;") is True
+
+
+def test_undefined_arithmetic_yields_nan() -> None:
+    result = evaluate_expression("undefined + 1")
+    assert isinstance(result, float)
+    assert math.isnan(result)
+
+
+def test_typeof_in_async_function_handles_undeclared() -> None:
+    promise = evaluate_program("async function f() { return typeof undeclaredAsyncVar; } f();")
+    assert promise.state == "fulfilled"
+    assert promise.value == "undefined"
