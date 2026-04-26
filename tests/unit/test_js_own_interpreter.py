@@ -1191,3 +1191,76 @@ def test_nullish_coalesce_works_in_async() -> None:
     )
     assert promise.state == "fulfilled"
     assert promise.value == "via-await"
+
+
+def test_string_length() -> None:
+    assert evaluate_expression('"hello".length') == 5.0
+
+
+def test_string_indexing() -> None:
+    assert evaluate_expression('"hello"[1]') == "e"
+
+
+def test_string_index_out_of_range_is_undefined() -> None:
+    from neuzelaar.engines.js_own.runtime import JS_UNDEFINED
+
+    assert evaluate_expression('"abc"[100]') is JS_UNDEFINED
+
+
+def test_string_methods_basic() -> None:
+    assert evaluate_expression('"hello".toUpperCase()') == "HELLO"
+    assert evaluate_expression('"HELLO".toLowerCase()') == "hello"
+    assert evaluate_expression('"  spaces  ".trim()') == "spaces"
+
+
+def test_string_slice_and_substring() -> None:
+    assert evaluate_expression('"hello world".slice(6)') == "world"
+    assert evaluate_expression('"hello world".slice(0, 5)') == "hello"
+    assert evaluate_expression('"hello world".substring(0, 5)') == "hello"
+
+
+def test_string_index_of_and_includes() -> None:
+    assert evaluate_expression('"hello world".indexOf("world")') == 6.0
+    assert evaluate_expression('"hello world".indexOf("xyz")') == -1.0
+    assert evaluate_expression('"hello world".includes("world")') is True
+    assert evaluate_expression('"hello world".includes("xyz")') is False
+
+
+def test_string_starts_and_ends_with() -> None:
+    assert evaluate_expression('"hello".startsWith("he")') is True
+    assert evaluate_expression('"hello".endsWith("lo")') is True
+    assert evaluate_expression('"hello".startsWith("ll", 2)') is True
+
+
+def test_string_split_returns_array() -> None:
+    result = evaluate_program('"a,b,c".split(",");')
+    assert result == ["a", "b", "c"]
+
+
+def test_string_replace_only_first_occurrence() -> None:
+    # JS replace(string, string) replaces only the first match.
+    assert evaluate_expression('"foo bar foo".replace("foo", "baz")') == "baz bar foo"
+
+
+def test_string_replace_all() -> None:
+    assert evaluate_expression('"foo bar foo".replaceAll("foo", "baz")') == "baz bar baz"
+
+
+def test_string_repeat() -> None:
+    assert evaluate_expression('"ab".repeat(3)') == "ababab"
+
+
+def test_string_concat() -> None:
+    assert evaluate_expression('"hi".concat(" ", "world")') == "hi world"
+
+
+def test_string_pad_start() -> None:
+    assert evaluate_expression('"5".padStart(3, "0")') == "005"
+
+
+def test_string_methods_chain() -> None:
+    assert evaluate_program('"  Hello  ".trim().toLowerCase();') == "hello"
+
+
+def test_string_char_code_at() -> None:
+    assert evaluate_expression('"A".charCodeAt(0)') == 65.0
