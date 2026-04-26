@@ -61,6 +61,8 @@ class TextPlacement:
     text: str
     color: str
     font_size: int
+    font_weight: str
+    font_style: str
     max_width: int
     text_align: str
 
@@ -764,6 +766,8 @@ def _layout_inline_context(
                         text=fragment.text,
                         color=(fragment.style or parent_style).color,
                         font_size=fs,
+                        font_weight=(fragment.style or parent_style).font_weight,
+                        font_style=(fragment.style or parent_style).font_style,
                         max_width=content_width,
                         text_align=(fragment.style or parent_style).text_align,
                     )
@@ -857,6 +861,8 @@ def _place_inline_or_text(
                 text=text,
                 color=style.color,
                 font_size=font_size,
+                font_weight=style.font_weight,
+                font_style=style.font_style,
                 max_width=content_width,
                 text_align=style.text_align,
             )

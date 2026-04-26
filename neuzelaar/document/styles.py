@@ -19,6 +19,7 @@ class ComputedStyle:
     color: str = "#141414"
     background_color: str = "#ffffff"
     font_weight: str = "normal"
+    font_style: str = "normal"
     font_size: str = "16px"
     display: str = "block"
     margin: str = "0"
@@ -45,6 +46,7 @@ SUPPORTED_PROPERTIES = {
     "display",
     "float",
     "font-size",
+    "font-style",
     "font-weight",
     "height",
     "left",
@@ -72,6 +74,7 @@ SUPPORTED_PROPERTIES = {
 INHERITED_PROPERTIES = {
     "color",
     "font-size",
+    "font-style",
     "font-weight",
     "text-align",
 }
@@ -101,7 +104,7 @@ UA_STYLESHEET: tuple[StyleRule, ...] = (
         " sub, sup, tt, kbd, samp, var, time, dfn, s, del, ins",
         {"display": "inline"},
     ),
-    StyleRule("i, em, cite, dfn, var", {"font-weight": "normal"}),
+    StyleRule("i, em, cite, dfn, var", {"font-style": "italic"}),
 )
 
 
@@ -215,6 +218,10 @@ def _style_from_declarations(
             _resolve_property_value("font-weight", declarations, parent_style, initial_values),
             parent_style.font_weight,
         ),
+        font_style=_normalize_font_style(
+            _resolve_property_value("font-style", declarations, parent_style, initial_values),
+            parent_style.font_style,
+        ),
         font_size=_normalize_font_size(
             _resolve_property_value("font-size", declarations, parent_style, initial_values),
             parent_style.font_size,
@@ -273,6 +280,7 @@ def _initial_style_values() -> dict[str, str]:
         "display": DEFAULT_DISPLAY,
         "float": "none",
         "font-size": DEFAULT_FONT_SIZE,
+        "font-style": "normal",
         "font-weight": DEFAULT_FONT_WEIGHT,
         "height": "auto",
         "left": "auto",
@@ -397,6 +405,13 @@ def _normalize_font_weight(value: str, fallback: str) -> str:
     if text in {"normal", "bold", "bolder", "lighter"}:
         return text
     if text.isdigit():
+        return text
+    return fallback
+
+
+def _normalize_font_style(value: str, fallback: str) -> str:
+    text = value.strip().lower()
+    if text in {"normal", "italic", "oblique"}:
         return text
     return fallback
 

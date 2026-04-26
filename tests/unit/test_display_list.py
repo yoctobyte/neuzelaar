@@ -63,3 +63,15 @@ def test_build_display_list_uses_root_style_colors() -> None:
     assert display_list.ops[0].color == Color(238, 238, 238)
     assert any(isinstance(op, DrawText) and op.color == Color(0, 0, 180) for op in display_list.ops)
     assert any(isinstance(op, DrawText) and op.font_size >= 18 for op in display_list.ops)
+
+
+def test_build_display_list_preserves_font_weight_and_style() -> None:
+    display_list = build_display_list(
+        document_from_fixture("example.html"),
+        root_style=ComputedStyle(font_weight="bold", font_style="italic"),
+    )
+
+    text_op = next(op for op in display_list.ops if isinstance(op, DrawText))
+
+    assert text_op.font_weight == "bold"
+    assert text_op.font_style == "italic"

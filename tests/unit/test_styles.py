@@ -175,6 +175,16 @@ def test_ua_stylesheet_sizes_headings_without_author_rules() -> None:
     assert styles[NodeId("h3")].font_size == "19px"
 
 
+def test_ua_stylesheet_marks_emphasis_elements_italic() -> None:
+    document = Document(id=NodeId("doc"))
+    emphasis = Element(id=NodeId("em"), tag="em")
+    append_child(document, emphasis)
+
+    styles = compute_styles(document)
+
+    assert styles[NodeId("em")].font_style == "italic"
+
+
 def test_compute_styles_inherits_text_align() -> None:
     document = Document(id=NodeId("doc"))
     body = Element(id=NodeId("body"), tag="body")

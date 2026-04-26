@@ -35,6 +35,8 @@ class DrawText:
     text: str
     color: Color
     font_size: int
+    font_weight: str = "normal"
+    font_style: str = "normal"
     max_width: int = 0
     align: str = "left"
 

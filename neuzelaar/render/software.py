@@ -83,7 +83,7 @@ def rasterize(display_list: DisplayList) -> Frame:
         elif isinstance(op, DrawText):
             if op.y >= clamped_height:
                 continue
-            font = _load_font(op.font_size)
+            font = _load_font(op.font_size, op.font_weight, op.font_style)
             x = _aligned_text_x(op, font)
             est_w = max(op.max_width or len(op.text) * op.font_size, op.font_size)
             if fully_outside(x, op.y, est_w, op.font_size + 4):
@@ -135,8 +135,26 @@ def _aligned_text_x(op: DrawText, font) -> int:
 
 
 @lru_cache(maxsize=16)
-def _load_font(size: int):
+def _load_font(size: int, weight: str = "normal", style: str = "normal"):
+    filename = _font_filename(weight, style)
     try:
-        return ImageFont.truetype("DejaVuSans.ttf", size=max(size, 1))
+        return ImageFont.truetype(filename, size=max(size, 1))
     except OSError:
-        return ImageFont.load_default()
+        try:
+            return ImageFont.truetype("DejaVuSans.ttf", size=max(size, 1))
+        except OSError:
+            return ImageFont.load_default()
+
+
+def _font_filename(weight: str, style: str) -> str:
+    normalized_weight = weight.strip().lower()
+    normalized_style = style.strip().lower()
+    is_bold = normalized_weight == "bold" or normalized_weight.isdigit() and int(normalized_weight) >= 600
+    is_italic = normalized_style in {"italic", "oblique"}
+    if is_bold and is_italic:
+        return "DejaVuSans-BoldOblique.ttf"
+    if is_bold:
+        return "DejaVuSans-Bold.ttf"
+    if is_italic:
+        return "DejaVuSans-Oblique.ttf"
+    return "DejaVuSans.ttf"
