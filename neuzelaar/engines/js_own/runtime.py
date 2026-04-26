@@ -48,6 +48,8 @@ def js_strict_equal(left: object, right: object) -> bool:
         return False
     if not js_typeof_equal(left, right):
         return False
+    if is_js_object(left) and is_js_object(right):
+        return left is right
     return left == right
 
 

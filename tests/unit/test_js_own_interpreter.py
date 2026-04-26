@@ -854,3 +854,18 @@ def test_class_can_still_be_constructed_with_new() -> None:
         "class Foo { constructor(n) { this.n = n; } } new Foo(7).n;"
     )
     assert result == 7.0
+
+
+def test_object_strict_equality_uses_reference_identity() -> None:
+    assert evaluate_expression("({}) === ({})") is False
+    assert evaluate_expression("[] === []") is False
+
+
+def test_object_strict_equality_same_reference_is_true() -> None:
+    assert evaluate_program("var o = {x: 1}; o === o;") is True
+    assert evaluate_program("var a = [1, 2]; a === a;") is True
+
+
+def test_distinct_object_literals_with_same_shape_are_not_equal() -> None:
+    assert evaluate_program('var a = {x:1}; var b = {x:1}; a === b;') is False
+    assert evaluate_program('var a = [1,2]; var b = [1,2]; a === b;') is False
