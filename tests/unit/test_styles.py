@@ -257,6 +257,16 @@ def test_compute_styles_ignores_invalid_text_align_values() -> None:
     assert styles[NodeId("p")].text_align == "left"
 
 
+def test_compute_styles_keeps_box_sizing_property() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("p { box-sizing: border-box }"))
+
+    assert styles[NodeId("p")].box_sizing == "border-box"
+
+
 def test_compute_styles_handles_grouped_selectors() -> None:
     document = Document(id=NodeId("doc"))
     h1 = Element(id=NodeId("h1"), tag="h1")

@@ -84,6 +84,65 @@ def test_bfc_respects_explicit_height_on_block() -> None:
     assert rect.height == 200
 
 
+def test_bfc_border_box_width_includes_padding_and_border() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    box = Element(id=NodeId("b"), tag="div")
+    append_child(document, body)
+    append_child(body, box)
+    append_child(box, Text(id=NodeId("t"), data="hello"))
+    styles = {
+        NodeId("body"): ComputedStyle(),
+        NodeId("b"): ComputedStyle(
+            width="120px",
+            padding="10px",
+            border_width="2px",
+            border_style="solid",
+            box_sizing="border-box",
+            background_color="#eeeeee",
+        ),
+    }
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=800)
+    placements = finalize_backgrounds(root, placements)
+
+    background = next(p for p in placements if isinstance(p, BoxPlacement) and p.color == "#eeeeee")
+    borders = [p for p in placements if isinstance(p, BoxPlacement) and p.color != "#eeeeee"]
+    left = min([background.x, *(rect.x for rect in borders)])
+    right = max([background.x + background.width, *(rect.x + rect.width for rect in borders)])
+    assert right - left == 120
+
+
+def test_bfc_border_box_height_includes_padding_and_border() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    box = Element(id=NodeId("b"), tag="div")
+    append_child(document, body)
+    append_child(body, box)
+    styles = {
+        NodeId("body"): ComputedStyle(),
+        NodeId("b"): ComputedStyle(
+            height="80px",
+            padding="10px",
+            border_width="2px",
+            border_style="solid",
+            box_sizing="border-box",
+            background_color="#ddeeff",
+        ),
+    }
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=400)
+    placements = finalize_backgrounds(root, placements)
+
+    background = next(p for p in placements if isinstance(p, BoxPlacement) and p.color == "#ddeeff")
+    borders = [p for p in placements if isinstance(p, BoxPlacement) and p.color != "#ddeeff"]
+    top = min([background.y, *(rect.y for rect in borders)])
+    bottom = max([background.y + background.height, *(rect.y + rect.height for rect in borders)])
+    assert bottom - top == 80
+
+
 def test_bfc_padding_contributes_to_box_geometry() -> None:
     document = Document(id=NodeId("doc"))
     body = Element(id=NodeId("body"), tag="body")

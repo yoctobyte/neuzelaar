@@ -845,6 +845,19 @@ def _layout_inline_context(
             line_max_height,
             _line_height_px(parent_style, fallback_font_size=line_max_font_size or _font_size_px(parent_style)),
         )
+        line_width = 0
+        if line_items:
+            last_x, last_fragment = line_items[-1]
+            if last_fragment.kind == "text":
+                last_width = _measure_text(last_fragment.text, _font_size_px(last_fragment.style))
+            else:
+                last_width = last_fragment.width
+            line_width = max(last_x + last_width - line_x_start, 0)
+        line_offset = 0
+        if parent_style.text_align == "center":
+            line_offset = max((line_max_width - line_width) // 2, 0)
+        elif parent_style.text_align == "right":
+            line_offset = max(line_max_width - line_width, 0)
         # Baseline-align text / image fragments to the bottom of the
         # line box. Simple alphabetic baseline approximation: smaller
         # fonts lift up so their bottoms align with the tallest.
@@ -857,7 +870,7 @@ def _layout_inline_context(
                 offset = line_box_height - max(int(round(fs * 1.3)), 10)
                 state.items.append(
                     TextPlacement(
-                        x=x + state.relative_offset_x,
+                        x=x + line_offset + state.relative_offset_x,
                         y=cursor_y + max(offset, 0) + state.relative_offset_y,
                         text=fragment.text,
                         color=(fragment.style or parent_style).color,
@@ -873,7 +886,7 @@ def _layout_inline_context(
                 offset = max(line_box_height - fragment.height, 0)
                 state.items.append(
                     ImagePlacement(
-                        x=x + state.relative_offset_x,
+                        x=x + line_offset + state.relative_offset_x,
                         y=cursor_y + offset + state.relative_offset_y,
                         width=fragment.width,
                         height=fragment.height,
@@ -1234,7 +1247,9 @@ def _resolve_width(
     if width_value and width_value != "auto":
         explicit = _length_to_px(width_value)
         if explicit > 0:
-            return explicit
+            if style.box_sizing == "border-box":
+                explicit -= border.left + border.right + padding.left + padding.right
+            return max(explicit, 0)
     return max(available, 0)
 
 
@@ -1265,7 +1280,11 @@ def _resolve_height(style: ComputedStyle, used_content_height: int) -> int:
     if height_value and height_value != "auto":
         explicit = _length_to_px(height_value)
         if explicit > 0:
-            return explicit
+            if style.box_sizing == "border-box":
+                border = _resolve_border(style)
+                padding = _resolve_padding(style)
+                explicit -= border.top + border.bottom + padding.top + padding.bottom
+            return max(explicit, 0)
     return used_content_height
 
 

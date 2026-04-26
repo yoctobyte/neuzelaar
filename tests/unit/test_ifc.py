@@ -219,3 +219,33 @@ def test_ifc_text_transform_uppercase_changes_rendered_text() -> None:
     texts = [p.text for p in placements if isinstance(p, TextPlacement)]
     assert "MIXED" in texts
     assert "WORDS" in texts
+
+
+def test_ifc_text_align_center_offsets_whole_line() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"style": "text-align: center"})
+    append_child(document, paragraph)
+    append_child(paragraph, Text(id=NodeId("t"), data="centered words"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=300)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    assert texts
+    assert min(p.x for p in texts) > 0
+
+
+def test_ifc_text_align_right_offsets_whole_line() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"style": "text-align: right"})
+    append_child(document, paragraph)
+    append_child(paragraph, Text(id=NodeId("t"), data="right side"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=300)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    assert texts
+    assert min(p.x for p in texts) > 0

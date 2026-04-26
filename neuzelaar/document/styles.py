@@ -21,6 +21,7 @@ class ComputedStyle:
     border_width: str = "0"
     border_style: str = "none"
     border_color: str = "currentcolor"
+    box_sizing: str = "content-box"
     font_weight: str = "normal"
     font_style: str = "normal"
     font_size: str = "16px"
@@ -67,6 +68,7 @@ SUPPORTED_PROPERTIES = {
     "border-top-style",
     "border-top-width",
     "border-width",
+    "box-sizing",
     "bottom",
     "clear",
     "color",
@@ -260,6 +262,9 @@ def _style_from_declarations(
             _resolve_border_property("color", declarations, parent_style, initial_values),
             color,
         ),
+        box_sizing=_normalize_box_sizing(
+            _resolve_property_value("box-sizing", declarations, parent_style, initial_values)
+        ),
         font_weight=_normalize_font_weight(
             _resolve_property_value("font-weight", declarations, parent_style, initial_values),
             parent_style.font_weight,
@@ -355,6 +360,7 @@ def _initial_style_values() -> dict[str, str]:
         "border-top-style": "none",
         "border-top-width": "medium",
         "border-width": "medium",
+        "box-sizing": "content-box",
         "bottom": "auto",
         "clear": "none",
         "color": DEFAULT_COLOR,
@@ -591,6 +597,15 @@ def _normalize_font_weight(value: str, fallback: str) -> str:
     if text.isdigit():
         return text
     return fallback
+
+
+def _normalize_box_sizing(value: str | None) -> str:
+    if value is None:
+        return "content-box"
+    normalized = value.strip().lower()
+    if normalized in {"content-box", "border-box"}:
+        return normalized
+    return "content-box"
 
 
 def _normalize_font_style(value: str, fallback: str) -> str:
