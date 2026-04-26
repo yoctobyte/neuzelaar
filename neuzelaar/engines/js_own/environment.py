@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from neuzelaar.engines.js_own.errors import JavaScriptReferenceError
+from neuzelaar.engines.js_own.errors import JavaScriptReferenceError, JavaScriptSyntaxError
 
 
 @dataclass(slots=True)
@@ -40,6 +40,10 @@ class Environment:
     def declare(self, name: str, value: object, *, kind: str) -> object:
         target = self.var_scope if kind == "var" else self
         assert target is not None
+        if kind in ("let", "const") and name in target.values:
+            raise JavaScriptSyntaxError(
+                f"Identifier {name!r} has already been declared"
+            )
         if kind == "var" and name in target.values:
             target.values[name].value = value
             return value

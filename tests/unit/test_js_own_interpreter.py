@@ -947,3 +947,22 @@ def test_bare_var_after_function_decl_does_not_overwrite() -> None:
     # function f(){} var f;  — JS leaves f as the function (var without init is a no-op)
     result = evaluate_program("function z() { return 9; } var z; typeof z;")
     assert result == "function"
+
+
+def test_let_redeclaration_raises_syntax_error() -> None:
+    with pytest.raises(JavaScriptSyntaxError):
+        evaluate_program("let x = 1; let x = 2;")
+
+
+def test_const_redeclaration_raises_syntax_error() -> None:
+    with pytest.raises(JavaScriptSyntaxError):
+        evaluate_program("const x = 1; const x = 2;")
+
+
+def test_let_in_different_blocks_does_not_clash() -> None:
+    # Inner let shadows outer; outer remains unchanged after block.
+    assert evaluate_program("let x = 1; { let x = 2; } x;") == 1.0
+
+
+def test_var_can_still_be_redeclared() -> None:
+    assert evaluate_program("var x = 1; var x = 2; x;") == 2.0
