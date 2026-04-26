@@ -202,3 +202,20 @@ def test_ifc_white_space_pre_line_collapses_spaces_but_keeps_newlines() -> None:
         lines[item.y] += item.text
     ordered = [lines[y] for y in sorted(lines)]
     assert ordered == ["one two", "three"]
+
+
+def test_ifc_text_transform_uppercase_changes_rendered_text() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"style": "text-transform: uppercase"})
+    append_child(document, body)
+    append_child(body, paragraph)
+    append_child(paragraph, Text(id=NodeId("t"), data="MiXeD words"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=400)
+
+    texts = [p.text for p in placements if isinstance(p, TextPlacement)]
+    assert "MIXED" in texts
+    assert "WORDS" in texts

@@ -25,6 +25,7 @@ class ComputedStyle:
     font_style: str = "normal"
     font_size: str = "16px"
     line_height: str = "normal"
+    text_transform: str = "none"
     text_decoration: str = "none"
     white_space: str = "normal"
     display: str = "block"
@@ -92,6 +93,7 @@ SUPPORTED_PROPERTIES = {
     "right",
     "text-align",
     "text-decoration",
+    "text-transform",
     "top",
     "white-space",
     "width",
@@ -107,6 +109,7 @@ INHERITED_PROPERTIES = {
     "font-weight",
     "line-height",
     "text-align",
+    "text-transform",
     "white-space",
 }
 
@@ -273,6 +276,10 @@ def _style_from_declarations(
             _resolve_property_value("line-height", declarations, parent_style, initial_values),
             parent_style.line_height,
         ),
+        text_transform=_normalize_text_transform(
+            _resolve_property_value("text-transform", declarations, parent_style, initial_values),
+            parent_style.text_transform,
+        ),
         text_decoration=_normalize_text_decoration(
             _resolve_property_value("text-decoration", declarations, parent_style, initial_values)
         ),
@@ -374,6 +381,7 @@ def _initial_style_values() -> dict[str, str]:
         "right": "auto",
         "text-align": "left",
         "text-decoration": "none",
+        "text-transform": "none",
         "top": "auto",
         "white-space": "normal",
         "width": "auto",
@@ -630,6 +638,15 @@ def _normalize_text_decoration(value: str) -> str:
     return " ".join(supported) if supported else "none"
 
 
+def _normalize_text_transform(value: str | None, fallback: str) -> str:
+    if value is None:
+        return fallback
+    normalized = value.strip().lower()
+    if normalized in {"none", "uppercase", "lowercase", "capitalize"}:
+        return normalized
+    return fallback
+
+
 def _normalize_white_space(value: str, fallback: str) -> str:
     text = value.strip().lower()
     if text in {"normal", "nowrap", "pre", "pre-wrap", "pre-line"}:
@@ -726,7 +743,16 @@ def _selector_specificity(selector: str) -> tuple[int, int, int]:
         if parsed is None:
             continue
         ids += 1 if parsed.id_name is not None else 0
-        classes += len(parsed.classes) + len(parsed.attributes) + len(parsed.pseudo_classes)
+        classes += len(parsed.classes) + len(parsed.attributes)
+        for pseudo, arg in parsed.pseudo_classes:
+            if pseudo == "not" and arg is not None:
+                arg_parsed = _parse_simple_selector(arg)
+                if arg_parsed is not None:
+                    ids += 1 if arg_parsed.id_name is not None else 0
+                    classes += len(arg_parsed.classes) + len(arg_parsed.attributes)
+                    tags += 1 if arg_parsed.tag not in (None, "*") else 0
+                    continue
+            classes += 1
         tags += 1 if parsed.tag not in (None, "*") else 0
     return (ids, classes, tags)
 
@@ -866,6 +892,14 @@ def _matches_simple_selector(node: Element, selector: str) -> bool:
                 return False
             if pseudo == "nth-child" and not _matches_nth_child(node, arg):
                 return False
+            if pseudo == "not":
+                if arg is None:
+                    return False
+                negated = _parse_simple_selector(arg)
+                if negated is None or negated.pseudo_classes:
+                    return False
+                if _matches_simple_selector(node, arg):
+                    return False
     return (
         parsed.tag is not None
         or parsed.id_name is not None
@@ -1004,7 +1038,13 @@ def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
                     return None
                 arg = text[end + 1 : close].strip().lower()
                 end = close + 1
-            if pseudo not in {"first-child", "last-child", "nth-child"}:
+            if pseudo == "not":
+                if arg is None:
+                    return None
+                parsed_arg = _parse_simple_selector(arg)
+                if parsed_arg is None or parsed_arg.pseudo_classes:
+                    return None
+            elif pseudo not in {"first-child", "last-child", "nth-child"}:
                 return None
             pseudo_classes.append((pseudo, arg))
             mode = "tag"

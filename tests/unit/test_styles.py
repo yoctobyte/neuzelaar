@@ -106,6 +106,16 @@ def test_compute_styles_keeps_white_space_property() -> None:
     assert styles[NodeId("p")].white_space == "pre"
 
 
+def test_compute_styles_keeps_text_transform_property() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p")
+    append_child(document, paragraph)
+
+    styles = compute_styles(document, parse_stylesheet("p { text-transform: uppercase }"))
+
+    assert styles[NodeId("p")].text_transform == "uppercase"
+
+
 def test_compute_styles_inherits_color_from_parent() -> None:
     document = Document(id=NodeId("doc"))
     body = Element(id=NodeId("body"), tag="body")
@@ -288,6 +298,32 @@ def test_compute_styles_matches_descendant_compound_selector() -> None:
     )
 
     assert styles[NodeId("p")].color == "teal"
+
+
+def test_compute_styles_matches_not_class_selector() -> None:
+    document = Document(id=NodeId("doc"))
+    first = Element(id=NodeId("a"), tag="p", attrs={"class": "lead"})
+    second = Element(id=NodeId("b"), tag="p")
+    append_child(document, first)
+    append_child(document, second)
+
+    styles = compute_styles(document, parse_stylesheet("p:not(.lead) { color: blue }"))
+
+    assert styles[NodeId("a")].color != "blue"
+    assert styles[NodeId("b")].color == "blue"
+
+
+def test_compute_styles_not_specificity_uses_inner_selector() -> None:
+    document = Document(id=NodeId("doc"))
+    paragraph = Element(id=NodeId("p"), tag="p", attrs={"class": "lead"})
+    append_child(document, paragraph)
+
+    styles = compute_styles(
+        document,
+        parse_stylesheet("p:not(.other) { color: blue } p.lead { color: red }"),
+    )
+
+    assert styles[NodeId("p")].color == "red"
 
 
 def test_compute_styles_supports_inherit_initial_and_unset_keywords() -> None:

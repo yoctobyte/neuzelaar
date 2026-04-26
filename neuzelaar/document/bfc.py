@@ -735,6 +735,7 @@ def _flatten_inline(
 def _text_fragments(text: str, style: ComputedStyle) -> list[_InlineFragment]:
     if not text:
         return []
+    text = _apply_text_transform(text, style.text_transform)
     white_space = style.white_space
     if white_space in {"pre", "pre-wrap", "pre-line"}:
         return _preserved_text_fragments(text, style, collapse_spaces=(white_space == "pre-line"))
@@ -955,7 +956,7 @@ def _place_inline_or_text(
         state.budget_exceeded = True
         return y
     if box.kind == BoxKind.TEXT:
-        text = box.text or ""
+        text = _apply_text_transform(box.text or "", style.text_transform)
         if not text.strip():
             return y
         font_size = _font_size_px(style)
@@ -1308,6 +1309,28 @@ def _font_size_px(style: ComputedStyle) -> int:
         except ValueError:
             pass
     return 16
+
+
+def _apply_text_transform(text: str, mode: str) -> str:
+    if mode == "uppercase":
+        return text.upper()
+    if mode == "lowercase":
+        return text.lower()
+    if mode == "capitalize":
+        result: list[str] = []
+        should_capitalize = True
+        for char in text:
+            if should_capitalize and char.isalpha():
+                result.append(char.upper())
+                should_capitalize = False
+            else:
+                result.append(char)
+                if char.isalnum():
+                    should_capitalize = False
+            if not char.isalnum():
+                should_capitalize = True
+        return "".join(result)
+    return text
 
 
 def _line_height_px(style: ComputedStyle, *, fallback_font_size: int | None = None) -> int:
