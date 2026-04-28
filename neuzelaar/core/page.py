@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
@@ -311,32 +312,70 @@ class PageLoader:
         if handler_result.kind != "document":
             return {}
 
-        result: dict[NodeId, ImageAsset] = {}
-        used_bytes = 0
+        # Phase 1: filter the plan in main-thread order so policy
+        # gates, the count budget, and ResourceBlocked publication
+        # stay deterministic. We collect the candidates, then dispatch
+        # the slow fetch+decode work to a small thread pool.
+        candidates: list[SubresourceRequest] = []
         for planned in plan:
             if planned.reason != FetchReason.IMAGE:
                 continue
-            if len(result) >= self.passive_budget.max_images:
+            if len(candidates) >= self.passive_budget.max_images:
                 self._publish(ResourceBlocked(planned.url, "passive image budget exceeded"))
                 continue
             gate = gates[planned]
             if not gate.allowed:
                 continue
-            try:
-                image_resource = self.fetch_client.fetch(gate.request)
-            except FetchError as exc:
-                self._publish(ResourceBlocked(gate.normalized_url, f"image fetch failed: {exc}"))
+            candidates.append(planned)
+        if not candidates:
+            return {}
+
+        # Phase 2: parallel fetch + decode. Each worker handles one
+        # image; the FetchClient builds a fresh urllib opener per call,
+        # so concurrent fetches don't share mutable redirect state.
+        fetched: dict[SubresourceRequest, tuple[Resource, "DecodedImageBitmap"]] = {}
+        max_workers = min(8, len(candidates))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(self._fetch_and_decode_image, gates[planned].request): planned
+                for planned in candidates
+            }
+            for future in as_completed(futures):
+                planned = futures[future]
+                try:
+                    image_resource, bitmap = future.result()
+                except FetchError as exc:
+                    self._publish(
+                        ResourceBlocked(gates[planned].normalized_url, f"image fetch failed: {exc}")
+                    )
+                    continue
+                except ImageDecodeError:
+                    continue
+                fetched[planned] = (image_resource, bitmap)
+
+        # Phase 3: apply the cumulative byte budget back in plan order
+        # so behavior matches the previous serial implementation —
+        # earlier images keep their slot when the budget overflows.
+        result: dict[NodeId, ImageAsset] = {}
+        used_bytes = 0
+        for planned in candidates:
+            entry = fetched.get(planned)
+            if entry is None:
                 continue
+            image_resource, bitmap = entry
             if used_bytes + len(image_resource.body) > self.passive_budget.max_bytes:
-                self._publish(ResourceBlocked(image_resource.final_url, "passive resource byte budget exceeded"))
+                self._publish(
+                    ResourceBlocked(image_resource.final_url, "passive resource byte budget exceeded")
+                )
                 continue
             used_bytes += len(image_resource.body)
-            try:
-                bitmap = decode_image_bitmap(image_resource.body)
-            except ImageDecodeError:
-                continue
             result[planned.node_id] = ImageAsset(url=image_resource.final_url, bitmap=bitmap)
         return result
+
+    def _fetch_and_decode_image(self, request: Request) -> tuple[Resource, "DecodedImageBitmap"]:
+        image_resource = self.fetch_client.fetch(request)
+        bitmap = decode_image_bitmap(image_resource.body)
+        return image_resource, bitmap
 
     def _plan_scripts(self, resource: Resource, handler_result: HandlerResult) -> dict[NodeId, ScriptExecutionRecord]:
         if handler_result.kind != "document":
