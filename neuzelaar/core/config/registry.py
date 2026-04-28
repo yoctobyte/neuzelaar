@@ -143,6 +143,16 @@ REGISTRY: tuple[SettingDef, ...] = (
         confirm="when_relaxing",
         relax_order=("False", "True"),
     ),
+    SettingDef(
+        key="render.full_page",
+        kind=SettingKind.BOOL,
+        default=False,
+        label="Render full page (no viewport clipping)",
+        help="When on, the renderer paints the entire document to one bitmap and lets the canvas scroll natively. Slower initial paint on long pages; useful for screenshot/PDF export and for spotting regressions against the viewport-clipped path.",
+        group="ui",
+        subgroup="Rendering",
+        weight=80,
+    ),
 )
 
 

@@ -15,11 +15,13 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 
 from neuzelaar.core.config.service import ConfigService
+from neuzelaar.core.diagnostics import LoadDiagnostics
 from neuzelaar.core.page import PageLoadResult, PlannedSubresourceDecision
 from neuzelaar.core.policy.profile import PolicyProfile
 from neuzelaar.core.session import BrowserSession
 from neuzelaar.document.dom import Comment, Document, Element, Node, Text
 from neuzelaar.render.display_builder import build_display_list
+from neuzelaar.render.display_list import DisplayList, Rect
 from neuzelaar.render.software import rasterize
 from neuzelaar.shell_api.frame import Frame, PixelFormat
 from neuzelaar.shells.tk.preferences_window import PreferencesWindow
@@ -33,6 +35,7 @@ class TkShell:
     height: int = 600
     log_dir: Path = field(default_factory=lambda: Path(".neuzelaar/logs"))
     settings: Settings = field(default_factory=Settings.load)
+    verbose: bool = False
 
     def render_url_to_frame(self, url: str, *, width: int | None = None) -> tuple[PageLoadResult, Frame]:
         result = self.session.open_url(url)
@@ -83,6 +86,12 @@ class TkShell:
     def run(self, url: str) -> None:
         initial_url = self.normalize_address(url)
         window_width = self.width + 520
+
+        if self.verbose:
+            verbose_sink = LoadDiagnostics.to_stderr()
+            # Replace the session's diagnostics in place so the loader and
+            # the shell share the same `_t0` reset point per navigation.
+            self.session.diagnostics.sink = verbose_sink.sink
 
         config = ConfigService()
         # Bring our in-memory Settings into sync with whatever the
@@ -137,10 +146,12 @@ class TkShell:
         dom_frame = ttk.Frame(debug_tabs)
         source_frame = ttk.Frame(debug_tabs)
         requests_frame = ttk.Frame(debug_tabs)
+        scripts_frame = ttk.Frame(debug_tabs)
         errors_frame = ttk.Frame(debug_tabs)
         debug_tabs.add(dom_frame, text="DOM")
         debug_tabs.add(source_frame, text="Source")
         debug_tabs.add(requests_frame, text="Requests")
+        debug_tabs.add(scripts_frame, text="JavaScript")
         debug_tabs.add(errors_frame, text="Errors")
 
         dom_tree = ttk.Treeview(dom_frame, columns=("node",), show="tree")
@@ -174,6 +185,12 @@ class TkShell:
         request_text.configure(yscrollcommand=request_scroll.set)
         request_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         request_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        scripts_text = tk.Text(scripts_frame, wrap=tk.WORD, font=("TkFixedFont", 13))
+        scripts_scroll = ttk.Scrollbar(scripts_frame, orient=tk.VERTICAL, command=scripts_text.yview)
+        scripts_text.configure(yscrollcommand=scripts_scroll.set)
+        scripts_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scripts_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         error_text = tk.Text(errors_frame, wrap=tk.WORD, font=("TkFixedFont", 13))
         error_scroll = ttk.Scrollbar(errors_frame, orient=tk.VERTICAL, command=error_text.yview)
@@ -217,10 +234,15 @@ class TkShell:
         status_label.pack(side=tk.BOTTOM, fill=tk.X)
 
         canvas_image = canvas.create_image(0, 0, anchor=tk.NW)
+        # Wheel scroll bindings: <MouseWheel> fires on Windows/macOS,
+        # Button-4 / Button-5 fire on Linux/X11. Bind both so the canvas
+        # scrolls regardless of platform.
         canvas.bind_all(
             "<MouseWheel>",
             lambda event: canvas.yview_scroll(int(-event.delta / 120), "units"),
         )
+        canvas.bind_all("<Button-4>", lambda _e: canvas.yview_scroll(-3, "units"))
+        canvas.bind_all("<Button-5>", lambda _e: canvas.yview_scroll(3, "units"))
 
         def handle_sigint(_signum, _frame) -> None:
             message = "Ctrl-C received. Shutting down Neuzelaar UI..."
@@ -232,18 +254,174 @@ class TkShell:
         signal.signal(signal.SIGINT, handle_sigint)
 
         last_result: list[PageLoadResult | None] = [None]
+        last_display_list: list[DisplayList | None] = [None]
+        # Top/bottom (in page coords) of the region currently rendered to
+        # the canvas. In viewport mode this is a slice of the page; in
+        # full-page mode it spans the whole document.
+        rendered_y0: list[int] = [0]
+        rendered_y1: list[int] = [0]
         current_width: list[int] = [self.width]
         reflow_job: list[str | None] = [None]
+        # Coalesce re-render requests during fast scrolls. on_yscroll
+        # only schedules a check; the actual rasterize runs once after
+        # the throttle window, against the *latest* scroll position.
+        rerender_job: list[str | None] = [None]
+        rerender_throttle_ms = 40
+        # Render around `viewport_buffer_px` above and below the visible
+        # region so smooth scrolling stays inside the buffer most of the
+        # time. Re-render fires only when the visible edge gets within
+        # `viewport_trigger_px` of the buffer edge.
+        viewport_buffer_px = 800
+        viewport_trigger_px = 200
 
-        def present(result: PageLoadResult, frame: Frame) -> None:
-            last_result[0] = result
-            # Release old X11 pixmap before allocating a new one.
-            old = getattr(canvas, 'image', None)
+        def use_full_page_render() -> bool:
+            return bool(config.get("render.full_page"))
+
+        def visible_canvas_height() -> int:
+            h = canvas.winfo_height()
+            return h if h > 50 else self.height
+
+        def paint_canvas(display_list: DisplayList, *, scroll_to_top: bool) -> None:
+            """Render `display_list` into the canvas.
+
+            Picks viewport-clipped or full-page mode per the
+            `render.full_page` setting. Always sets `scrollregion` to
+            the full page size so the canvas scrollbar represents the
+            whole document; in viewport mode, the rendered image is
+            placed at its page-coordinate origin so scrolling lines up.
+            """
+            last_display_list[0] = display_list
+            page_w = display_list.width
+            page_h = display_list.height
+
+            if use_full_page_render():
+                self.session.diagnostics.mark(f"rasterize full page ({page_w}x{page_h})")
+                frame = rasterize(display_list)
+                self.session.diagnostics.mark("rasterize done")
+                old = getattr(canvas, "image", None)
+                photo = _frame_to_photo(frame)
+                canvas.coords(canvas_image, 0, 0)
+                canvas.itemconfigure(canvas_image, image=photo)
+                canvas.image = photo
+                del old
+                canvas.configure(scrollregion=(0, 0, frame.width, frame.height))
+                if scroll_to_top:
+                    canvas.yview_moveto(0)
+                rendered_y0[0] = 0
+                rendered_y1[0] = frame.height
+                return
+
+            # Viewport-clipped mode.
+            canvas_h = visible_canvas_height()
+            if scroll_to_top:
+                visible_top_y = 0
+            else:
+                top_frac = canvas.yview()[0]
+                visible_top_y = int(top_frac * max(rendered_y1[0], page_h))
+                visible_top_y = max(0, min(visible_top_y, max(0, page_h - 1)))
+
+            new_y0 = max(0, visible_top_y - viewport_buffer_px)
+            new_y1 = min(page_h, visible_top_y + canvas_h + viewport_buffer_px)
+            if new_y1 <= new_y0:
+                new_y1 = min(page_h, new_y0 + max(canvas_h, 1))
+
+            viewport = Rect(x=0, y=new_y0, width=page_w, height=new_y1 - new_y0)
+            self.session.diagnostics.mark(f"rasterize tile y={new_y0}–{new_y1}")
+            frame = rasterize(display_list, viewport=viewport)
+            self.session.diagnostics.mark("rasterize tile done")
+            old = getattr(canvas, "image", None)
             photo = _frame_to_photo(frame)
+            canvas.coords(canvas_image, 0, new_y0)
             canvas.itemconfigure(canvas_image, image=photo)
             canvas.image = photo
             del old
-            canvas.configure(scrollregion=(0, 0, frame.width, frame.height))
+            canvas.configure(scrollregion=(0, 0, page_w, page_h))
+            if scroll_to_top:
+                canvas.yview_moveto(0)
+            rendered_y0[0] = new_y0
+            rendered_y1[0] = new_y1
+
+        def build_current_display_list(result: PageLoadResult) -> DisplayList:
+            self.session.diagnostics.mark(f"build display list (width={current_width[0]}, zoom={self.settings.zoom})")
+            display_list = build_display_list(
+                result.handler_result.value,
+                width=current_width[0],
+                zoom=self.settings.zoom,
+                root_style=result.root_style,
+                styles=result.styles,
+                images=result.images,
+            )
+            self.session.diagnostics.mark(f"display list built ({display_list.width}x{display_list.height})")
+            return display_list
+
+        def maybe_rerender_for_scroll() -> None:
+            """Re-render the viewport region if scrolling left the buffer."""
+            display_list = last_display_list[0]
+            if display_list is None or use_full_page_render():
+                return
+            page_h = display_list.height
+            if page_h <= 0:
+                return
+            top_frac, bot_frac = canvas.yview()
+            visible_top_y = int(top_frac * page_h)
+            visible_bot_y = int(bot_frac * page_h)
+
+            inside_top = (
+                rendered_y0[0] == 0
+                or rendered_y0[0] + viewport_trigger_px <= visible_top_y
+            )
+            inside_bot = (
+                rendered_y1[0] == page_h
+                or visible_bot_y <= rendered_y1[0] - viewport_trigger_px
+            )
+            if inside_top and inside_bot:
+                return  # buffer covers the visible region — no re-render.
+
+            page_w = display_list.width
+            new_y0 = max(0, visible_top_y - viewport_buffer_px)
+            new_y1 = min(page_h, visible_bot_y + viewport_buffer_px)
+            if new_y1 <= new_y0:
+                return
+            viewport = Rect(x=0, y=new_y0, width=page_w, height=new_y1 - new_y0)
+            self.session.diagnostics.mark(f"scroll rerender tile y={new_y0}–{new_y1}")
+            try:
+                frame = rasterize(display_list, viewport=viewport)
+            except Exception:
+                # Don't tear down the UI if a re-render fails mid-scroll;
+                # the user still has the previous tile on screen.
+                return
+            self.session.diagnostics.mark("scroll rerender done")
+            old = getattr(canvas, "image", None)
+            photo = _frame_to_photo(frame)
+            canvas.coords(canvas_image, 0, new_y0)
+            canvas.itemconfigure(canvas_image, image=photo)
+            canvas.image = photo
+            del old
+            rendered_y0[0] = new_y0
+            rendered_y1[0] = new_y1
+
+        def schedule_rerender_check() -> None:
+            if rerender_job[0] is not None:
+                return
+            rerender_job[0] = canvas.after(rerender_throttle_ms, run_rerender_check)
+
+        def run_rerender_check() -> None:
+            rerender_job[0] = None
+            maybe_rerender_for_scroll()
+
+        def on_yscroll(*args: object) -> None:
+            scrollbar.set(*args)
+            schedule_rerender_check()
+
+        canvas.configure(yscrollcommand=on_yscroll)
+
+        def present(result: PageLoadResult) -> None:
+            last_result[0] = result
+            if result.handler_result.kind == "document":
+                display_list = build_current_display_list(result)
+                paint_canvas(display_list, scroll_to_top=True)
+            else:
+                last_display_list[0] = None
             root.title(result.handler_result.value.title or "Neuzelaar")
             address_var.set(result.resource.final_url)
             status_var.set(self.page_summary(result))
@@ -254,6 +432,7 @@ class TkShell:
             self.populate_dom_tree(dom_tree, result)
             self.populate_text_widget(source_text, self.source_text(result))
             self.populate_text_widget(request_text, self.requests_text(result))
+            self.populate_text_widget(scripts_text, self.scripts_text(result))
             self.populate_text_widget(error_text, "no captured errors")
 
         def show_error(exc: Exception) -> None:
@@ -268,28 +447,28 @@ class TkShell:
 
         def open_from_entry(_event=None) -> None:
             try:
-                present(*self.render_url_to_frame(
-                    self.normalize_address(address_var.get().strip()),
-                    width=current_width[0],
-                ))
+                result = self.session.open_url(
+                    self.normalize_address(address_var.get().strip())
+                )
+                present(result)
             except Exception as exc:
                 show_error(exc)
 
         def go_back() -> None:
             try:
-                present(*self.back_to_frame(width=current_width[0]))
+                present(self.session.back())
             except Exception as exc:
                 show_error(exc)
 
         def go_forward() -> None:
             try:
-                present(*self.forward_to_frame(width=current_width[0]))
+                present(self.session.forward())
             except Exception as exc:
                 show_error(exc)
 
         def reload_page() -> None:
             try:
-                present(*self.reload_to_frame(width=current_width[0]))
+                present(self.session.reload())
             except Exception as exc:
                 show_error(exc)
 
@@ -299,17 +478,10 @@ class TkShell:
             if result is None or result.handler_result.kind != "document":
                 return
             try:
-                frame = self.frame_for_result(result, width=current_width[0])
+                display_list = build_current_display_list(result)
+                paint_canvas(display_list, scroll_to_top=False)
             except Exception as exc:
                 show_error(exc)
-                return
-            # Release old X11 pixmap before allocating a new one.
-            old = getattr(canvas, 'image', None)
-            photo = _frame_to_photo(frame)
-            canvas.itemconfigure(canvas_image, image=photo)
-            canvas.image = photo
-            del old
-            canvas.configure(scrollregion=(0, 0, frame.width, frame.height))
 
         def on_canvas_configure(event: tk.Event) -> None:
             if event.width <= 1 or event.width == current_width[0]:
@@ -320,6 +492,14 @@ class TkShell:
             reflow_job[0] = canvas.after(200, reflow_at_current_width)
 
         canvas.bind("<Configure>", on_canvas_configure)
+
+        def on_render_mode_changed(_value: object) -> None:
+            display_list = last_display_list[0]
+            if display_list is None:
+                return
+            paint_canvas(display_list, scroll_to_top=False)
+
+        config.subscribe("render.full_page", on_render_mode_changed)
 
         def show_blocked_popup() -> None:
             self.show_blocked_popup(root, last_result[0])
@@ -351,7 +531,7 @@ class TkShell:
             profile_var.set(profile.value)
             if last_result[0] is not None:
                 try:
-                    present(*self.reload_to_frame(width=current_width[0]))
+                    present(self.session.reload())
                 except Exception as exc:
                     show_error(exc)
 
@@ -373,7 +553,7 @@ class TkShell:
                     return
                 if last_result[0] is not None:
                     try:
-                        present(*self.reload_to_frame(width=current_width[0]))
+                        present(self.session.reload())
                     except Exception as exc:
                         show_error(exc)
 
@@ -387,6 +567,28 @@ class TkShell:
         make_toggle("CSS", "content.css.enabled")
         make_toggle("Images", "content.images.enabled")
         make_toggle("Iframes", "content.iframes.enabled")
+
+        # Full-page render toggle. Unlike the content toggles above, a
+        # render-mode flip just repaints (handled by the existing
+        # render.full_page subscriber) — no network reload needed.
+        ttk.Separator(action_bar, orient=tk.VERTICAL).pack(
+            side=tk.LEFT, fill=tk.Y, padx=8, pady=4
+        )
+        full_page_var = tk.BooleanVar(value=bool(config.get("render.full_page")))
+
+        def on_full_page_click() -> None:
+            try:
+                config.set("render.full_page", full_page_var.get())
+            except (KeyError, ValueError):
+                full_page_var.set(not full_page_var.get())
+
+        ttk.Checkbutton(
+            action_bar,
+            text="Full-page render",
+            variable=full_page_var,
+            command=on_full_page_click,
+        ).pack(side=tk.LEFT, padx=4, pady=4)
+        config.subscribe("render.full_page", lambda value: full_page_var.set(bool(value)))
 
         ttk.Separator(action_bar, orient=tk.VERTICAL).pack(
             side=tk.LEFT, fill=tk.Y, padx=8, pady=4
@@ -524,8 +726,15 @@ class TkShell:
         split.sashpos(0, self.default_split_position(window_width))
 
         def load_initial() -> None:
+            # Force layout to settle so canvas.winfo_width() returns the
+            # post-PanedWindow geometry, not the initial pre-layout size
+            # (which can be ~75px and produces a sliver-width display list).
+            canvas.update_idletasks()
+            settled_width = canvas.winfo_width()
+            if settled_width > 1:
+                current_width[0] = settled_width
             try:
-                present(*self.render_url_to_frame(initial_url, width=current_width[0]))
+                present(self.session.open_url(initial_url))
             except Exception as exc:
                 show_error(exc)
 
@@ -571,6 +780,43 @@ class TkShell:
 
     def source_text(self, result: PageLoadResult) -> str:
         return result.resource.body.decode(result.resource.encoding or "utf-8", errors="replace")
+
+    def scripts_text(self, result: PageLoadResult) -> str:
+        engine = self.session.js_engine
+        engine_name = getattr(engine, "name", None) or (
+            type(engine).__name__ if engine is not None else "noop"
+        )
+        lines: list[str] = [f"engine: {engine_name}"]
+        if not result.scripts:
+            lines.append("")
+            lines.append("no script tags on this page")
+            return "\n".join(lines)
+
+        lines.append(f"scripts: {len(result.scripts)}")
+        lines.append("")
+        for index, (node_id, script) in enumerate(result.scripts.items(), start=1):
+            host = script.origin.host or "(opaque)"
+            origin = f"{script.origin.scheme}://{host}"
+            if script.origin.port is not None:
+                origin += f":{script.origin.port}"
+            source_preview = " ".join(script.source.split())
+            if len(source_preview) > 200:
+                source_preview = source_preview[:200] + "…"
+            capability = (
+                script.result.requested_capabilities[0].name.lower()
+                if script.result.requested_capabilities
+                else "(none)"
+            )
+            kind = "inline" if script.inline else "external"
+            location = script.url if script.url else "(inline)"
+            lines.append(f"[{index}] {script.result.status.value.upper()}  {kind}  node={node_id}")
+            lines.append(f"    url:        {location}")
+            lines.append(f"    origin:     {origin}")
+            lines.append(f"    capability: {capability}")
+            lines.append(f"    reason:     {script.result.reason}")
+            lines.append(f"    source:     {source_preview}" if source_preview else "    source:     (empty)")
+            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
 
     def requests_text(self, result: PageLoadResult) -> str:
         lines: list[str] = []
