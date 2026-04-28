@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 from neuzelaar.document.dom import Document, Element, Node, NodeId, Text, walk
 
@@ -745,10 +746,12 @@ def _normalize_text_align(value: str | None, parent_value: str) -> str:
     return parent_value
 
 
-def _split_selector_group(selector: str) -> list[str]:
-    return [part.strip() for part in selector.split(",") if part.strip()]
+@lru_cache(maxsize=4096)
+def _split_selector_group(selector: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in selector.split(",") if part.strip())
 
 
+@lru_cache(maxsize=4096)
 def _selector_specificity(selector: str) -> tuple[int, int, int]:
     ids = classes = tags = 0
     for combinator, part in _parse_selector_steps(selector):
@@ -924,7 +927,8 @@ def _matches_simple_selector(node: Element, selector: str) -> bool:
     )
 
 
-def _parse_selector_steps(selector: str) -> list[tuple[str, str]]:
+@lru_cache(maxsize=4096)
+def _parse_selector_steps(selector: str) -> tuple[tuple[str, str], ...]:
     steps: list[tuple[str, str]] = []
     current = ""
     pending_combinator = " "
@@ -980,7 +984,7 @@ def _parse_selector_steps(selector: str) -> list[tuple[str, str]]:
         current += char
     if current.strip():
         steps.append((pending_combinator, current.strip()))
-    return steps
+    return tuple(steps)
 
 
 @dataclass(frozen=True, slots=True)
@@ -992,6 +996,7 @@ class _SimpleSelector:
     pseudo_classes: tuple[tuple[str, str | None], ...]
 
 
+@lru_cache(maxsize=4096)
 def _parse_simple_selector(selector: str) -> _SimpleSelector | None:
     text = selector.strip()
     if not text:
