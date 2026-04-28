@@ -150,11 +150,12 @@ def compute_styles(document: Document, rules: tuple[StyleRule, ...] = ()) -> dic
     root_px: int | None = None
     all_rules = UA_STYLESHEET + tuple(rules)
     initial_values = _initial_style_values()
+    rule_index = _build_rule_index(all_rules)
     for node in walk(document):
         if not isinstance(node, Element):
             continue
         parent_style = _parent_style(node, styles)
-        declarations = _cascade_declarations(node, all_rules)
+        declarations = _cascade_declarations(node, rule_index)
         parent_px = _font_size_to_px(parent_style.font_size, fallback=16)
         raw_font_size = _resolve_property_value(
             "font-size",
@@ -207,21 +208,98 @@ def _supported(declarations: dict[str, str]) -> dict[str, str]:
     return {name: value for name, value in declarations.items() if name in SUPPORTED_PROPERTIES}
 
 
-def _cascade_declarations(node: Element, rules: tuple[StyleRule, ...]) -> dict[str, str]:
-    matches: list[tuple[tuple[int, int, int], int, dict[str, str], frozenset[str]]] = []
+@dataclass(frozen=True, slots=True)
+class _PreparedRule:
+    """A single comma-split selector with its rule's declarations.
+
+    `order` is assigned globally at index-build time so cascade
+    tie-breaking still favors later rules even when matches arrive
+    out of source order via the per-bucket lookup.
+    """
+    selector: str
+    specificity: tuple[int, int, int]
+    order: int
+    declarations: dict[str, str]
+    important: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _RuleIndex:
+    """Buckets prepared rules by their rightmost simple selector.
+
+    Per-node lookup unions the buckets for the node's id, each of its
+    classes, its tag, and the universal bucket — yielding only rules
+    that *could* match. Each prepared rule is filed in exactly one
+    bucket (most discriminating attribute wins), so unioning at query
+    time does not produce duplicates.
+    """
+    by_id: dict[str, list[_PreparedRule]]
+    by_class: dict[str, list[_PreparedRule]]
+    by_tag: dict[str, list[_PreparedRule]]
+    universal: list[_PreparedRule]
+
+
+def _build_rule_index(rules: tuple[StyleRule, ...]) -> _RuleIndex:
+    by_id: dict[str, list[_PreparedRule]] = {}
+    by_class: dict[str, list[_PreparedRule]] = {}
+    by_tag: dict[str, list[_PreparedRule]] = {}
+    universal: list[_PreparedRule] = []
     order = 0
     for rule in rules:
+        supported = _supported(rule.declarations)
+        if not supported:
+            continue
         for selector in _split_selector_group(rule.selector):
-            if _matches_selector(node, selector):
-                matches.append(
-                    (
-                        _selector_specificity(selector),
-                        order,
-                        _supported(rule.declarations),
-                        rule.important,
-                    )
-                )
-                order += 1
+            steps = _parse_selector_steps(selector)
+            if not steps:
+                continue
+            rightmost = _parse_simple_selector(steps[-1][1])
+            if rightmost is None:
+                continue
+            prepared = _PreparedRule(
+                selector=selector,
+                specificity=_selector_specificity(selector),
+                order=order,
+                declarations=supported,
+                important=rule.important,
+            )
+            order += 1
+            if rightmost.id_name is not None:
+                by_id.setdefault(rightmost.id_name, []).append(prepared)
+            elif rightmost.classes:
+                by_class.setdefault(rightmost.classes[0], []).append(prepared)
+            elif rightmost.tag is not None and rightmost.tag != "*":
+                by_tag.setdefault(rightmost.tag, []).append(prepared)
+            else:
+                universal.append(prepared)
+    return _RuleIndex(by_id=by_id, by_class=by_class, by_tag=by_tag, universal=universal)
+
+
+def _candidate_rules(index: _RuleIndex, node: Element) -> list[_PreparedRule]:
+    candidates: list[_PreparedRule] = []
+    node_id_attr = node.attr("id")
+    if node_id_attr and node_id_attr in index.by_id:
+        candidates.extend(index.by_id[node_id_attr])
+    classes_attr = node.attr("class")
+    if classes_attr:
+        for cls in classes_attr.split():
+            bucket = index.by_class.get(cls)
+            if bucket is not None:
+                candidates.extend(bucket)
+    tag_bucket = index.by_tag.get(node.tag.lower())
+    if tag_bucket is not None:
+        candidates.extend(tag_bucket)
+    candidates.extend(index.universal)
+    return candidates
+
+
+def _cascade_declarations(node: Element, index: _RuleIndex) -> dict[str, str]:
+    matches: list[tuple[tuple[int, int, int], int, dict[str, str], frozenset[str]]] = []
+    for prepared in _candidate_rules(index, node):
+        if _matches_selector(node, prepared.selector):
+            matches.append(
+                (prepared.specificity, prepared.order, prepared.declarations, prepared.important)
+            )
     declarations = _flatten_cascade_matches(matches)
     inline_style = node.attr("style")
     if inline_style:
