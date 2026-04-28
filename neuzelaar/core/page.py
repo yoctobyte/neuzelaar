@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 from neuzelaar.core.bus import Bus
+from neuzelaar.core.diagnostics import LoadDiagnostics
 from neuzelaar.core.fetch.client import FetchClient, FetchError
 from neuzelaar.core.fetch.cookies import SessionCookieJar
 from neuzelaar.core.fetch.gateway import GateDecision, SubresourceGateway
@@ -100,6 +101,7 @@ class PageLoader:
         js_engine: JavaScriptEngine | None = None,
         permission_store: PermissionStore | None = None,
         permission_service: PermissionService | None = None,
+        diagnostics: LoadDiagnostics | None = None,
     ) -> None:
         self.fetch_client = fetch_client or FetchClient()
         self.policy_engine = policy_engine or PolicyEngine()
@@ -112,6 +114,7 @@ class PageLoader:
             bus=self.bus,
         )
         self.permission_store = self.permission_service.store
+        self.diagnostics = diagnostics or LoadDiagnostics()
         self.gateway = SubresourceGateway(
             policy_engine=self.policy_engine,
             bus=self.bus,
@@ -153,26 +156,34 @@ class PageLoader:
             context_origin=url_record.origin,
         )
         self._publish(PageLoadStarted(url_record.normalized))
+        self.diagnostics.start(f"open {url_record.normalized}")
         try:
             resource = self.fetch_client.fetch(top_level_request)
         except Exception as exc:
             self._publish(PageFailed(url_record.normalized, str(exc)))
             raise
+        self.diagnostics.mark(f"fetched top-level ({len(resource.body)} bytes, status {resource.status})")
         if self.cookie_jar is not None:
             self.cookie_jar.store_from_resource(resource)
         mime_decision = classify_resource(resource)
         handler_result = default_registry().handle(resource, mime_decision)
+        self.diagnostics.mark(f"parsed {mime_decision.kind}")
         rendered_text = self._render(handler_result)
         links = self._extract_links(handler_result)
         forms = self._extract_forms(handler_result)
         plan = self._build_subresource_plan(handler_result)
         gates = self.gateway.evaluate_plan(plan, resource)
+        self.diagnostics.mark(f"planned subresources ({len(plan)})")
         stylesheet_urls, styles = self._compute_styles(resource, handler_result, plan, gates)
+        self.diagnostics.mark(f"computed styles ({len(stylesheet_urls)} stylesheets fetched)")
         page_root_style = self._root_style(handler_result, styles)
         planned = self._collect_planned_subresources(plan, gates)
         images = self._fetch_images(resource, handler_result, plan, gates)
+        self.diagnostics.mark(f"fetched images ({len(images)})")
         scripts = self._plan_scripts(resource, handler_result)
+        self.diagnostics.mark(f"planned scripts ({len(scripts)})")
         self._publish(PageLoadFinished(resource.final_url, resource.status))
+        self.diagnostics.mark("page load finished")
         return PageLoadResult(
             resource=resource,
             mime_decision=mime_decision,
@@ -223,12 +234,19 @@ class PageLoader:
             return (), {}
         rules = []
         stylesheet_urls: list[str] = []
-        for block in style_text_blocks(handler_result.value):
+        inline_blocks = list(style_text_blocks(handler_result.value))
+        for block in inline_blocks:
             rules.extend(parse_stylesheet(block))
-        for stylesheet_url, css_text in self._fetch_stylesheets(plan, gates):
+        self.diagnostics.mark(f"  parsed inline <style> ({len(inline_blocks)})")
+        fetched = self._fetch_stylesheets(plan, gates)
+        self.diagnostics.mark(f"  fetched external stylesheets ({len(fetched)})")
+        for stylesheet_url, css_text in fetched:
             stylesheet_urls.append(stylesheet_url)
             rules.extend(parse_stylesheet(css_text))
-        return tuple(stylesheet_urls), compute_styles(handler_result.value, tuple(rules))
+        self.diagnostics.mark(f"  parsed all stylesheets ({len(rules)} rules total)")
+        styles = compute_styles(handler_result.value, tuple(rules))
+        self.diagnostics.mark(f"  applied styles to DOM ({len(styles)} nodes)")
+        return tuple(stylesheet_urls), styles
 
     def _root_style(self, handler_result: HandlerResult, styles: dict) -> ComputedStyle:
         if handler_result.kind != "document":
