@@ -276,6 +276,12 @@ class TkShell:
         image_repaint_job: list[str | None] = [None]
         image_poll_interval_ms = 33
         image_repaint_debounce_ms = 50
+        # JS event-loop driver: the ticked engine parks setTimeout /
+        # setInterval callbacks until the host advances them, so we tick
+        # at ~60Hz with an 8ms wall-clock budget per tick. Idle pages
+        # short-circuit on has_pending_work so we don't spin.
+        js_tick_interval_ms = 16
+        js_tick_budget_ms = 8.0
         # Render around `viewport_buffer_px` above and below the visible
         # region so smooth scrolling stays inside the buffer most of the
         # time. Re-render fires only when the visible edge gets within
@@ -479,6 +485,17 @@ class TkShell:
             image_event_queue.put(event)
 
         self.session.bus.subscribe(ImageReady, on_image_ready)
+
+        def js_tick() -> None:
+            engine = self.session.js_engine
+            if engine is not None and engine.has_pending_work():
+                try:
+                    engine.tick(timeout_ms=js_tick_budget_ms)
+                except Exception:
+                    # A bad tick must not crash the UI thread; the next
+                    # tick will retry whatever is still queued.
+                    pass
+            root.after(js_tick_interval_ms, js_tick)
 
         def show_error(exc: Exception) -> None:
             message = f"error: {exc}"
@@ -787,6 +804,7 @@ class TkShell:
 
         root.after(0, load_initial)
         root.after(image_poll_interval_ms, poll_image_events)
+        root.after(js_tick_interval_ms, js_tick)
 
         try:
             root.mainloop()

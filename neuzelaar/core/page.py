@@ -559,6 +559,11 @@ class PageLoader:
         if handler_result.kind != "document":
             return {}
 
+        # Each page starts with a fresh JS runtime: any timers/intervals
+        # scheduled by the previous page must not survive navigation.
+        # No-op for engines without persistent state.
+        self.js_engine.reset_for_page()
+
         result: dict[NodeId, ScriptExecutionRecord] = {}
         for request in extract_scripts(handler_result.value):
             same_origin = None

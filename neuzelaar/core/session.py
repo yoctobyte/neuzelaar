@@ -56,6 +56,10 @@ class BrowserSession:
             self.diagnostics = self.loader.diagnostics
             if self.response_cache is None:
                 self.response_cache = self.loader.fetch_client.cache
+        # Always pull the canonical engine off the loader: when the user
+        # passes nothing the loader installs a noop, and we want
+        # session.js_engine to point at that engine, not at None.
+        self.js_engine = self.loader.js_engine
 
     @property
     def current(self) -> PageLoadResult | None:

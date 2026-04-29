@@ -3,6 +3,9 @@ from pathlib import Path
 from neuzelaar.core.policy.capability import PermissionScope
 from neuzelaar.core.policy.profile import PolicyProfile
 from neuzelaar.core.session import BrowserSession, SessionError
+from neuzelaar.engines.js.interface import ScriptExecutionRequest
+from neuzelaar.engines.js.own_ticked_engine import OwnTickedJavaScriptEngine
+from neuzelaar.engines.js_own.host_scenarios import BrowserScenarioFixture
 
 
 def fixture_url(name: str) -> str:
@@ -92,3 +95,25 @@ def test_session_grant_script_permission_updates_shared_permission_state() -> No
 
     assert session.permission_service.store.permissions
     assert session.permission_service.store.permissions[0].capability.name == "EXEC_INLINE_JS"
+
+
+def test_session_resets_ticked_js_engine_between_page_loads() -> None:
+    engine = OwnTickedJavaScriptEngine(scenario_fixture=BrowserScenarioFixture())
+    session = BrowserSession(js_engine=engine)
+
+    # First load installs the engine and seeds it with a long-pending
+    # timer. The page itself has no scripts, but we use execute()
+    # directly to reach into the same runtime the loader would use.
+    session.open_url(fixture_url("example.html"))
+    engine.execute(
+        ScriptExecutionRequest(source="setTimeout(function () {}, 60000);")
+    )
+    assert engine.has_pending_work() is True
+
+    # Navigating to another page must reset the engine, dropping the
+    # previous page's timers.
+    session.open_url(fixture_url("example.html"))
+
+    assert engine.has_pending_work() is False
+    # session.js_engine must point at the user-provided engine, not None.
+    assert session.js_engine is engine
