@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 from neuzelaar.engines.js_own.host import HostCallable, HostObject
 from neuzelaar.engines.js_own.runtime import JS_UNDEFINED, js_to_string
@@ -10,9 +11,16 @@ from neuzelaar.engines.js_own.runtime_state import current_runtime_state
 from neuzelaar.engines.js_own.scheduler import ScriptScheduler
 
 
+ConsoleSink = Callable[[str, str], None]
+
+
 @dataclass(slots=True)
 class HostConsole:
     entries: list[tuple[str, tuple[object, ...]]] = field(default_factory=list)
+    # Optional callback the engine sets to forward console output to a
+    # bus / debug pane. Stays None by default so test fixtures can read
+    # ``entries`` without paying for a sink call.
+    sink: ConsoleSink | None = None
 
     def as_host_object(self) -> HostObject:
         return HostObject(
@@ -26,21 +34,30 @@ class HostConsole:
 
     def _log(self, arguments: tuple[object, ...], _this: object | None) -> object:
         self.entries.append(("log", arguments))
+        self._emit("log", arguments)
         return None
 
     def _warn(self, arguments: tuple[object, ...], _this: object | None) -> object:
         self.entries.append(("warn", arguments))
+        self._emit("warn", arguments)
         return None
 
     def _error(self, arguments: tuple[object, ...], _this: object | None) -> object:
         self.entries.append(("error", arguments))
+        self._emit("error", arguments)
         return None
 
     def _count(self, arguments: tuple[object, ...], _this: object | None) -> object:
         label = js_to_string(arguments[0] if arguments else "default")
         seen = sum(1 for level, args in self.entries if level == "count" and js_to_string(args[0] if args else "default") == label)
         self.entries.append(("count", (label, seen + 1.0)))
+        self._emit("count", (label, float(seen + 1)))
         return float(seen + 1)
+
+    def _emit(self, level: str, arguments: tuple[object, ...]) -> None:
+        if self.sink is None:
+            return
+        self.sink(level, " ".join(js_to_string(arg) for arg in arguments))
 
 
 @dataclass(slots=True)

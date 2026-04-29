@@ -4,21 +4,22 @@ from __future__ import annotations
 
 import argparse
 
+from neuzelaar.core.bus import Bus
 from neuzelaar.core.session import BrowserSession
 from neuzelaar.engines.js.interface import JavaScriptEngine
 from neuzelaar.engines.js.noop import NoopJavaScriptEngine
 from neuzelaar.engines.js.own_ticked_engine import OwnTickedJavaScriptEngine
-from neuzelaar.engines.js_own.host_scenarios import BrowserScenarioFixture
 from neuzelaar.shells.tk.shell import TkShell
 
 
-def _build_js_engine(name: str) -> JavaScriptEngine:
+def _build_js_engine(name: str, bus: Bus) -> JavaScriptEngine:
     if name == "noop":
         return NoopJavaScriptEngine()
     if name == "own-ticked":
-        # Plain fixture: no canned DOM nodes, but installs the host
-        # stubs so setTimeout / setInterval / console exist as globals.
-        return OwnTickedJavaScriptEngine(scenario_fixture=BrowserScenarioFixture())
+        # No fixture: the loader will hand a real PageContext on every
+        # navigation. The bus lets HostConsole forward log/warn/error
+        # to the Tk JavaScript debug tab.
+        return OwnTickedJavaScriptEngine(bus=bus)
     raise ValueError(f"Unknown --js-engine value: {name!r}")
 
 
@@ -42,7 +43,8 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    session = BrowserSession(js_engine=_build_js_engine(args.js_engine))
+    bus = Bus()
+    session = BrowserSession(bus=bus, js_engine=_build_js_engine(args.js_engine, bus))
     TkShell(
         session=session,
         width=args.width,

@@ -117,3 +117,24 @@ def test_session_resets_ticked_js_engine_between_page_loads() -> None:
     assert engine.has_pending_work() is False
     # session.js_engine must point at the user-provided engine, not None.
     assert session.js_engine is engine
+
+
+def test_session_with_ticked_engine_runs_inline_script_against_real_dom() -> None:
+    from neuzelaar.core.bus import Bus
+    from neuzelaar.shell_api.events import ConsoleLog
+
+    bus = Bus()
+    logs: list[ConsoleLog] = []
+    bus.subscribe(ConsoleLog, logs.append)
+    engine = OwnTickedJavaScriptEngine(bus=bus)
+    session = BrowserSession(bus=bus, js_engine=engine)
+
+    session.open_url(fixture_url("console_probe.html"))
+
+    texts = [log.text for log in logs]
+    # Title comes from the parsed <title>; getElementById finds the
+    # real <h1 id="hero"> text; href reflects the file:// URL the
+    # loader actually used.
+    assert "title:Console Probe" in texts
+    assert "hero:Hello, World" in texts
+    assert any(t.startswith("href:file://") and t.endswith("console_probe.html") for t in texts)

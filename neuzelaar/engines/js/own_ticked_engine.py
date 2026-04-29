@@ -18,8 +18,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
+from neuzelaar.core.bus import Bus
 from neuzelaar.engines.js.interface import (
     JavaScriptEngine,
+    PageContext,
     ScriptExecutionRequest,
     ScriptExecutionResult,
     ScriptExecutionStatus,
@@ -36,6 +38,7 @@ from neuzelaar.engines.js_own.errors import (
 from neuzelaar.engines.js_own.execution import execution_budget
 from neuzelaar.engines.js_own.host_scenarios import (
     BrowserScenarioFixture,
+    DocumentNodeFixture,
     build_browser_scenario,
 )
 from neuzelaar.engines.js_own.interpreter import (
@@ -47,6 +50,7 @@ from neuzelaar.engines.js_own.runtime_state import (
     ScriptRuntimeState,
 )
 from neuzelaar.engines.js_own.scheduler import ScriptScheduler
+from neuzelaar.shell_api.events import ConsoleLog
 
 
 class OwnTickedJavaScriptEngine(JavaScriptEngine):
@@ -57,12 +61,19 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
         *,
         scenario_fixture: BrowserScenarioFixture | None = None,
         runtime_config: ScriptRuntimeConfig | None = None,
+        bus: Bus | None = None,
     ) -> None:
+        # ``scenario_fixture`` is the fallback used when the host
+        # doesn't hand us a PageContext (e.g. direct test usage). On
+        # real page loads the host calls reset_for_page(page_context)
+        # and we rebuild the runtime from that instead.
         self.scenario_fixture = scenario_fixture
         self.runtime_config = runtime_config
+        self.bus = bus
         self._environment: Environment | None = None
         self._state: ScriptRuntimeState | None = None
         self._scheduler: ScriptScheduler | None = None
+        self._page_fixture: BrowserScenarioFixture | None = scenario_fixture
 
     def execute(self, request: ScriptExecutionRequest) -> ScriptExecutionResult:
         capability = required_capability_for(request)
@@ -138,18 +149,26 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
             return False
         return self._state.has_pending_work()
 
-    def reset_for_page(self) -> None:
+    def reset_for_page(self, page_context: PageContext | None = None) -> None:
         self._environment = None
         self._state = None
         self._scheduler = None
+        if page_context is not None:
+            self._page_fixture = _fixture_from_page_context(page_context)
+        else:
+            # No context handed in: fall back to whatever the engine was
+            # constructed with, which keeps direct-test usage working.
+            self._page_fixture = self.scenario_fixture
 
     def _ensure_runtime(self) -> None:
         if self._state is not None:
             return
-        if self.scenario_fixture is not None:
-            environment, stubs = build_browser_scenario(self.scenario_fixture)
+        fixture = self._page_fixture
+        if fixture is not None:
+            environment, stubs = build_browser_scenario(fixture)
             self._environment = environment
             self._scheduler = stubs.scheduler
+            self._wire_console_sink(stubs)
         else:
             self._environment = create_global_environment()
             self._scheduler = None
@@ -160,6 +179,16 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
             self._scheduler = scheduler
         self._state = ScriptRuntimeState(config=config, scheduler=scheduler)
 
+    def _wire_console_sink(self, stubs) -> None:
+        if self.bus is None:
+            return
+        bus = self.bus
+
+        def sink(level: str, text: str) -> None:
+            bus.publish(ConsoleLog(level=level, text=text))
+
+        stubs.console.sink = sink
+
     @contextmanager
     def _enter_session(self) -> Iterator[None]:
         assert self._state is not None
@@ -168,3 +197,19 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
             yield
         finally:
             _CURRENT_RUNTIME_STATE.reset(token)
+
+
+def _fixture_from_page_context(page_context: PageContext) -> BrowserScenarioFixture:
+    nodes = tuple(
+        DocumentNodeFixture(
+            id=node.id,
+            text_content=node.text_content,
+            extra_properties={"tagName": node.tag.upper()},
+        )
+        for node in page_context.nodes
+    )
+    return BrowserScenarioFixture(
+        url=page_context.url,
+        title=page_context.title,
+        nodes=nodes,
+    )

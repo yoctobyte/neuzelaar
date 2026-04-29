@@ -31,6 +31,34 @@ class ScriptExecutionResult:
     requested_capabilities: tuple[Capability, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class PageContextNode:
+    """Read-only snapshot of an id-bearing DOM element.
+
+    Engines that expose a host ``document`` build host-side wrappers
+    from these. Mutations to the wrappers do not propagate back to the
+    underlying page DOM in V1; that bridge is deferred.
+    """
+
+    id: str
+    tag: str
+    text_content: str
+
+
+@dataclass(frozen=True, slots=True)
+class PageContext:
+    """Page-scoped data the host hands to the engine on navigation.
+
+    Lets the engine tailor its global object to the actual page (real
+    URL, real title, real id-bearing elements) instead of a static
+    fixture origin.
+    """
+
+    url: str
+    title: str = ""
+    nodes: tuple[PageContextNode, ...] = ()
+
+
 def required_capability_for(request: ScriptExecutionRequest) -> Capability:
     """The capability a script needs to execute, derived purely from its shape.
 
@@ -82,10 +110,13 @@ class JavaScriptEngine:
         """True if a future call to ``tick`` would do something useful."""
         return False
 
-    def reset_for_page(self) -> None:
+    def reset_for_page(self, page_context: PageContext | None = None) -> None:
         """Drop any per-page state (timers, intervals, globals).
 
         Called by the host on navigation so the new page starts with a
-        fresh runtime. No-op for engines with no persistent state.
+        fresh runtime. ``page_context`` carries the new page's URL,
+        title, and id-bearing nodes; engines that expose a host
+        ``document`` rebuild their host objects from it. No-op for
+        engines with no persistent state.
         """
         return

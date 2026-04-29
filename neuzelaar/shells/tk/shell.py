@@ -24,7 +24,7 @@ from neuzelaar.document.dom import Comment, Document, Element, Node, Text
 from neuzelaar.render.display_builder import build_display_list
 from neuzelaar.render.display_list import DisplayList, Rect
 from neuzelaar.render.software import rasterize
-from neuzelaar.shell_api.events import ImageReady
+from neuzelaar.shell_api.events import ConsoleLog, ImageReady
 from neuzelaar.shell_api.frame import Frame, PixelFormat
 from neuzelaar.shells.tk.preferences_window import PreferencesWindow
 from neuzelaar.shells.tk.settings import ALLOWED_ZOOM_LEVELS, Settings, settings_path
@@ -188,11 +188,29 @@ class TkShell:
         request_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         request_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        scripts_text = tk.Text(scripts_frame, wrap=tk.WORD, font=("TkFixedFont", 13))
-        scripts_scroll = ttk.Scrollbar(scripts_frame, orient=tk.VERTICAL, command=scripts_text.yview)
+        # Split the JavaScript tab vertically: top half is the per-page
+        # script list (rebuilt by present()); bottom half is the
+        # console-output stream that accumulates while scripts run.
+        scripts_split = ttk.PanedWindow(scripts_frame, orient=tk.VERTICAL)
+        scripts_split.pack(fill=tk.BOTH, expand=True)
+        scripts_top = ttk.Frame(scripts_split)
+        scripts_split.add(scripts_top, weight=1)
+        console_bottom = ttk.Frame(scripts_split)
+        scripts_split.add(console_bottom, weight=1)
+
+        scripts_text = tk.Text(scripts_top, wrap=tk.WORD, font=("TkFixedFont", 13))
+        scripts_scroll = ttk.Scrollbar(scripts_top, orient=tk.VERTICAL, command=scripts_text.yview)
         scripts_text.configure(yscrollcommand=scripts_scroll.set)
         scripts_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scripts_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        console_text = tk.Text(console_bottom, wrap=tk.WORD, font=("TkFixedFont", 13))
+        console_scroll = ttk.Scrollbar(console_bottom, orient=tk.VERTICAL, command=console_text.yview)
+        console_text.configure(yscrollcommand=console_scroll.set)
+        console_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        console_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        console_text.insert(tk.END, "(no console output yet)\n")
+        console_text.configure(state=tk.DISABLED)
 
         error_text = tk.Text(errors_frame, wrap=tk.WORD, font=("TkFixedFont", 13))
         error_scroll = ttk.Scrollbar(errors_frame, orient=tk.VERTICAL, command=error_text.yview)
@@ -276,6 +294,11 @@ class TkShell:
         image_repaint_job: list[str | None] = [None]
         image_poll_interval_ms = 33
         image_repaint_debounce_ms = 50
+        # ConsoleLog can be published synchronously from script execution
+        # (currently main-thread) or from a future worker; route it
+        # through a queue too so the appender always runs on the UI
+        # thread regardless.
+        console_event_queue: "queue.Queue[ConsoleLog]" = queue.Queue()
         # JS event-loop driver: the ticked engine parks setTimeout /
         # setInterval callbacks until the host advances them, so we tick
         # at ~60Hz with an 8ms wall-clock budget per tick. Idle pages
@@ -486,6 +509,40 @@ class TkShell:
 
         self.session.bus.subscribe(ImageReady, on_image_ready)
 
+        def append_console_line(level: str, text: str) -> None:
+            console_text.configure(state=tk.NORMAL)
+            console_text.insert(tk.END, f"[{level}] {text}\n")
+            console_text.configure(state=tk.DISABLED)
+            console_text.see(tk.END)
+
+        def reset_console() -> None:
+            console_text.configure(state=tk.NORMAL)
+            console_text.delete("1.0", tk.END)
+            console_text.insert(tk.END, "(no console output yet)\n")
+            console_text.configure(state=tk.DISABLED)
+
+        def poll_console_events() -> None:
+            had_real_event = False
+            try:
+                while True:
+                    event = console_event_queue.get_nowait()
+                    if not had_real_event:
+                        # Replace the placeholder on first real entry
+                        # for this page.
+                        console_text.configure(state=tk.NORMAL)
+                        console_text.delete("1.0", tk.END)
+                        console_text.configure(state=tk.DISABLED)
+                        had_real_event = True
+                    append_console_line(event.level, event.text)
+            except queue.Empty:
+                pass
+            root.after(image_poll_interval_ms, poll_console_events)
+
+        def on_console_log(event: ConsoleLog) -> None:
+            console_event_queue.put(event)
+
+        self.session.bus.subscribe(ConsoleLog, on_console_log)
+
         def js_tick() -> None:
             engine = self.session.js_engine
             if engine is not None and engine.has_pending_work():
@@ -496,6 +553,19 @@ class TkShell:
                     # tick will retry whatever is still queued.
                     pass
             root.after(js_tick_interval_ms, js_tick)
+
+        def begin_navigation() -> None:
+            # Discard any leftover console events from the previous
+            # page (e.g. a setInterval that fired right before we
+            # navigated away) and clear the console widget. Called
+            # *before* the new load so that this-page console output
+            # lands on a clean slate.
+            while True:
+                try:
+                    console_event_queue.get_nowait()
+                except queue.Empty:
+                    break
+            reset_console()
 
         def show_error(exc: Exception) -> None:
             message = f"error: {exc}"
@@ -508,6 +578,7 @@ class TkShell:
             self.populate_text_widget(error_text, report)
 
         def open_from_entry(_event=None) -> None:
+            begin_navigation()
             try:
                 result, _future = self.session.open_url_async(
                     self.normalize_address(address_var.get().strip())
@@ -529,6 +600,7 @@ class TkShell:
                 show_error(exc)
 
         def reload_page() -> None:
+            begin_navigation()
             try:
                 result, _future = self.session.reload_async()
                 present(result)
@@ -796,6 +868,7 @@ class TkShell:
             settled_width = canvas.winfo_width()
             if settled_width > 1:
                 current_width[0] = settled_width
+            begin_navigation()
             try:
                 result, _future = self.session.open_url_async(initial_url)
                 present(result)
@@ -804,6 +877,7 @@ class TkShell:
 
         root.after(0, load_initial)
         root.after(image_poll_interval_ms, poll_image_events)
+        root.after(image_poll_interval_ms, poll_console_events)
         root.after(js_tick_interval_ms, js_tick)
 
         try:

@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import time
 
-from neuzelaar.engines.js.interface import ScriptExecutionRequest, ScriptExecutionStatus
+from neuzelaar.core.bus import Bus
+from neuzelaar.engines.js.interface import (
+    PageContext,
+    PageContextNode,
+    ScriptExecutionRequest,
+    ScriptExecutionStatus,
+)
 from neuzelaar.engines.js.own_ticked_engine import OwnTickedJavaScriptEngine
 from neuzelaar.engines.js_own.host_scenarios import BrowserScenarioFixture
+from neuzelaar.shell_api.events import ConsoleLog
 
 
 def _make_engine() -> OwnTickedJavaScriptEngine:
@@ -121,3 +128,66 @@ def test_tick_on_engine_with_no_state_is_safe() -> None:
     engine.tick(timeout_ms=10.0)
 
     assert engine.has_pending_work() is False
+
+
+def test_reset_for_page_with_context_rebuilds_host_for_real_url_and_nodes() -> None:
+    engine = OwnTickedJavaScriptEngine()
+    bus = Bus()
+    logs: list[ConsoleLog] = []
+    bus.subscribe(ConsoleLog, logs.append)
+    engine.bus = bus
+
+    engine.reset_for_page(
+        PageContext(
+            url="https://example.test/articles/intro",
+            title="Intro",
+            nodes=(
+                PageContextNode(id="headline", tag="h1", text_content="Hello"),
+            ),
+        )
+    )
+
+    result = engine.execute(
+        ScriptExecutionRequest(
+            source=(
+                "console.log(location.href);"
+                "console.log(document.title);"
+                "console.log(document.getElementById('headline').textContent);"
+            )
+        )
+    )
+
+    assert result.status is ScriptExecutionStatus.RAN, result.reason
+    assert [log.text for log in logs] == [
+        "https://example.test/articles/intro",
+        "Intro",
+        "Hello",
+    ]
+
+
+def test_console_sink_routes_through_bus_for_log_warn_error() -> None:
+    engine = _make_engine()
+    bus = Bus()
+    logs: list[ConsoleLog] = []
+    bus.subscribe(ConsoleLog, logs.append)
+    engine.bus = bus
+
+    # Re-prime the engine so the bus gets wired into the host stubs;
+    # _make_engine constructed the engine without a bus.
+    engine.reset_for_page()
+
+    engine.execute(
+        ScriptExecutionRequest(
+            source=(
+                'console.log("hi", 1);'
+                'console.warn("careful");'
+                'console.error("oops");'
+            )
+        )
+    )
+
+    assert [(log.level, log.text) for log in logs] == [
+        ("log", "hi 1"),
+        ("warn", "careful"),
+        ("error", "oops"),
+    ]

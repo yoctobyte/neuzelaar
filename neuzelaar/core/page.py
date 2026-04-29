@@ -22,7 +22,7 @@ from neuzelaar.core.policy.rules import PolicyDecision, PolicyEngine
 from neuzelaar.core.watchdog import check_resources
 from neuzelaar.document.forms import DocumentForm, extract_forms
 from neuzelaar.document.links import DocumentLink, extract_links
-from neuzelaar.document.dom import NodeId
+from neuzelaar.document.dom import Document, Element, NodeId, Text, walk
 from neuzelaar.document.scripts import extract_scripts
 from neuzelaar.document.styles import ComputedStyle, compute_styles, root_style, style_text_blocks
 from neuzelaar.document.subresources import SubresourceRequest, extract_subresources
@@ -30,6 +30,8 @@ from neuzelaar.engines.css.tinycss2_adapter import parse_stylesheet
 from neuzelaar.engines.image.pillow_adapter import DecodedImageBitmap, ImageDecodeError, decode_image_bitmap
 from neuzelaar.engines.js.interface import (
     JavaScriptEngine,
+    PageContext,
+    PageContextNode,
     ScriptExecutionRequest,
     ScriptExecutionResult,
     ScriptExecutionStatus,
@@ -561,8 +563,10 @@ class PageLoader:
 
         # Each page starts with a fresh JS runtime: any timers/intervals
         # scheduled by the previous page must not survive navigation.
+        # The PageContext lets ticked engines rebuild a host ``document``
+        # tied to this page's real URL, title, and id-bearing nodes.
         # No-op for engines without persistent state.
-        self.js_engine.reset_for_page()
+        self.js_engine.reset_for_page(_build_page_context(resource, handler_result))
 
         result: dict[NodeId, ScriptExecutionRecord] = {}
         for request in extract_scripts(handler_result.value):
@@ -606,3 +610,36 @@ class PageLoader:
     def _publish(self, event: object) -> None:
         if self.bus is not None:
             self.bus.publish(event)
+
+
+def _build_page_context(resource: Resource, handler_result: HandlerResult) -> PageContext:
+    if handler_result.kind != "document":
+        return PageContext(url=resource.final_url)
+    document: Document = handler_result.value
+    nodes: list[PageContextNode] = []
+    for node in walk(document):
+        if not isinstance(node, Element):
+            continue
+        element_id = node.attr("id")
+        if not element_id:
+            continue
+        nodes.append(
+            PageContextNode(
+                id=element_id,
+                tag=node.tag,
+                text_content=_element_text(node),
+            )
+        )
+    return PageContext(
+        url=resource.final_url,
+        title=document.title,
+        nodes=tuple(nodes),
+    )
+
+
+def _element_text(element: Element) -> str:
+    parts: list[str] = []
+    for descendant in walk(element):
+        if isinstance(descendant, Text):
+            parts.append(descendant.data)
+    return "".join(parts)
