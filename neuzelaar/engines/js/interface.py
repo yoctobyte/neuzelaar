@@ -67,3 +67,25 @@ class JavaScriptEngine:
                 node_id=None,
             )
         )
+
+    def tick(self, *, timeout_ms: float = 8.0) -> None:
+        """Advance any pending microtasks and due timers for up to ``timeout_ms``.
+
+        Default is a no-op: drain-mode engines run scripts to completion
+        inside ``execute`` and have nothing left to drive. Ticked engines
+        override this so the host can fire setTimeout/setInterval
+        callbacks on its own clock.
+        """
+        return
+
+    def has_pending_work(self) -> bool:
+        """True if a future call to ``tick`` would do something useful."""
+        return False
+
+    def reset_for_page(self) -> None:
+        """Drop any per-page state (timers, intervals, globals).
+
+        Called by the host on navigation so the new page starts with a
+        fresh runtime. No-op for engines with no persistent state.
+        """
+        return
