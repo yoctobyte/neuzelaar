@@ -54,6 +54,19 @@ class RenderInvalidated:
 
 
 @dataclass(frozen=True, slots=True)
+class ImageReady:
+    """An image referenced by the current page has finished decoding.
+
+    Published from a worker thread by PageLoader.load_async, so shells
+    that subscribe must marshal back to their UI thread before touching
+    widgets. ``node_id`` matches the key in PageLoadResult.images.
+    """
+
+    node_id: Any
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
 class PermissionRequested:
     request_id: str
     capability: Any

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 
 from neuzelaar.core.bus import Bus
@@ -64,16 +65,36 @@ class BrowserSession:
 
     def open_url(self, url: str) -> PageLoadResult:
         result = self.loader.load(url)
+        self._record_history(result)
+        return result
+
+    def open_url_async(self, url: str) -> tuple[PageLoadResult, Future[None]]:
+        """Streaming variant of open_url for shells that can repaint mid-load.
+
+        Returns once the document and styles are ready; image fetches
+        continue in the background and publish ImageReady events on
+        completion. Headless callers should keep using ``open_url``.
+        """
+        result, future = self.loader.load_async(url)
+        self._record_history(result)
+        return result, future
+
+    def _record_history(self, result: PageLoadResult) -> None:
         del self.history[self.current_index + 1 :]
         self.history.append(HistoryEntry(url=result.resource.final_url, result=result))
         self.current_index = len(self.history) - 1
-        return result
 
     def reload(self) -> PageLoadResult:
         current = self.current
         if current is None:
             raise SessionError("No current page")
         return self.open_url(current.resource.final_url)
+
+    def reload_async(self) -> tuple[PageLoadResult, Future[None]]:
+        current = self.current
+        if current is None:
+            raise SessionError("No current page")
+        return self.open_url_async(current.resource.final_url)
 
     def follow_link(self, index: int) -> PageLoadResult:
         current = self.current

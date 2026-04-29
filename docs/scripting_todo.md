@@ -143,6 +143,22 @@ Related strategy docs:
 - DOM mutation/event bridge
 - better browser-like globals
 
+#### Open question: DOM-mutation → repaint coupling
+
+When the engine moves from drain-mode to ticked execution and DOM
+mutations actually exist, we need a policy for repaint cadence:
+
+- Option A: every DOM write yields the timeslice and triggers a
+  debounced repaint. Safest. Penalises hot loops that touch the DOM
+  many times in a tick.
+- Option B: mutations accumulate within a tick and a single repaint
+  fires at task boundary. Matches how real browsers commit
+  style/layout. Better for hot loops, but means mid-tick reads see
+  the post-write tree while the screen still shows pre-write.
+
+Decision deferred until we have real pages to measure. For now JS is
+drain-mode and the only "live" repaint trigger is image arrival.
+
 ### Language surface still deferred
 
 In rough priority order — landing any one of these unlocks a real

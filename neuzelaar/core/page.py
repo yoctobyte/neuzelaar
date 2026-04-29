@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
@@ -37,6 +38,7 @@ from neuzelaar.engines.js.interface import (
 from neuzelaar.engines.js.noop import NoopJavaScriptEngine
 from neuzelaar.render.text_only import render_text
 from neuzelaar.shell_api.events import (
+    ImageReady,
     PageFailed,
     PageLoadFinished,
     PageLoadStarted,
@@ -72,6 +74,22 @@ class PassiveResourceBudget:
     max_stylesheets: int = 4
     max_images: int = 16
     max_bytes: int = 500_000
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedPage:
+    resource: Resource
+    mime_decision: MimeDecision
+    handler_result: HandlerResult
+    rendered_text: str
+    links: tuple[DocumentLink, ...]
+    forms: tuple[DocumentForm, ...]
+    plan: tuple[SubresourceRequest, ...]
+    gates: dict
+    stylesheet_urls: tuple[str, ...]
+    styles: dict
+    root_style: ComputedStyle
+    planned_subresources: tuple[PlannedSubresourceDecision, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +148,63 @@ class PageLoader:
         form_data: dict[str, str] | None = None,
         reason: FetchReason = FetchReason.TOP_LEVEL,
     ) -> PageLoadResult:
+        prepared = self._prepare(url, method=method, form_data=form_data, reason=reason)
+        if prepared is None:
+            raise FetchError("aborted", "page preparation aborted", url=url)
+        images = self._fetch_images(
+            prepared.resource, prepared.handler_result, prepared.plan, prepared.gates
+        )
+        self.diagnostics.mark(f"fetched images ({len(images)})")
+        scripts = self._plan_scripts(prepared.resource, prepared.handler_result)
+        self.diagnostics.mark(f"planned scripts ({len(scripts)})")
+        self._publish(PageLoadFinished(prepared.resource.final_url, prepared.resource.status))
+        self.diagnostics.mark("page load finished")
+        return self._build_result(prepared, images=images, scripts=scripts)
+
+    def load_async(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        form_data: dict[str, str] | None = None,
+        reason: FetchReason = FetchReason.TOP_LEVEL,
+    ) -> tuple[PageLoadResult, Future[None]]:
+        """Load a page, returning once the document and styles are ready.
+
+        Image fetches run on a background pool; each completion mutates
+        ``result.images`` and publishes an ImageReady event so the shell
+        can repaint. The returned Future resolves when image work has
+        settled. Headless callers should keep using ``load()``.
+        """
+        prepared = self._prepare(url, method=method, form_data=form_data, reason=reason)
+        if prepared is None:
+            raise FetchError("aborted", "page preparation aborted", url=url)
+        scripts = self._plan_scripts(prepared.resource, prepared.handler_result)
+        self.diagnostics.mark(f"planned scripts ({len(scripts)})")
+        images: dict[NodeId, ImageAsset] = {}
+        result = self._build_result(prepared, images=images, scripts=scripts)
+        future = self._stream_images(
+            prepared.handler_result, prepared.plan, prepared.gates, images
+        )
+        resource = prepared.resource
+
+        def _on_images_done(_fut: Future[None]) -> None:
+            self._publish(PageLoadFinished(resource.final_url, resource.status))
+            self.diagnostics.mark(
+                f"page load finished (streamed {len(images)} images)"
+            )
+
+        future.add_done_callback(_on_images_done)
+        return result, future
+
+    def _prepare(
+        self,
+        url: str,
+        *,
+        method: str,
+        form_data: dict[str, str] | None,
+        reason: FetchReason,
+    ) -> "_PreparedPage | None":
         check_resources()
         url_record = parse_url(url)
         body = None
@@ -182,23 +257,39 @@ class PageLoader:
         self.diagnostics.mark(f"computed styles ({len(stylesheet_urls)} stylesheets fetched)")
         page_root_style = self._root_style(handler_result, styles)
         planned = self._collect_planned_subresources(plan, gates)
-        images = self._fetch_images(resource, handler_result, plan, gates)
-        self.diagnostics.mark(f"fetched images ({len(images)})")
-        scripts = self._plan_scripts(resource, handler_result)
-        self.diagnostics.mark(f"planned scripts ({len(scripts)})")
-        self._publish(PageLoadFinished(resource.final_url, resource.status))
-        self.diagnostics.mark("page load finished")
-        return PageLoadResult(
+        return _PreparedPage(
             resource=resource,
             mime_decision=mime_decision,
             handler_result=handler_result,
             rendered_text=rendered_text,
             links=links,
             forms=forms,
+            plan=plan,
+            gates=gates,
+            stylesheet_urls=stylesheet_urls,
             styles=styles,
             root_style=page_root_style,
-            stylesheet_urls=stylesheet_urls,
             planned_subresources=tuple(planned),
+        )
+
+    def _build_result(
+        self,
+        prepared: "_PreparedPage",
+        *,
+        images: dict[NodeId, ImageAsset],
+        scripts: dict[NodeId, ScriptExecutionRecord],
+    ) -> PageLoadResult:
+        return PageLoadResult(
+            resource=prepared.resource,
+            mime_decision=prepared.mime_decision,
+            handler_result=prepared.handler_result,
+            rendered_text=prepared.rendered_text,
+            links=prepared.links,
+            forms=prepared.forms,
+            styles=prepared.styles,
+            root_style=prepared.root_style,
+            stylesheet_urls=prepared.stylesheet_urls,
+            planned_subresources=prepared.planned_subresources,
             images=images,
             scripts=scripts,
         )
@@ -379,6 +470,90 @@ class PageLoader:
         image_resource = self.fetch_client.fetch(request)
         bitmap = decode_image_bitmap(image_resource.body)
         return image_resource, bitmap
+
+    def _stream_images(
+        self,
+        handler_result: HandlerResult,
+        plan: tuple[SubresourceRequest, ...],
+        gates: dict[SubresourceRequest, GateDecision],
+        images_out: dict[NodeId, ImageAsset],
+    ) -> Future[None]:
+        """Fetch images in the background, mutating ``images_out`` and
+        publishing ImageReady as each one decodes.
+
+        Unlike the sync path the byte budget is applied in arrival order,
+        not plan order — the trade-off for being able to commit results
+        as they come in. Returns a Future that resolves when every image
+        worker has finished (success, fetch error, or decode error).
+        """
+        done: Future[None] = Future()
+        if handler_result.kind != "document":
+            done.set_result(None)
+            return done
+
+        candidates: list[SubresourceRequest] = []
+        for planned in plan:
+            if planned.reason != FetchReason.IMAGE:
+                continue
+            if len(candidates) >= self.passive_budget.max_images:
+                self._publish(ResourceBlocked(planned.url, "passive image budget exceeded"))
+                continue
+            gate = gates[planned]
+            if not gate.allowed:
+                continue
+            candidates.append(planned)
+        if not candidates:
+            done.set_result(None)
+            return done
+
+        budget_lock = threading.Lock()
+        used_bytes = [0]
+        pending = [len(candidates)]
+        pending_lock = threading.Lock()
+
+        def finish_one() -> None:
+            with pending_lock:
+                pending[0] -= 1
+                if pending[0] == 0:
+                    done.set_result(None)
+
+        def worker(planned: SubresourceRequest) -> None:
+            try:
+                gate = gates[planned]
+                try:
+                    image_resource, bitmap = self._fetch_and_decode_image(gate.request)
+                except FetchError as exc:
+                    self._publish(
+                        ResourceBlocked(gate.normalized_url, f"image fetch failed: {exc}")
+                    )
+                    return
+                except ImageDecodeError:
+                    return
+                with budget_lock:
+                    if used_bytes[0] + len(image_resource.body) > self.passive_budget.max_bytes:
+                        self._publish(
+                            ResourceBlocked(
+                                image_resource.final_url,
+                                "passive resource byte budget exceeded",
+                            )
+                        )
+                        return
+                    used_bytes[0] += len(image_resource.body)
+                    images_out[planned.node_id] = ImageAsset(
+                        url=image_resource.final_url, bitmap=bitmap
+                    )
+                self._publish(ImageReady(node_id=planned.node_id, url=image_resource.final_url))
+            finally:
+                finish_one()
+
+        pool = ThreadPoolExecutor(
+            max_workers=min(8, len(candidates)),
+            thread_name_prefix="neuz-image",
+        )
+        for planned in candidates:
+            pool.submit(worker, planned)
+        pool.shutdown(wait=False)
+        return done
 
     def _plan_scripts(self, resource: Resource, handler_result: HandlerResult) -> dict[NodeId, ScriptExecutionRecord]:
         if handler_result.kind != "document":

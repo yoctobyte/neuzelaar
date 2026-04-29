@@ -1,8 +1,10 @@
 from pathlib import Path
 
+from neuzelaar.core.bus import Bus
 from neuzelaar.core.page import PageLoader, PassiveResourceBudget
 from neuzelaar.core.policy.profile import PolicyProfile
 from neuzelaar.core.policy.rules import PolicyAction, PolicyEngine
+from neuzelaar.shell_api.events import ImageReady
 
 
 def test_page_loader_returns_structured_document_result() -> None:
@@ -111,3 +113,26 @@ def test_page_loader_applies_passive_image_budget() -> None:
     result = loader.load(Path("tests/fixtures/sites/basic_images.html").resolve().as_uri())
 
     assert result.images == {}
+
+
+def test_load_async_returns_before_images_settle_and_publishes_image_ready() -> None:
+    bus = Bus()
+    image_events: list[ImageReady] = []
+    bus.subscribe(ImageReady, image_events.append)
+    loader = PageLoader(bus=bus)
+
+    result, future = loader.load_async(
+        Path("tests/fixtures/sites/basic_images.html").resolve().as_uri()
+    )
+
+    # Result is observable immediately; the dict gets populated as
+    # workers complete. Block on the future to assert what landed.
+    assert result.handler_result.kind == "document"
+    future.result(timeout=5.0)
+
+    assert len(result.images) == 1
+    image = next(iter(result.images.values()))
+    assert image.url.endswith("/tests/fixtures/sites/placeholder.png")
+    assert len(image_events) == 1
+    assert image_events[0].url == image.url
+    assert image_events[0].node_id in result.images

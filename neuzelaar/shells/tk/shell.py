@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import queue
 import sys
 import traceback
 import tkinter as tk
@@ -23,6 +24,7 @@ from neuzelaar.document.dom import Comment, Document, Element, Node, Text
 from neuzelaar.render.display_builder import build_display_list
 from neuzelaar.render.display_list import DisplayList, Rect
 from neuzelaar.render.software import rasterize
+from neuzelaar.shell_api.events import ImageReady
 from neuzelaar.shell_api.frame import Frame, PixelFormat
 from neuzelaar.shells.tk.preferences_window import PreferencesWindow
 from neuzelaar.shells.tk.settings import ALLOWED_ZOOM_LEVELS, Settings, settings_path
@@ -267,6 +269,13 @@ class TkShell:
         # the throttle window, against the *latest* scroll position.
         rerender_job: list[str | None] = [None]
         rerender_throttle_ms = 40
+        # ImageReady arrives on a worker thread; we hand it through a
+        # queue and let the main-thread poller schedule a debounced
+        # repaint. Tkinter widget calls must stay on the UI thread.
+        image_event_queue: "queue.Queue[ImageReady]" = queue.Queue()
+        image_repaint_job: list[str | None] = [None]
+        image_poll_interval_ms = 33
+        image_repaint_debounce_ms = 50
         # Render around `viewport_buffer_px` above and below the visible
         # region so smooth scrolling stays inside the buffer most of the
         # time. Re-render fires only when the visible edge gets within
@@ -435,6 +444,42 @@ class TkShell:
             self.populate_text_widget(scripts_text, self.scripts_text(result))
             self.populate_text_widget(error_text, "no captured errors")
 
+        def schedule_image_repaint() -> None:
+            if image_repaint_job[0] is not None:
+                return
+            image_repaint_job[0] = root.after(image_repaint_debounce_ms, run_image_repaint)
+
+        def run_image_repaint() -> None:
+            image_repaint_job[0] = None
+            result = last_result[0]
+            if result is None or result.handler_result.kind != "document":
+                return
+            try:
+                display_list = build_current_display_list(result)
+                paint_canvas(display_list, scroll_to_top=False)
+            except Exception:
+                # Mid-load repaint failures must not tear down the UI;
+                # the previous frame is still on screen.
+                return
+
+        def poll_image_events() -> None:
+            had_events = False
+            try:
+                while True:
+                    image_event_queue.get_nowait()
+                    had_events = True
+            except queue.Empty:
+                pass
+            if had_events:
+                schedule_image_repaint()
+            root.after(image_poll_interval_ms, poll_image_events)
+
+        def on_image_ready(event: ImageReady) -> None:
+            # Worker-thread context: only thread-safe operations here.
+            image_event_queue.put(event)
+
+        self.session.bus.subscribe(ImageReady, on_image_ready)
+
         def show_error(exc: Exception) -> None:
             message = f"error: {exc}"
             report = self.error_report(exc)
@@ -447,7 +492,7 @@ class TkShell:
 
         def open_from_entry(_event=None) -> None:
             try:
-                result = self.session.open_url(
+                result, _future = self.session.open_url_async(
                     self.normalize_address(address_var.get().strip())
                 )
                 present(result)
@@ -468,7 +513,8 @@ class TkShell:
 
         def reload_page() -> None:
             try:
-                present(self.session.reload())
+                result, _future = self.session.reload_async()
+                present(result)
             except Exception as exc:
                 show_error(exc)
 
@@ -734,11 +780,13 @@ class TkShell:
             if settled_width > 1:
                 current_width[0] = settled_width
             try:
-                present(self.session.open_url(initial_url))
+                result, _future = self.session.open_url_async(initial_url)
+                present(result)
             except Exception as exc:
                 show_error(exc)
 
         root.after(0, load_initial)
+        root.after(image_poll_interval_ms, poll_image_events)
 
         try:
             root.mainloop()
