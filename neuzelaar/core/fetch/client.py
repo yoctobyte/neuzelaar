@@ -9,7 +9,8 @@ from urllib.parse import unquote, urlsplit
 from urllib.request import Request as UrlLibRequest
 from urllib.request import build_opener, HTTPRedirectHandler, urlopen
 
-from neuzelaar.core.fetch.resource import Request, Resource
+from neuzelaar.core.fetch.cache import CachedEntry, ResponseCache
+from neuzelaar.core.fetch.resource import CacheMeta, Request, Resource
 
 
 class FetchError(RuntimeError):
@@ -35,12 +36,14 @@ class FetchClient:
         timeout: float = 10.0,
         max_bytes: int = 2_000_000,
         max_redirects: int = 5,
+        cache: ResponseCache | None = None,
     ) -> None:
         self.limits = FetchLimits(
             timeout=timeout,
             max_bytes=max_bytes,
             max_redirects=max_redirects,
         )
+        self.cache = cache
 
     @property
     def timeout(self) -> float:
@@ -61,10 +64,22 @@ class FetchClient:
                 f"Unsupported method in M1 fetch client: {request.method}",
                 url=request.url,
             )
+        # Conditional revalidation: if we have a cached entry with a
+        # validator, attach If-None-Match / If-Modified-Since so the
+        # server can answer 304 instead of resending the body.
+        cached: CachedEntry | None = None
+        request_headers = dict(request.headers)
+        if self.cache is not None and method == "GET":
+            cached = self.cache.get(request.url)
+            if cached is not None:
+                if cached.etag and "If-None-Match" not in request_headers:
+                    request_headers["If-None-Match"] = cached.etag
+                if cached.last_modified and "If-Modified-Since" not in request_headers:
+                    request_headers["If-Modified-Since"] = cached.last_modified
         urllib_request = UrlLibRequest(
             request.url,
             data=request.body if method == "POST" else None,
-            headers=request.headers,
+            headers=request_headers,
             method=method,
         )
         try:
@@ -80,7 +95,7 @@ class FetchClient:
                 headers = dict(response.headers.items())
                 content_type = response.headers.get_content_type()
                 encoding = response.headers.get_content_charset()
-                return Resource.from_body(
+                resource = Resource.from_body(
                     request=request,
                     final_url=response.geturl(),
                     status=response.status,
@@ -89,9 +104,14 @@ class FetchClient:
                     encoding=encoding,
                     claimed_mime=content_type,
                 )
+                if self.cache is not None and method == "GET":
+                    self.cache.put(request.url, resource)
+                return resource
         except FetchError:
             raise
         except HTTPError as exc:
+            if exc.code == 304 and cached is not None:
+                return _replay_from_cache(request, cached)
             raise FetchError("http_error", str(exc), url=request.url) from exc
         except URLError as exc:
             raise FetchError("url_error", str(exc), url=request.url) from exc
@@ -156,3 +176,23 @@ class _LimitedRedirectHandler(HTTPRedirectHandler):
 
 def _build_opener(max_redirects: int):
     return build_opener(_LimitedRedirectHandler(max_redirects))
+
+
+def _replay_from_cache(request: Request, cached: CachedEntry) -> Resource:
+    base = cached.resource
+    return Resource(
+        id=base.id,
+        request=request,
+        final_url=base.final_url,
+        status=200,
+        headers=base.headers,
+        body=base.body,
+        encoding=base.encoding,
+        claimed_mime=base.claimed_mime,
+        detected_mime=base.detected_mime,
+        mime_confidence=base.mime_confidence,
+        trust=base.trust,
+        handler=base.handler,
+        cache=CacheMeta(from_cache=True),
+        content_hash=base.content_hash,
+    )

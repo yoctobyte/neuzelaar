@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 from neuzelaar.core.bus import Bus
 from neuzelaar.core.diagnostics import LoadDiagnostics
+from neuzelaar.core.fetch.cache import ResponseCache
+from neuzelaar.core.fetch.client import FetchClient
 from neuzelaar.core.fetch.resource import FetchReason
 from neuzelaar.core.fetch.cookies import SessionCookieJar
 from neuzelaar.core.page import PageLoader, PageLoadResult
@@ -29,6 +31,7 @@ class BrowserSession:
     permission_service: PermissionService | None = None
     js_engine: JavaScriptEngine | None = None
     loader: PageLoader | None = None
+    response_cache: ResponseCache | None = None
     diagnostics: LoadDiagnostics = field(default_factory=LoadDiagnostics)
     history: list[HistoryEntry] = field(default_factory=list)
     current_index: int = -1
@@ -38,7 +41,10 @@ class BrowserSession:
             self.permission_service = PermissionService(bus=self.bus)
         self.permission_service.subscribe_to_bus(self.bus)
         if self.loader is None:
+            if self.response_cache is None:
+                self.response_cache = ResponseCache()
             self.loader = PageLoader(
+                fetch_client=FetchClient(cache=self.response_cache),
                 cookie_jar=self.cookie_jar,
                 bus=self.bus,
                 permission_service=self.permission_service,
@@ -47,6 +53,8 @@ class BrowserSession:
             )
         else:
             self.diagnostics = self.loader.diagnostics
+            if self.response_cache is None:
+                self.response_cache = self.loader.fetch_client.cache
 
     @property
     def current(self) -> PageLoadResult | None:

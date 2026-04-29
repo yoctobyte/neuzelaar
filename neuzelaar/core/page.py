@@ -163,7 +163,10 @@ class PageLoader:
         except Exception as exc:
             self._publish(PageFailed(url_record.normalized, str(exc)))
             raise
-        self.diagnostics.mark(f"fetched top-level ({len(resource.body)} bytes, status {resource.status})")
+        cache_note = " (from cache)" if resource.cache.from_cache else ""
+        self.diagnostics.mark(
+            f"fetched top-level ({len(resource.body)} bytes, status {resource.status}){cache_note}"
+        )
         if self.cookie_jar is not None:
             self.cookie_jar.store_from_resource(resource)
         mime_decision = classify_resource(resource)
