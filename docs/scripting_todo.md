@@ -143,21 +143,19 @@ Related strategy docs:
 - DOM mutation/event bridge
 - better browser-like globals
 
-#### Open question: DOM-mutation → repaint coupling
+#### Resolved: DOM-mutation → repaint coupling
 
-When the engine moves from drain-mode to ticked execution and DOM
-mutations actually exist, we need a policy for repaint cadence:
+Initial answer landed: every host-bridged DOM write publishes a
+``DomMutated`` event, and shells debounce-repaint on the same queue
+they use for ``ImageReady``. Hot-loop optimisation (commit-at-task-
+boundary) is deferred until we measure a page that actually pays the
+cost — debouncing already coalesces bursts within ~50ms, which covers
+the common cases.
 
-- Option A: every DOM write yields the timeslice and triggers a
-  debounced repaint. Safest. Penalises hot loops that touch the DOM
-  many times in a tick.
-- Option B: mutations accumulate within a tick and a single repaint
-  fires at task boundary. Matches how real browsers commit
-  style/layout. Better for hot loops, but means mid-tick reads see
-  the post-write tree while the screen still shows pre-write.
-
-Decision deferred until we have real pages to measure. For now JS is
-drain-mode and the only "live" repaint trigger is image arrival.
+Currently bridged: ``element.textContent`` writes on id-bearing
+elements. Not yet bridged: ``innerHTML``, ``setAttribute``, child
+insertion / removal, style mutations. Each of these can land
+incrementally without revisiting the cadence question.
 
 ### Language surface still deferred
 

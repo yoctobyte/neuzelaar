@@ -138,3 +138,84 @@ def test_session_with_ticked_engine_runs_inline_script_against_real_dom() -> Non
     assert "title:Console Probe" in texts
     assert "hero:Hello, World" in texts
     assert any(t.startswith("href:file://") and t.endswith("console_probe.html") for t in texts)
+
+
+def test_script_textcontent_write_propagates_to_real_dom_and_publishes_dommutated() -> None:
+    from neuzelaar.core.bus import Bus
+    from neuzelaar.document.dom import Element, Text, walk
+    from neuzelaar.shell_api.events import DomMutated
+
+    bus = Bus()
+    mutations: list[DomMutated] = []
+    bus.subscribe(DomMutated, mutations.append)
+    engine = OwnTickedJavaScriptEngine(bus=bus)
+    session = BrowserSession(bus=bus, js_engine=engine)
+
+    result = session.open_url(fixture_url("dom_mutate.html"))
+
+    # Find the h1 in the parsed document and assert its text was
+    # rewritten by the inline script.
+    document = result.handler_result.value
+    hero = next(
+        node for node in walk(document)
+        if isinstance(node, Element) and node.attr("id") == "hero"
+    )
+    text_children = [child for child in hero.children if isinstance(child, Text)]
+    assert len(text_children) == 1
+    assert text_children[0].data == "after"
+
+    # And the bridge fired a DomMutated event so a UI shell could
+    # debounce-repaint.
+    assert len(mutations) == 1
+    assert mutations[0].property == "textContent"
+
+
+def test_settimeout_mutation_only_lands_after_a_tick() -> None:
+    from neuzelaar.core.bus import Bus
+    from neuzelaar.document.dom import Element, Text, walk
+    from neuzelaar.engines.js.interface import ScriptExecutionRequest
+    from neuzelaar.shell_api.events import DomMutated
+
+    bus = Bus()
+    mutations: list[DomMutated] = []
+    bus.subscribe(DomMutated, mutations.append)
+    engine = OwnTickedJavaScriptEngine(bus=bus)
+    session = BrowserSession(bus=bus, js_engine=engine)
+
+    # Open a page that just has the h1 — schedule the mutation as a
+    # timer via direct execute() so we control when it fires.
+    result = session.open_url(fixture_url("dom_mutate.html"))
+
+    document = result.handler_result.value
+    hero = next(
+        node for node in walk(document)
+        if isinstance(node, Element) and node.attr("id") == "hero"
+    )
+
+    # Reset baseline: open_url ran the page's inline script which
+    # already wrote "after". Drop those mutation events so we observe
+    # only the timer-driven one below.
+    mutations.clear()
+
+    engine.execute(
+        ScriptExecutionRequest(
+            source=(
+                'setTimeout(function () {'
+                '  document.getElementById("hero").textContent = "from-timer";'
+                '}, 0);'
+            )
+        )
+    )
+
+    # Before the tick: nothing has changed.
+    assert mutations == []
+    text_now = next(c for c in hero.children if isinstance(c, Text)).data
+    assert text_now == "after"
+
+    engine.tick(timeout_ms=20.0)
+
+    # After the tick: the timer fired, the bridge wrote through.
+    assert len(mutations) == 1
+    assert mutations[0].property == "textContent"
+    text_after = next(c for c in hero.children if isinstance(c, Text)).data
+    assert text_after == "from-timer"

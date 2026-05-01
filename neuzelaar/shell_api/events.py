@@ -67,6 +67,19 @@ class ImageReady:
 
 
 @dataclass(frozen=True, slots=True)
+class DomMutated:
+    """A script wrote through to a DOM element's content.
+
+    Published synchronously from the JS host bridge when a property
+    like ``textContent`` is assigned on a host object that mirrors a
+    real page Element. Shells should debounce-repaint in response.
+    """
+
+    node_id: Any
+    property: str
+
+
+@dataclass(frozen=True, slots=True)
 class PermissionRequested:
     request_id: str
     capability: Any

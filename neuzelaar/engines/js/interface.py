@@ -110,13 +110,21 @@ class JavaScriptEngine:
         """True if a future call to ``tick`` would do something useful."""
         return False
 
-    def reset_for_page(self, page_context: PageContext | None = None) -> None:
+    def reset_for_page(
+        self,
+        page_context: PageContext | None = None,
+        *,
+        mutation_handler=None,
+    ) -> None:
         """Drop any per-page state (timers, intervals, globals).
 
         Called by the host on navigation so the new page starts with a
         fresh runtime. ``page_context`` carries the new page's URL,
         title, and id-bearing nodes; engines that expose a host
-        ``document`` rebuild their host objects from it. No-op for
-        engines with no persistent state.
+        ``document`` rebuild their host objects from it.
+        ``mutation_handler(node_id, property_name, value)`` is invoked
+        whenever JS writes to a host-mirrored element, so the host can
+        propagate the change into the real page DOM. No-op for engines
+        with no persistent state.
         """
         return

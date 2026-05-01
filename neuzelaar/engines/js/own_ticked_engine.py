@@ -74,6 +74,7 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
         self._state: ScriptRuntimeState | None = None
         self._scheduler: ScriptScheduler | None = None
         self._page_fixture: BrowserScenarioFixture | None = scenario_fixture
+        self._mutation_handler = None
 
     def execute(self, request: ScriptExecutionRequest) -> ScriptExecutionResult:
         capability = required_capability_for(request)
@@ -149,10 +150,16 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
             return False
         return self._state.has_pending_work()
 
-    def reset_for_page(self, page_context: PageContext | None = None) -> None:
+    def reset_for_page(
+        self,
+        page_context: PageContext | None = None,
+        *,
+        mutation_handler=None,
+    ) -> None:
         self._environment = None
         self._state = None
         self._scheduler = None
+        self._mutation_handler = mutation_handler
         if page_context is not None:
             self._page_fixture = _fixture_from_page_context(page_context)
         else:
@@ -169,6 +176,7 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
             self._environment = environment
             self._scheduler = stubs.scheduler
             self._wire_console_sink(stubs)
+            self._wire_mutation_handler(stubs)
         else:
             self._environment = create_global_environment()
             self._scheduler = None
@@ -188,6 +196,16 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
             bus.publish(ConsoleLog(level=level, text=text))
 
         stubs.console.sink = sink
+
+    def _wire_mutation_handler(self, stubs) -> None:
+        handler = self._mutation_handler
+        if handler is None:
+            return
+        for node_id, host_object in stubs.document.nodes_by_id.items():
+            # Capture node_id so each hook reports its own id back.
+            host_object.on_set = lambda name, value, _id=node_id: handler(
+                _id, name, value
+            )
 
     @contextmanager
     def _enter_session(self) -> Iterator[None]:

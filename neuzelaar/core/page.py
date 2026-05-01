@@ -40,6 +40,7 @@ from neuzelaar.engines.js.interface import (
 from neuzelaar.engines.js.noop import NoopJavaScriptEngine
 from neuzelaar.render.text_only import render_text
 from neuzelaar.shell_api.events import (
+    DomMutated,
     ImageReady,
     PageFailed,
     PageLoadFinished,
@@ -565,8 +566,15 @@ class PageLoader:
         # scheduled by the previous page must not survive navigation.
         # The PageContext lets ticked engines rebuild a host ``document``
         # tied to this page's real URL, title, and id-bearing nodes.
-        # No-op for engines without persistent state.
-        self.js_engine.reset_for_page(_build_page_context(resource, handler_result))
+        # The mutation handler bridges JS writes back into the page
+        # DOM and publishes DomMutated so shells can repaint. No-op for
+        # engines without persistent state.
+        document: Document = handler_result.value
+        mutation_handler = _build_mutation_handler(document, self.bus)
+        self.js_engine.reset_for_page(
+            _build_page_context(resource, handler_result),
+            mutation_handler=mutation_handler,
+        )
 
         result: dict[NodeId, ScriptExecutionRecord] = {}
         for request in extract_scripts(handler_result.value):
@@ -643,3 +651,35 @@ def _element_text(element: Element) -> str:
         if isinstance(descendant, Text):
             parts.append(descendant.data)
     return "".join(parts)
+
+
+def _build_mutation_handler(document: Document, bus: Bus | None):
+    """Return a callback the engine fires when a host node is written to.
+
+    Maps node_id → real page Element, applies the write (today: just
+    ``textContent``), and publishes DomMutated so subscribers can
+    repaint. Mutations to unknown ids or unhandled properties are
+    silently ignored — the engine has already updated its host-side
+    view, so JS reads stay consistent even when the page side can't
+    mirror the change.
+    """
+    elements_by_id: dict[str, Element] = {}
+    for node in walk(document):
+        if isinstance(node, Element):
+            element_id = node.attr("id")
+            if element_id:
+                elements_by_id[element_id] = node
+
+    def handle(node_id: str, property_name: str, value: object) -> None:
+        element = elements_by_id.get(node_id)
+        if element is None:
+            return
+        if property_name == "textContent":
+            new_text = "" if value is None else str(value)
+            text_id = NodeId(f"{element.id}.text")
+            replacement = Text(id=text_id, parent=element, data=new_text)
+            element.children = [replacement]
+            if bus is not None:
+                bus.publish(DomMutated(node_id=element.id, property=property_name))
+
+    return handle

@@ -24,7 +24,7 @@ from neuzelaar.document.dom import Comment, Document, Element, Node, Text
 from neuzelaar.render.display_builder import build_display_list
 from neuzelaar.render.display_list import DisplayList, Rect
 from neuzelaar.render.software import rasterize
-from neuzelaar.shell_api.events import ConsoleLog, ImageReady
+from neuzelaar.shell_api.events import ConsoleLog, DomMutated, ImageReady
 from neuzelaar.shell_api.frame import Frame, PixelFormat
 from neuzelaar.shells.tk.preferences_window import PreferencesWindow
 from neuzelaar.shells.tk.settings import ALLOWED_ZOOM_LEVELS, Settings, settings_path
@@ -287,10 +287,11 @@ class TkShell:
         # the throttle window, against the *latest* scroll position.
         rerender_job: list[str | None] = [None]
         rerender_throttle_ms = 40
-        # ImageReady arrives on a worker thread; we hand it through a
-        # queue and let the main-thread poller schedule a debounced
-        # repaint. Tkinter widget calls must stay on the UI thread.
-        image_event_queue: "queue.Queue[ImageReady]" = queue.Queue()
+        # ImageReady (worker thread) and DomMutated (main thread today,
+        # but routed the same way for forward compatibility) both
+        # trigger a debounced repaint. The queue lets the UI-thread
+        # poller batch the repaint regardless of source.
+        image_event_queue: "queue.Queue[ImageReady | DomMutated]" = queue.Queue()
         image_repaint_job: list[str | None] = [None]
         image_poll_interval_ms = 33
         image_repaint_debounce_ms = 50
@@ -507,7 +508,14 @@ class TkShell:
             # Worker-thread context: only thread-safe operations here.
             image_event_queue.put(event)
 
+        def on_dom_mutated(event: DomMutated) -> None:
+            # Currently main-thread (script execution + ticks both run
+            # on UI thread), but routed through the same queue as
+            # images so a future move off-thread is a one-line change.
+            image_event_queue.put(event)
+
         self.session.bus.subscribe(ImageReady, on_image_ready)
+        self.session.bus.subscribe(DomMutated, on_dom_mutated)
 
         def append_console_line(level: str, text: str) -> None:
             console_text.configure(state=tk.NORMAL)

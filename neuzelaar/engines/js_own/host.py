@@ -25,6 +25,12 @@ class HostCallable:
 class HostObject:
     properties: dict[str, object] = field(default_factory=dict)
     prototype: "HostObject | None" = None
+    # Optional post-write hook the host can attach to bridge mutations
+    # back to a real underlying object (e.g. write through to the page
+    # DOM when JS does ``el.textContent = "x"``). Fires after the
+    # properties dict is updated so the JS-visible value and the
+    # bridged side-effect agree.
+    on_set: Callable[[str, object], None] | None = None
 
     def get(self, name: str) -> object:
         if name in self.properties:
@@ -35,6 +41,8 @@ class HostObject:
 
     def set(self, name: str, value: object) -> object:
         self.properties[name] = value
+        if self.on_set is not None:
+            self.on_set(name, value)
         return value
 
 
