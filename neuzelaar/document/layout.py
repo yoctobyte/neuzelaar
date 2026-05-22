@@ -97,12 +97,14 @@ def layout_document(
     document: Document,
     *,
     width: int = 800,
+    height: int = 600,
     styles: dict[NodeId, ComputedStyle] | None = None,
     images: dict[NodeId, ImageAsset] | None = None,
     root_style: ComputedStyle | None = None,
 ) -> LayoutResult:
     base_style = root_style or ComputedStyle()
     viewport_width = max(width - OUTER_MARGIN * 2, 120)
+    viewport_height = max(height - OUTER_MARGIN * 2, 120)
 
     items: list[LayoutItem] = []
     cursor_y = OUTER_MARGIN
@@ -130,6 +132,7 @@ def layout_document(
         bfc_height, placements = layout_block(
             root_box,
             viewport_width=viewport_width,
+            viewport_height=viewport_height,
             images=images or {},
         )
         placements = finalize_backgrounds(root_box, placements)

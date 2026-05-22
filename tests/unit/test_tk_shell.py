@@ -1,5 +1,8 @@
 from pathlib import Path
 
+from neuzelaar.engines.js.interface import ScriptExecutionRequest
+from neuzelaar.engines.js.own_ticked_engine import OwnTickedJavaScriptEngine
+from neuzelaar.engines.js_own.host_scenarios import BrowserScenarioFixture
 from neuzelaar.shell_api.frame import PixelFormat
 from neuzelaar.shells.tk.shell import TkShell
 
@@ -117,6 +120,20 @@ def test_tk_shell_source_text_returns_html_source() -> None:
     source = shell.source_text(result)
 
     assert "<title>Example Fixture</title>" in source
+
+
+def test_tk_shell_js_event_loop_text_reports_pending_timer() -> None:
+    engine = OwnTickedJavaScriptEngine(scenario_fixture=BrowserScenarioFixture())
+    shell = TkShell(width=640, height=480)
+    shell.session.js_engine = engine
+    engine.execute(ScriptExecutionRequest(source="setTimeout(function () {}, 1000);"))
+
+    text = shell.js_event_loop_text()
+
+    assert "event loop:" in text
+    assert "pending:    True" in text
+    assert "timers:     1" in text
+    assert "timer #1: setTimeout" in text
 
 
 def test_tk_shell_error_report_includes_context() -> None:

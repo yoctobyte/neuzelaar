@@ -136,6 +136,10 @@ class HostDocument:
         document = HostObject()
         document.set("title", self.title)
         document.set("getElementById", HostCallable("document.getElementById", self._get_element_by_id))
+        document.set("querySelector", HostCallable("document.querySelector", self._query_selector))
+        document.set("querySelectorAll", HostCallable("document.querySelectorAll", self._query_selector_all))
+        document.set("getElementsByClassName", HostCallable("document.getElementsByClassName", self._get_elements_by_class_name))
+        document.set("getElementsByTagName", HostCallable("document.getElementsByTagName", self._get_elements_by_tag_name))
         document.set("setTitle", HostCallable("document.setTitle", self._set_title))
         return document
 
@@ -143,11 +147,69 @@ class HostDocument:
         identifier = js_to_string(arguments[0] if arguments else "")
         return self.nodes_by_id.get(identifier)
 
+    def _query_selector(self, arguments: tuple[object, ...], _this: object | None) -> object:
+        selector = js_to_string(arguments[0] if arguments else "")
+        matches = self._select(selector)
+        return matches[0] if matches else None
+
+    def _query_selector_all(self, arguments: tuple[object, ...], _this: object | None) -> object:
+        selector = js_to_string(arguments[0] if arguments else "")
+        return self._select(selector)
+
+    def _get_elements_by_class_name(self, arguments: tuple[object, ...], _this: object | None) -> object:
+        class_name = js_to_string(arguments[0] if arguments else "").strip()
+        if not class_name:
+            return []
+        return [
+            node
+            for node in self.nodes_by_id.values()
+            if class_name in _class_tokens(node)
+        ]
+
+    def _get_elements_by_tag_name(self, arguments: tuple[object, ...], _this: object | None) -> object:
+        tag = js_to_string(arguments[0] if arguments else "").strip().upper()
+        if not tag:
+            return []
+        return [
+            node
+            for node in self.nodes_by_id.values()
+            if tag == "*" or js_to_string(node.get("tagName")).upper() == tag
+        ]
+
+    def _select(self, selector: str) -> list[HostObject]:
+        selector = selector.strip()
+        if not selector:
+            return []
+        if selector.startswith("#"):
+            found = self.nodes_by_id.get(selector[1:])
+            return [found] if found is not None else []
+        if selector.startswith("."):
+            class_name = selector[1:]
+            return [
+                node
+                for node in self.nodes_by_id.values()
+                if class_name in _class_tokens(node)
+            ]
+        tag = selector.upper()
+        return [
+            node
+            for node in self.nodes_by_id.values()
+            if js_to_string(node.get("tagName")).upper() == tag
+        ]
+
     def _set_title(self, arguments: tuple[object, ...], this: object | None) -> object:
         self.title = js_to_string(arguments[0] if arguments else "")
         if isinstance(this, HostObject):
             this.set("title", self.title)
         return self.title
+
+
+def _class_tokens(node: HostObject) -> set[str]:
+    return {
+        token
+        for token in js_to_string(node.get("className")).split()
+        if token
+    }
 
 
 @dataclass(slots=True)

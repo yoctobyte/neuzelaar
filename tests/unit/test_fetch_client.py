@@ -210,3 +210,50 @@ class _NoValidatorHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args) -> None:
         return
+
+
+class _UserAgentEchoHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        ua = self.headers.get("User-Agent", "")
+        body = ua.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args) -> None:
+        return
+
+
+def test_fetch_sends_user_agent_header() -> None:
+    server = HTTPServer(("127.0.0.1", 0), _UserAgentEchoHandler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/ua"
+
+        # 1. Default case (no User-Agent provided in request):
+        resource = FetchClient().fetch(make_request(url))
+        assert resource.status == 200
+        assert b"Mozilla/5.0" in resource.body
+        assert b"Chrome/120" in resource.body
+
+        # 2. Custom User-Agent case (user-provided in request headers):
+        req = make_request(url)
+        custom_req = Request(
+            url=req.url,
+            method=req.method,
+            headers={"User-Agent": "CustomAgent/1.0"},
+            body=req.body,
+            reason=req.reason,
+            initiator=req.initiator,
+            origin=req.origin,
+            context_origin=req.context_origin,
+        )
+        resource = FetchClient().fetch(custom_req)
+        assert resource.status == 200
+        assert resource.body == b"CustomAgent/1.0"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)

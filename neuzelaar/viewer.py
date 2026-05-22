@@ -20,6 +20,9 @@ def _build_js_engine(name: str, bus: Bus) -> JavaScriptEngine:
         # navigation. The bus lets HostConsole forward log/warn/error
         # to the Tk JavaScript debug tab.
         return OwnTickedJavaScriptEngine(bus=bus)
+    if name == "quickjs-ticked":
+        from neuzelaar.engines.js.quickjs_engine import QuickJsTickedJavaScriptEngine
+        return QuickJsTickedJavaScriptEngine(bus=bus)
     raise ValueError(f"Unknown --js-engine value: {name!r}")
 
 
@@ -36,10 +39,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--js-engine",
-        choices=("noop", "own-ticked"),
+        choices=("noop", "own-ticked", "quickjs-ticked"),
         default="noop",
         help="JavaScript engine to use. 'noop' (default) blocks all scripts; "
-        "'own-ticked' runs the in-repo interpreter with host-driven ticks.",
+        "'own-ticked' runs the in-repo interpreter with host-driven ticks; "
+        "'quickjs-ticked' runs QuickJS with host-driven ticks.",
     )
     args = parser.parse_args()
 

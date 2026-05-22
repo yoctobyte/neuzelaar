@@ -176,6 +176,7 @@ class _ContainingBlock:
     x: int
     y: int
     width: int
+    box: Box | None = None
 
 
 @dataclass(slots=True)
@@ -192,6 +193,7 @@ class _DeferredAbsolute:
 @dataclass(slots=True)
 class LayoutState:
     viewport_width: int
+    viewport_height: int
     images: dict[NodeId, ImageAsset]
     items: list[Placement]
     floats: FloatContext = field(default_factory=FloatContext)
@@ -216,6 +218,7 @@ def layout_block(
     root: Box,
     *,
     viewport_width: int,
+    viewport_height: int = 600,
     images: dict[NodeId, ImageAsset] | None = None,
 ) -> tuple[int, list[Placement]]:
     """Lay out a root block box at viewport_width and return the
@@ -224,13 +227,14 @@ def layout_block(
     check_resources()
     state = LayoutState(
         viewport_width=viewport_width,
+        viewport_height=viewport_height,
         images=images or {},
         items=[],
     )
     # The viewport itself is the initial containing block (also the
     # CB for `position: fixed` and for `position: absolute` when no
     # positioned ancestor exists).
-    state.cb_stack.append(_ContainingBlock(x=0, y=0, width=viewport_width))
+    state.cb_stack.append(_ContainingBlock(x=0, y=0, width=viewport_width, box=None))
     _place_block(root, state, x=0, y=0, containing_width=viewport_width)
     state.cb_stack.pop()
 
@@ -325,6 +329,7 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
                 x=box.geometry.x + border.left + padding.left,
                 y=box.geometry.y + border.top + padding.top,
                 width=content_width,
+                box=box,
             )
         )
         pushed_cb = True
@@ -470,10 +475,55 @@ def _relative_offset(style: ComputedStyle) -> tuple[int, int]:
     return dx, dy
 
 
+def _shift_placements(items: list[Placement], start: int, end: int, dy: int) -> None:
+    if dy == 0:
+        return
+    for i in range(start, end):
+        item = items[i]
+        if isinstance(item, TextPlacement):
+            items[i] = TextPlacement(
+                x=item.x,
+                y=item.y + dy,
+                text=item.text,
+                color=item.color,
+                font_size=item.font_size,
+                font_weight=item.font_weight,
+                font_style=item.font_style,
+                text_decoration=item.text_decoration,
+                max_width=item.max_width,
+                text_align=item.text_align,
+            )
+        elif isinstance(item, ImagePlacement):
+            items[i] = ImagePlacement(
+                x=item.x,
+                y=item.y + dy,
+                width=item.width,
+                height=item.height,
+                label=item.label,
+                bitmap=item.bitmap,
+            )
+        elif isinstance(item, BoxPlacement):
+            items[i] = BoxPlacement(
+                x=item.x,
+                y=item.y + dy,
+                width=item.width,
+                height=item.height,
+                color=item.color,
+                node_id=item.node_id,
+            )
+        elif isinstance(item, ClipPushPlacement):
+            items[i] = ClipPushPlacement(
+                x=item.x,
+                y=item.y + dy,
+                width=item.width,
+                height=item.height,
+            )
+
+
 def _place_absolute(deferred: _DeferredAbsolute, state: LayoutState) -> None:
     """Lay out an absolute / fixed box at its captured containing
-    block. Only `top` and `left` are honoured for now; `right` and
-    `bottom` are deferred to a polish pass.
+    block. CSS 2.1 compliant horizontal and vertical positioned box solvers,
+    handling right/bottom, solved dimensions, and dynamic placement shifting.
     """
     box = deferred.box
     cb = deferred.containing_block
@@ -486,58 +536,115 @@ def _place_absolute(deferred: _DeferredAbsolute, state: LayoutState) -> None:
     box.geometry.padding = padding
     box.geometry.border = border
 
-    explicit = _length_to_px(style.width.strip().lower()) if style.width.strip().lower() not in ("", "auto") else 0
-    if explicit > 0:
-        content_width = explicit
+    cb_width = cb.width
+    if cb.box is not None:
+        cb_height = cb.box.geometry.content_height
     else:
-        content_width = max(cb.width - margin.left - margin.right - padding.left - padding.right, 0)
-    box.geometry.content_width = content_width
+        cb_height = state.viewport_height
 
-    # Resolve positional offsets. left/top win when both sides are
-    # specified, mirroring the CSS 2.1 over-constrained-box rule. We
-    # estimate the box's width/height for right/bottom resolution.
     left = style.left.strip().lower()
     right = style.right.strip().lower()
     top = style.top.strip().lower()
     bottom = style.bottom.strip().lower()
-    explicit_h = _length_to_px(style.height.strip().lower()) if style.height.strip().lower() not in ("", "auto") else 0
-    border_box_width = (
-        border.left + padding.left + content_width + padding.right + border.right
-    )
 
-    if left and left != "auto":
-        offset_x = _length_to_px(left)
-    elif right and right != "auto":
-        offset_x = cb.width - _length_to_px(right) - border_box_width - margin.left - margin.right
+    left_auto = left in ("", "auto")
+    right_auto = right in ("", "auto")
+    top_auto = top in ("", "auto")
+    bottom_auto = bottom in ("", "auto")
+
+    # Horizontal geometry resolution (width and x)
+    explicit_w_val = style.width.strip().lower()
+    width_auto = explicit_w_val in ("", "auto")
+    explicit_w = _length_to_px(explicit_w_val) if not width_auto else 0
+
+    horizontal_border_padding = border.left + border.right + padding.left + padding.right
+
+    if not left_auto and not right_auto and width_auto:
+        # Both left and right specified, width is auto -> width is solved
+        px_left = _length_to_px(left)
+        px_right = _length_to_px(right)
+        total_w = cb_width - px_left - px_right - margin.left - margin.right
+        content_width = max(total_w - horizontal_border_padding, 0)
+        offset_x = px_left
     else:
-        offset_x = 0
+        # standard width resolution
+        if not width_auto:
+            content_width = explicit_w
+            if style.box_sizing == "border-box":
+                content_width = max(content_width - horizontal_border_padding, 0)
+        else:
+            # width is auto, either left or right is auto (or both).
+            # shrink-to-fit is approximated by taking the remaining space in CB
+            if not left_auto:
+                remaining = cb_width - _length_to_px(left) - margin.left - margin.right
+            elif not right_auto:
+                remaining = cb_width - _length_to_px(right) - margin.left - margin.right
+            else:
+                remaining = cb_width - margin.left - margin.right
+            content_width = max(remaining - horizontal_border_padding, 0)
 
-    if top and top != "auto":
-        offset_y = _length_to_px(top)
-    elif bottom and bottom != "auto" and explicit_h > 0:
-        # bottom only makes sense with a known height; otherwise we'd
-        # need a two-pass measurement we don't do yet.
-        # For an unknown CB height we cannot resolve bottom-from-CB
-        # reliably; fall back to 0.
-        offset_y = 0
-    else:
-        offset_y = 0
+        border_box_width = border.left + padding.left + content_width + padding.right + border.right
 
+        if not left_auto:
+            offset_x = _length_to_px(left)
+        elif not right_auto:
+            offset_x = cb_width - _length_to_px(right) - border_box_width - margin.left - margin.right
+        else:
+            offset_x = 0
+
+    box.geometry.content_width = content_width
     box.geometry.x = cb.x + offset_x + margin.left
+
+    # Vertical geometry resolution (height and y)
+    explicit_h_val = style.height.strip().lower()
+    height_auto = explicit_h_val in ("", "auto")
+    explicit_h = _length_to_px(explicit_h_val) if not height_auto else 0
+
+    vertical_border_padding = border.top + border.bottom + padding.top + padding.bottom
+
+    if not top_auto and not bottom_auto and height_auto:
+        # Both top and bottom specified, height is auto -> height is solved
+        px_top = _length_to_px(top)
+        px_bottom = _length_to_px(bottom)
+        total_h = cb_height - px_top - px_bottom - margin.top - margin.bottom
+        content_height = max(total_h - vertical_border_padding, 0)
+        offset_y = px_top
+        box.geometry.content_height = content_height
+        pre_resolved_height = True
+    else:
+        pre_resolved_height = False
+        if not height_auto:
+            content_height = explicit_h
+            if style.box_sizing == "border-box":
+                content_height = max(content_height - vertical_border_padding, 0)
+            box.geometry.content_height = content_height
+            pre_resolved_height = True
+
+        if not top_auto:
+            offset_y = _length_to_px(top)
+        elif not bottom_auto and pre_resolved_height:
+            border_box_height = border.top + padding.top + box.geometry.content_height + padding.bottom + border.bottom
+            offset_y = cb_height - _length_to_px(bottom) - border_box_height - margin.top - margin.bottom
+        else:
+            # top is auto, position relative to CB top (or static flow approximation)
+            offset_y = 0
+
     box.geometry.y = cb.y + offset_y + margin.top
 
     _maybe_emit_background(box, state)
 
-    # Absolute / fixed boxes establish a CB for their descendants.
+    # Establish containing block for descendants
     state.cb_stack.append(
         _ContainingBlock(
             x=box.geometry.x + border.left + padding.left,
             y=box.geometry.y + border.top + padding.top,
             width=content_width,
+            box=box,
         )
     )
     saved_floats = state.floats
     state.floats = FloatContext()
+    start_item_index = len(state.items)
     try:
         child_x = box.geometry.x + border.left + padding.left
         child_y = box.geometry.y + border.top + padding.top
@@ -555,10 +662,24 @@ def _place_absolute(deferred: _DeferredAbsolute, state: LayoutState) -> None:
                     cursor = _place_block(child, state, x=child_x, y=cursor, containing_width=content_width)
                 else:
                     cursor = _place_inline_or_text(child, state, x=child_x, y=cursor, content_width=content_width, parent_style=style)
-        used_height = max(cursor - child_y, 0)
-        content_height = _resolve_height(style, used_height)
-        box.geometry.content_height = content_height
+
+        if not pre_resolved_height:
+            used_height = max(cursor - child_y, 0)
+            content_height = _resolve_height(style, used_height)
+            box.geometry.content_height = content_height
+
         _maybe_emit_border(box, state)
+
+        # Late positioning shift if y was resolved late from bottom/content_height
+        if top_auto and not bottom_auto and not pre_resolved_height:
+            border_box_height = border.top + padding.top + box.geometry.content_height + padding.bottom + border.bottom
+            final_offset_y = cb_height - _length_to_px(bottom) - border_box_height - margin.top - margin.bottom
+            final_y = cb.y + final_offset_y + margin.top
+            dy = final_y - box.geometry.y
+            box.geometry.y = final_y
+            # Apply layout shift to placements emitted during child layout
+            _shift_placements(state.items, start_item_index, len(state.items), dy)
+
     finally:
         state.cb_stack.pop()
         state.floats = saved_floats

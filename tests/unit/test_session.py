@@ -170,6 +170,110 @@ def test_script_textcontent_write_propagates_to_real_dom_and_publishes_dommutate
     assert mutations[0].property == "textContent"
 
 
+def test_setattribute_innerhtml_classname_propagate_through_bridge() -> None:
+    from neuzelaar.core.bus import Bus
+    from neuzelaar.document.dom import Element, walk
+    from neuzelaar.shell_api.events import DomMutated
+
+    bus = Bus()
+    mutations: list[DomMutated] = []
+    bus.subscribe(DomMutated, mutations.append)
+    engine = OwnTickedJavaScriptEngine(bus=bus)
+    session = BrowserSession(bus=bus, js_engine=engine)
+
+    result = session.open_url(fixture_url("dom_setattr.html"))
+    document = result.handler_result.value
+
+    hero = next(
+        n for n in walk(document) if isinstance(n, Element) and n.attr("id") == "hero"
+    )
+    slot = next(
+        n for n in walk(document) if isinstance(n, Element) and n.attr("id") == "slot"
+    )
+    status = next(
+        n for n in walk(document) if isinstance(n, Element) and n.attr("id") == "status"
+    )
+
+    # className overrode the earlier setAttribute("class", "primary"),
+    # so the final class must be "primary big".
+    assert hero.attr("class") == "primary big"
+    # Custom attribute survived.
+    assert hero.attr("data-tag") == "x"
+    # CSSStyleDeclaration writes update the real inline style
+    # attribute using CSS property names.
+    assert hero.attr("style") == "color: blue; background-color: #eeeeee"
+    # innerHTML replaced the <span>placeholder</span> with a <p> element,
+    # then insertAdjacentHTML appended a second <p>.
+    children = list(slot.children)
+    assert len(children) == 2
+    paragraph = children[0]
+    assert isinstance(paragraph, Element)
+    assert paragraph.tag == "p"
+    assert paragraph.attr("id") == "inner"
+    text_children = [c for c in paragraph.children if hasattr(c, "data")]
+    assert len(text_children) == 1
+    assert text_children[0].data == "fresh"
+    tail = children[1]
+    assert isinstance(tail, Element)
+    assert tail.tag == "p"
+    assert tail.attr("id") == "tail"
+    status_text = [c for c in status.children if hasattr(c, "data")]
+    assert len(status_text) == 1
+    assert status_text[0].data == "H1"
+    assert not any(
+        isinstance(n, Element) and n.attr("id") == "remove-me"
+        for n in walk(document)
+    )
+
+    # Each bridge call published a DomMutated event.
+    properties = [m.property for m in mutations]
+    assert "class" in properties        # setAttribute("class", "primary")
+    assert "data-tag" in properties     # setAttribute("data-tag", "x")
+    assert "className" in properties    # hero.className = "primary big"
+    assert "style.color" in properties
+    assert "style.background-color" in properties
+    assert "innerHTML" in properties    # slot.innerHTML = ...
+    assert "insertAdjacentHTML.beforeend" in properties
+    assert "remove" in properties
+
+
+def test_getattribute_reads_from_real_dom() -> None:
+    from neuzelaar.core.bus import Bus
+    from neuzelaar.engines.js.interface import ScriptExecutionRequest
+    from neuzelaar.shell_api.events import ConsoleLog
+
+    bus = Bus()
+    logs: list[ConsoleLog] = []
+    bus.subscribe(ConsoleLog, logs.append)
+    engine = OwnTickedJavaScriptEngine(bus=bus)
+    session = BrowserSession(bus=bus, js_engine=engine)
+
+    session.open_url(fixture_url("dom_setattr.html"))
+
+    # Read back the value the page's own script wrote via setAttribute,
+    # going through getAttribute on the host bridge.
+    engine.execute(
+        ScriptExecutionRequest(
+            source=(
+                'var el = document.getElementById("hero");'
+                'console.log("data-tag:" + el.getAttribute("data-tag"));'
+                'console.log("class:" + el.getAttribute("class"));'
+                'console.log("style-color:" + el.style.color);'
+                'el.setAttribute("style", "color: green; margin-left: 4px");'
+                'console.log("style-color-after:" + el.style.color);'
+                'console.log("style-margin-left:" + el.style.marginLeft);'
+            )
+        )
+    )
+
+    texts = [log.text for log in logs]
+    assert "data-tag:x" in texts
+    assert "class:primary big" in texts
+    assert "style-color:blue" in texts
+    assert "style-color-after:green" in texts
+    assert "style-margin-left:4px" in texts
+
+
 def test_settimeout_mutation_only_lands_after_a_tick() -> None:
     from neuzelaar.core.bus import Bus
     from neuzelaar.document.dom import Element, Text, walk

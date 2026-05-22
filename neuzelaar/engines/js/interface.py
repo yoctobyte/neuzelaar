@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Callable
 
 from neuzelaar.core.policy.capability import Capability
 from neuzelaar.document.dom import NodeId
@@ -33,16 +34,17 @@ class ScriptExecutionResult:
 
 @dataclass(frozen=True, slots=True)
 class PageContextNode:
-    """Read-only snapshot of an id-bearing DOM element.
+    """Snapshot of an id-bearing DOM element handed to the engine.
 
     Engines that expose a host ``document`` build host-side wrappers
-    from these. Mutations to the wrappers do not propagate back to the
-    underlying page DOM in V1; that bridge is deferred.
+    from these. Writes to the wrappers route through DomBridge below
+    so the underlying page DOM stays in sync.
     """
 
     id: str
     tag: str
     text_content: str
+    attributes: tuple[tuple[str, str], ...] = ()  # ((name, value), …)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +59,37 @@ class PageContext:
     url: str
     title: str = ""
     nodes: tuple[PageContextNode, ...] = ()
+
+
+@dataclass
+class DomBridge:
+    """Operations the engine calls to mutate the underlying page DOM.
+
+    The host (PageLoader) builds an instance with closures over the
+    real Element objects; the engine wires them into host-object
+    setters and method bindings. All mutations are expected to publish
+    DomMutated on the bus so shells can repaint.
+    """
+
+    set_property: Callable[[str, str, object], None] = field(
+        default=lambda node_id, name, value: None
+    )
+    get_attribute: Callable[[str, str], "str | None"] = field(
+        default=lambda node_id, name: None
+    )
+    set_attribute: Callable[[str, str, str], None] = field(
+        default=lambda node_id, name, value: None
+    )
+    remove_attribute: Callable[[str, str], None] = field(
+        default=lambda node_id, name: None
+    )
+    set_style_property: Callable[[str, str, object], None] = field(
+        default=lambda node_id, name, value: None
+    )
+    insert_adjacent_html: Callable[[str, str, str], None] = field(
+        default=lambda node_id, position, html: None
+    )
+    remove_node: Callable[[str], None] = field(default=lambda node_id: None)
 
 
 def required_capability_for(request: ScriptExecutionRequest) -> Capability:
@@ -110,21 +143,23 @@ class JavaScriptEngine:
         """True if a future call to ``tick`` would do something useful."""
         return False
 
+    def event_loop_snapshot(self) -> object | None:
+        """Structured debug view of pending JS event-loop work, if any."""
+        return None
+
     def reset_for_page(
         self,
         page_context: PageContext | None = None,
         *,
-        mutation_handler=None,
+        dom_bridge: DomBridge | None = None,
     ) -> None:
         """Drop any per-page state (timers, intervals, globals).
 
         Called by the host on navigation so the new page starts with a
         fresh runtime. ``page_context`` carries the new page's URL,
-        title, and id-bearing nodes; engines that expose a host
-        ``document`` rebuild their host objects from it.
-        ``mutation_handler(node_id, property_name, value)`` is invoked
-        whenever JS writes to a host-mirrored element, so the host can
-        propagate the change into the real page DOM. No-op for engines
-        with no persistent state.
+        title, and id-bearing nodes. ``dom_bridge`` exposes the writes
+        the engine should route back to the page DOM (textContent,
+        innerHTML, className, getAttribute / setAttribute / style
+        declarations / …). No-op for engines with no persistent state.
         """
         return

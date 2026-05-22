@@ -20,6 +20,7 @@ from typing import Iterator
 
 from neuzelaar.core.bus import Bus
 from neuzelaar.engines.js.interface import (
+    DomBridge,
     JavaScriptEngine,
     PageContext,
     ScriptExecutionRequest,
@@ -27,6 +28,7 @@ from neuzelaar.engines.js.interface import (
     ScriptExecutionStatus,
     required_capability_for,
 )
+from neuzelaar.engines.js_own.host import HostCallable, HostObject
 from neuzelaar.engines.js_own.config import ScriptRuntimeConfig
 from neuzelaar.engines.js_own.environment import Environment
 from neuzelaar.engines.js_own.errors import (
@@ -47,6 +49,7 @@ from neuzelaar.engines.js_own.interpreter import (
 )
 from neuzelaar.engines.js_own.runtime_state import (
     _CURRENT_RUNTIME_STATE,
+    EventLoopSnapshot,
     ScriptRuntimeState,
 )
 from neuzelaar.engines.js_own.scheduler import ScriptScheduler
@@ -74,7 +77,7 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
         self._state: ScriptRuntimeState | None = None
         self._scheduler: ScriptScheduler | None = None
         self._page_fixture: BrowserScenarioFixture | None = scenario_fixture
-        self._mutation_handler = None
+        self._dom_bridge: DomBridge | None = None
 
     def execute(self, request: ScriptExecutionRequest) -> ScriptExecutionResult:
         capability = required_capability_for(request)
@@ -150,16 +153,21 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
             return False
         return self._state.has_pending_work()
 
+    def event_loop_snapshot(self) -> EventLoopSnapshot | None:
+        if self._state is None:
+            return None
+        return self._state.snapshot()
+
     def reset_for_page(
         self,
         page_context: PageContext | None = None,
         *,
-        mutation_handler=None,
+        dom_bridge: DomBridge | None = None,
     ) -> None:
         self._environment = None
         self._state = None
         self._scheduler = None
-        self._mutation_handler = mutation_handler
+        self._dom_bridge = dom_bridge
         if page_context is not None:
             self._page_fixture = _fixture_from_page_context(page_context)
         else:
@@ -176,7 +184,7 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
             self._environment = environment
             self._scheduler = stubs.scheduler
             self._wire_console_sink(stubs)
-            self._wire_mutation_handler(stubs)
+            self._wire_dom_bridge(stubs)
         else:
             self._environment = create_global_environment()
             self._scheduler = None
@@ -197,13 +205,34 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
 
         stubs.console.sink = sink
 
-    def _wire_mutation_handler(self, stubs) -> None:
-        handler = self._mutation_handler
-        if handler is None:
+    def _wire_dom_bridge(self, stubs) -> None:
+        bridge = self._dom_bridge
+        if bridge is None:
             return
         for node_id, host_object in stubs.document.nodes_by_id.items():
-            # Capture node_id so each hook reports its own id back.
-            host_object.on_set = lambda name, value, _id=node_id: handler(
+            # Inject the method bindings directly into properties so
+            # they don't fire the on_set hook (which is for property
+            # assignments only).
+            host_object.properties["setAttribute"] = HostCallable(
+                "setAttribute", _make_set_attribute(bridge, node_id, host_object)
+            )
+            host_object.properties["getAttribute"] = HostCallable(
+                "getAttribute", _make_get_attribute(bridge, node_id)
+            )
+            host_object.properties["removeAttribute"] = HostCallable(
+                "removeAttribute", _make_remove_attribute(bridge, node_id, host_object)
+            )
+            host_object.properties["insertAdjacentHTML"] = HostCallable(
+                "insertAdjacentHTML", _make_insert_adjacent_html(bridge, node_id)
+            )
+            host_object.properties["remove"] = HostCallable(
+                "remove", _make_remove_node(bridge, node_id)
+            )
+            style_object = _make_style_object(bridge, node_id, host_object)
+            host_object.properties["style"] = style_object
+            # Property writes (textContent, innerHTML, className, …)
+            # route through the bridge so the page DOM stays in sync.
+            host_object.on_set = lambda name, value, _id=node_id: bridge.set_property(
                 _id, name, value
             )
 
@@ -218,16 +247,134 @@ class OwnTickedJavaScriptEngine(JavaScriptEngine):
 
 
 def _fixture_from_page_context(page_context: PageContext) -> BrowserScenarioFixture:
-    nodes = tuple(
-        DocumentNodeFixture(
-            id=node.id,
-            text_content=node.text_content,
-            extra_properties={"tagName": node.tag.upper()},
+    nodes = []
+    for node in page_context.nodes:
+        attrs = dict(node.attributes)
+        extras: dict[str, object] = {
+            "tagName": node.tag.upper(),
+            "id": node.id,
+            "className": attrs.get("class", ""),
+            "style": attrs.get("style", ""),
+        }
+        nodes.append(
+            DocumentNodeFixture(
+                id=node.id,
+                text_content=node.text_content,
+                extra_properties=extras,
+            )
         )
-        for node in page_context.nodes
-    )
     return BrowserScenarioFixture(
         url=page_context.url,
         title=page_context.title,
-        nodes=nodes,
+        nodes=tuple(nodes),
     )
+
+
+def _make_set_attribute(bridge: DomBridge, node_id: str, host_object) -> "Callable":
+    def impl(arguments, _this):
+        if len(arguments) < 2:
+            return None
+        name = str(arguments[0])
+        value = "" if arguments[1] is None else str(arguments[1])
+        bridge.set_attribute(node_id, name, value)
+        # Keep host-side mirror coherent for the common attr aliases
+        # so subsequent reads of el.className / el.id reflect the
+        # write without round-tripping through getAttribute.
+        if name.lower() == "class":
+            host_object.properties["className"] = value
+        elif name.lower() == "id":
+            host_object.properties["id"] = value
+        elif name.lower() == "style":
+            _sync_style_object(host_object, value)
+        return None
+
+    return impl
+
+
+def _make_get_attribute(bridge: DomBridge, node_id: str) -> "Callable":
+    def impl(arguments, _this):
+        if not arguments:
+            return None
+        name = str(arguments[0])
+        result = bridge.get_attribute(node_id, name)
+        return result if result is not None else None
+
+    return impl
+
+
+def _make_remove_attribute(bridge: DomBridge, node_id: str, host_object) -> "Callable":
+    def impl(arguments, _this):
+        if not arguments:
+            return None
+        name = str(arguments[0])
+        bridge.remove_attribute(node_id, name)
+        if name.lower() == "class":
+            host_object.properties["className"] = ""
+        elif name.lower() == "id":
+            host_object.properties["id"] = ""
+        elif name.lower() == "style":
+            _sync_style_object(host_object, "")
+        return None
+
+    return impl
+
+
+def _make_insert_adjacent_html(bridge: DomBridge, node_id: str) -> "Callable":
+    def impl(arguments, _this):
+        if len(arguments) < 2:
+            return None
+        position = "" if arguments[0] is None else str(arguments[0])
+        html = "" if arguments[1] is None else str(arguments[1])
+        bridge.insert_adjacent_html(node_id, position, html)
+        return None
+
+    return impl
+
+
+def _make_remove_node(bridge: DomBridge, node_id: str) -> "Callable":
+    def impl(_arguments, _this):
+        bridge.remove_node(node_id)
+        return None
+
+    return impl
+
+
+def _make_style_object(bridge: DomBridge, node_id: str, host_object: HostObject) -> HostObject:
+    style_object = HostObject(properties=_parse_style_properties(host_object))
+
+    def on_set(name: str, value: object) -> None:
+        bridge.set_style_property(node_id, name, value)
+
+    style_object.on_set = on_set
+    return style_object
+
+
+def _sync_style_object(host_object: HostObject, value: object) -> None:
+    style_object = host_object.properties.get("style")
+    if isinstance(style_object, HostObject):
+        style_object.properties.clear()
+        style_object.properties.update(_parse_style_text("" if value is None else str(value)))
+
+
+def _parse_style_properties(host_object: HostObject) -> dict[str, object]:
+    raw_style = host_object.properties.get("style")
+    return _parse_style_text("" if raw_style is None else str(raw_style))
+
+
+def _parse_style_text(style_text: str) -> dict[str, object]:
+    properties: dict[str, object] = {}
+    for raw in style_text.split(";"):
+        if ":" not in raw:
+            continue
+        name, value = raw.split(":", 1)
+        js_name = _js_style_name(name.strip())
+        if js_name:
+            properties[js_name] = value.strip()
+    return properties
+
+
+def _js_style_name(css_name: str) -> str:
+    parts = [part for part in css_name.lower().split("-") if part]
+    if not parts:
+        return ""
+    return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:])

@@ -292,6 +292,12 @@ class TkShell:
         # trigger a debounced repaint. The queue lets the UI-thread
         # poller batch the repaint regardless of source.
         image_event_queue: "queue.Queue[ImageReady | DomMutated]" = queue.Queue()
+        # Set when a DomMutated event affects the CSS cascade. We only
+        # exclude textContent — every other write (attributes, id,
+        # innerHTML) can match an attribute selector or change which
+        # rules apply. The next display-list build recomputes styles
+        # and clears the flag.
+        styles_dirty: list[bool] = [False]
         image_repaint_job: list[str | None] = [None]
         image_poll_interval_ms = 33
         image_repaint_debounce_ms = 50
@@ -382,12 +388,31 @@ class TkShell:
 
         def build_current_display_list(result: PageLoadResult) -> DisplayList:
             self.session.diagnostics.mark(f"build display list (width={current_width[0]}, zoom={self.settings.zoom})")
+            # If a mutation changed something the cascade depends on
+            # (class, id, structure via innerHTML, …) the precomputed
+            # styles dict is stale. Recompute against the current DOM
+            # before laying out. Cheap thanks to the rule index +
+            # selector memoisation; we only enter this branch when the
+            # repaint poller saw a cascade-affecting DomMutated event.
+            styles = result.styles
+            current_root_style = result.root_style
+            if styles_dirty[0] and result.handler_result.kind == "document":
+                from neuzelaar.document.styles import compute_styles, root_style
+                styles = compute_styles(result.handler_result.value, result.style_rules)
+                current_root_style = root_style(result.handler_result.value, styles)
+                # Mutate the result.styles dict in place so subsequent
+                # paths (e.g. dom-tree views) read the fresh styles too.
+                result.styles.clear()
+                result.styles.update(styles)
+                result.root_style = current_root_style
+                styles_dirty[0] = False
+                self.session.diagnostics.mark(f"styles recomputed ({len(styles)} nodes)")
             display_list = build_display_list(
                 result.handler_result.value,
                 width=current_width[0],
                 zoom=self.settings.zoom,
-                root_style=result.root_style,
-                styles=result.styles,
+                root_style=current_root_style,
+                styles=styles,
                 images=result.images,
             )
             self.session.diagnostics.mark(f"display list built ({display_list.width}x{display_list.height})")
@@ -512,6 +537,8 @@ class TkShell:
             # Currently main-thread (script execution + ticks both run
             # on UI thread), but routed through the same queue as
             # images so a future move off-thread is a one-line change.
+            if event.property != "textContent":
+                styles_dirty[0] = True
             image_event_queue.put(event)
 
         self.session.bus.subscribe(ImageReady, on_image_ready)
@@ -935,6 +962,9 @@ class TkShell:
             type(engine).__name__ if engine is not None else "noop"
         )
         lines: list[str] = [f"engine: {engine_name}"]
+        loop_text = self.js_event_loop_text()
+        if loop_text:
+            lines.append(loop_text)
         if not result.scripts:
             lines.append("")
             lines.append("no script tags on this page")
@@ -965,6 +995,31 @@ class TkShell:
             lines.append(f"    source:     {source_preview}" if source_preview else "    source:     (empty)")
             lines.append("")
         return "\n".join(lines).rstrip() + "\n"
+
+    def js_event_loop_text(self) -> str:
+        engine = self.session.js_engine
+        snapshot_getter = getattr(engine, "event_loop_snapshot", None)
+        if snapshot_getter is None:
+            return ""
+        snapshot = snapshot_getter()
+        if snapshot is None:
+            return "event loop: not initialized"
+        lines = [
+            "event loop:",
+            f"    pending:    {snapshot.has_pending_work}",
+            f"    ready:      {snapshot.has_ready_work}",
+            f"    microtasks: {snapshot.microtask_count}",
+            f"    timers:     {snapshot.timer_count} ({snapshot.due_timer_count} due, {snapshot.future_timer_count} future)",
+        ]
+        for timer in snapshot.timers[:5]:
+            lines.append(
+                f"    timer #{timer.timer_id}: {timer.reason}, due in {timer.due_in_ms:.0f}ms"
+            )
+        if len(snapshot.timers) > 5:
+            lines.append(f"    ... {len(snapshot.timers) - 5} more timer(s)")
+        if snapshot.scheduler_tasks:
+            lines.append(f"    scheduler tasks: {len(snapshot.scheduler_tasks)}")
+        return "\n".join(lines)
 
     def requests_text(self, result: PageLoadResult) -> str:
         lines: list[str] = []

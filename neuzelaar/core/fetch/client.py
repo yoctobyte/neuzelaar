@@ -76,6 +76,11 @@ class FetchClient:
                     request_headers["If-None-Match"] = cached.etag
                 if cached.last_modified and "If-Modified-Since" not in request_headers:
                     request_headers["If-Modified-Since"] = cached.last_modified
+        # Set a standard browser User-Agent if not already provided to avoid
+        # typical urllib blocking (HTTP Error 403: Forbidden)
+        has_user_agent = any(k.lower() == "user-agent" for k in request_headers)
+        if not has_user_agent:
+            request_headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         urllib_request = UrlLibRequest(
             request.url,
             data=request.body if method == "POST" else None,

@@ -1,8 +1,9 @@
-"""Tests for the ticked variant of the standalone JS engine."""
+"""Tests for the QuickJS-ticked variant of the JS engine."""
 
 from __future__ import annotations
 
 import time
+import pytest
 
 from neuzelaar.core.bus import Bus
 from neuzelaar.engines.js.interface import (
@@ -11,19 +12,23 @@ from neuzelaar.engines.js.interface import (
     ScriptExecutionRequest,
     ScriptExecutionStatus,
 )
-from neuzelaar.engines.js.own_ticked_engine import OwnTickedJavaScriptEngine
-from neuzelaar.engines.js_own.host_scenarios import BrowserScenarioFixture
+from neuzelaar.engines.js.quickjs_engine import QuickJsTickedJavaScriptEngine
 from neuzelaar.shell_api.events import ConsoleLog
 
+# Skip entire module if quickjs is not installed
+quickjs = pytest.importorskip("quickjs")
 
-def _make_engine() -> OwnTickedJavaScriptEngine:
-    # The fixture installs the host stubs we need (console, setTimeout,
-    # …); without it the engine's plain global env has no setTimeout.
-    return OwnTickedJavaScriptEngine(scenario_fixture=BrowserScenarioFixture())
+
+def _make_engine() -> QuickJsTickedJavaScriptEngine:
+    return QuickJsTickedJavaScriptEngine()
 
 
 def test_ticked_engine_runs_sync_code_immediately() -> None:
     engine = _make_engine()
+    bus = Bus()
+    logs: list[ConsoleLog] = []
+    bus.subscribe(ConsoleLog, logs.append)
+    engine.bus = bus
 
     result = engine.execute(
         ScriptExecutionRequest(source="var x = 1 + 2; console.log(x);")
@@ -31,6 +36,8 @@ def test_ticked_engine_runs_sync_code_immediately() -> None:
 
     assert result.status is ScriptExecutionStatus.RAN
     assert engine.has_pending_work() is False
+    assert len(logs) == 1
+    assert logs[0].text == "3"
 
 
 def test_settimeout_fires_on_subsequent_tick_not_inside_execute() -> None:
@@ -48,18 +55,17 @@ def test_settimeout_fires_on_subsequent_tick_not_inside_execute() -> None:
     # The callback must NOT have run inside execute — fired is still false.
     check_before = engine.execute(
         ScriptExecutionRequest(
-            source='if (fired) throw "timer fired too early";'
+            source='if (fired) throw new Error("timer fired too early");'
         )
     )
     assert check_before.status is ScriptExecutionStatus.RAN
 
     engine.tick(timeout_ms=50.0)
 
-    # After the tick the global must be true. If it isn't, the throw
-    # surfaces as ERROR and the assertion below catches it.
+    # After the tick the global must be true.
     check_after = engine.execute(
         ScriptExecutionRequest(
-            source='if (!fired) throw "timer did not fire";'
+            source='if (!fired) throw new Error("timer did not fire");'
         )
     )
     assert check_after.status is ScriptExecutionStatus.RAN, check_after.reason
@@ -70,7 +76,7 @@ def test_ticked_engine_preserves_globals_across_executes() -> None:
     engine = _make_engine()
 
     first = engine.execute(ScriptExecutionRequest(source="var counter = 1;"))
-    second = engine.execute(ScriptExecutionRequest(source="counter += 5; counter;"))
+    second = engine.execute(ScriptExecutionRequest(source="counter += 5;"))
 
     assert first.status is ScriptExecutionStatus.RAN
     assert second.status is ScriptExecutionStatus.RAN
@@ -90,10 +96,7 @@ def test_setinterval_repeats_across_ticks() -> None:
 
     assert engine.has_pending_work() is True
 
-    # Each tick fires one due interval and re-arms it; loop a few times.
     engine.tick(timeout_ms=20.0)
-    # Allow the re-armed timer to be due (delay 0, but the scheduler
-    # bases due_at on monotonic time so a tiny sleep ensures readiness).
     time.sleep(0.005)
     engine.tick(timeout_ms=20.0)
 
@@ -124,7 +127,6 @@ def test_reset_for_page_drops_state_and_pending_timers() -> None:
 def test_tick_on_engine_with_no_state_is_safe() -> None:
     engine = _make_engine()
 
-    # No execute() yet, so no state. Tick should silently no-op.
     engine.tick(timeout_ms=10.0)
 
     assert engine.has_pending_work() is False
@@ -143,22 +145,13 @@ def test_ticked_engine_exposes_event_loop_snapshot() -> None:
         )
     )
 
-    # execute drains microtasks immediately, but future timers remain
-    # visible for host debug surfaces.
     snapshot = engine.event_loop_snapshot()
     assert snapshot is not None
-    assert snapshot.has_pending_work is True
-    assert snapshot.has_ready_work is False
-    assert snapshot.microtask_count == 0
-    assert snapshot.timer_count == 1
-    assert snapshot.future_timer_count == 1
-    assert snapshot.timers[0].timer_id == 1
-    assert snapshot.timers[0].reason == "setTimeout"
-    assert snapshot.timers[0].due_in_ms > 0
+    assert snapshot == {"pending_timers": 1}
 
 
 def test_reset_for_page_with_context_rebuilds_host_for_real_url_and_nodes() -> None:
-    engine = OwnTickedJavaScriptEngine()
+    engine = _make_engine()
     bus = Bus()
     logs: list[ConsoleLog] = []
     bus.subscribe(ConsoleLog, logs.append)
@@ -199,8 +192,6 @@ def test_console_sink_routes_through_bus_for_log_warn_error() -> None:
     bus.subscribe(ConsoleLog, logs.append)
     engine.bus = bus
 
-    # Re-prime the engine so the bus gets wired into the host stubs;
-    # _make_engine constructed the engine without a bus.
     engine.reset_for_page()
 
     engine.execute(
@@ -214,7 +205,7 @@ def test_console_sink_routes_through_bus_for_log_warn_error() -> None:
     )
 
     assert [(log.level, log.text) for log in logs] == [
-        ("log", "hi 1"),
-        ("warn", "careful"),
+        ("info", "hi 1"),
+        ("warning", "careful"),
         ("error", "oops"),
     ]

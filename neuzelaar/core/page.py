@@ -24,11 +24,12 @@ from neuzelaar.document.forms import DocumentForm, extract_forms
 from neuzelaar.document.links import DocumentLink, extract_links
 from neuzelaar.document.dom import Document, Element, NodeId, Text, walk
 from neuzelaar.document.scripts import extract_scripts
-from neuzelaar.document.styles import ComputedStyle, compute_styles, root_style, style_text_blocks
+from neuzelaar.document.styles import ComputedStyle, StyleRule, compute_styles, root_style, style_text_blocks
 from neuzelaar.document.subresources import SubresourceRequest, extract_subresources
 from neuzelaar.engines.css.tinycss2_adapter import parse_stylesheet
 from neuzelaar.engines.image.pillow_adapter import DecodedImageBitmap, ImageDecodeError, decode_image_bitmap
 from neuzelaar.engines.js.interface import (
+    DomBridge,
     JavaScriptEngine,
     PageContext,
     PageContextNode,
@@ -91,6 +92,7 @@ class _PreparedPage:
     gates: dict
     stylesheet_urls: tuple[str, ...]
     styles: dict
+    style_rules: tuple[StyleRule, ...]
     root_style: ComputedStyle
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
 
@@ -104,6 +106,7 @@ class PageLoadResult:
     links: tuple[DocumentLink, ...]
     forms: tuple[DocumentForm, ...]
     styles: dict
+    style_rules: tuple[StyleRule, ...]
     root_style: ComputedStyle
     stylesheet_urls: tuple[str, ...]
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
@@ -256,7 +259,7 @@ class PageLoader:
         plan = self._build_subresource_plan(handler_result)
         gates = self.gateway.evaluate_plan(plan, resource)
         self.diagnostics.mark(f"planned subresources ({len(plan)})")
-        stylesheet_urls, styles = self._compute_styles(resource, handler_result, plan, gates)
+        stylesheet_urls, styles, style_rules = self._compute_styles(resource, handler_result, plan, gates)
         self.diagnostics.mark(f"computed styles ({len(stylesheet_urls)} stylesheets fetched)")
         page_root_style = self._root_style(handler_result, styles)
         planned = self._collect_planned_subresources(plan, gates)
@@ -271,6 +274,7 @@ class PageLoader:
             gates=gates,
             stylesheet_urls=stylesheet_urls,
             styles=styles,
+            style_rules=style_rules,
             root_style=page_root_style,
             planned_subresources=tuple(planned),
         )
@@ -290,6 +294,7 @@ class PageLoader:
             links=prepared.links,
             forms=prepared.forms,
             styles=prepared.styles,
+            style_rules=prepared.style_rules,
             root_style=prepared.root_style,
             stylesheet_urls=prepared.stylesheet_urls,
             planned_subresources=prepared.planned_subresources,
@@ -327,10 +332,10 @@ class PageLoader:
         handler_result: HandlerResult,
         plan: tuple[SubresourceRequest, ...],
         gates: dict[SubresourceRequest, GateDecision],
-    ) -> tuple[tuple[str, ...], dict]:
+    ) -> tuple[tuple[str, ...], dict, tuple[StyleRule, ...]]:
         if handler_result.kind != "document":
-            return (), {}
-        rules = []
+            return (), {}, ()
+        rules: list[StyleRule] = []
         stylesheet_urls: list[str] = []
         inline_blocks = list(style_text_blocks(handler_result.value))
         for block in inline_blocks:
@@ -342,9 +347,10 @@ class PageLoader:
             stylesheet_urls.append(stylesheet_url)
             rules.extend(parse_stylesheet(css_text))
         self.diagnostics.mark(f"  parsed all stylesheets ({len(rules)} rules total)")
-        styles = compute_styles(handler_result.value, tuple(rules))
+        rules_tuple = tuple(rules)
+        styles = compute_styles(handler_result.value, rules_tuple)
         self.diagnostics.mark(f"  applied styles to DOM ({len(styles)} nodes)")
-        return tuple(stylesheet_urls), styles
+        return tuple(stylesheet_urls), styles, rules_tuple
 
     def _root_style(self, handler_result: HandlerResult, styles: dict) -> ComputedStyle:
         if handler_result.kind != "document":
@@ -566,14 +572,15 @@ class PageLoader:
         # scheduled by the previous page must not survive navigation.
         # The PageContext lets ticked engines rebuild a host ``document``
         # tied to this page's real URL, title, and id-bearing nodes.
-        # The mutation handler bridges JS writes back into the page
-        # DOM and publishes DomMutated so shells can repaint. No-op for
-        # engines without persistent state.
+        # The DomBridge routes JS writes (textContent, innerHTML,
+        # className, setAttribute, …) back into the page DOM and
+        # publishes DomMutated so shells can repaint. No-op for engines
+        # without persistent state.
         document: Document = handler_result.value
-        mutation_handler = _build_mutation_handler(document, self.bus)
+        bridge = _build_dom_bridge(document, self.bus)
         self.js_engine.reset_for_page(
             _build_page_context(resource, handler_result),
-            mutation_handler=mutation_handler,
+            dom_bridge=bridge,
         )
 
         result: dict[NodeId, ScriptExecutionRecord] = {}
@@ -636,6 +643,7 @@ def _build_page_context(resource: Resource, handler_result: HandlerResult) -> Pa
                 id=element_id,
                 tag=node.tag,
                 text_content=_element_text(node),
+                attributes=tuple(node.attrs.items()),
             )
         )
     return PageContext(
@@ -653,15 +661,17 @@ def _element_text(element: Element) -> str:
     return "".join(parts)
 
 
-def _build_mutation_handler(document: Document, bus: Bus | None):
-    """Return a callback the engine fires when a host node is written to.
+def _build_dom_bridge(document: Document, bus: Bus | None) -> DomBridge:
+    """Build the per-page DOM bridge handed to the JS engine.
 
-    Maps node_id → real page Element, applies the write (today: just
-    ``textContent``), and publishes DomMutated so subscribers can
-    repaint. Mutations to unknown ids or unhandled properties are
-    silently ignored — the engine has already updated its host-side
-    view, so JS reads stay consistent even when the page side can't
-    mirror the change.
+    Maps the engine's view (node_id strings = HTML id attribute) back
+    to real page Elements. Handles all the structural / attribute
+    writes the engine knows how to forward and publishes DomMutated
+    after each successful change so shells can debounce a repaint.
+
+    Mutations against unknown ids or unhandled properties are silently
+    ignored: the engine has already updated its host-side mirror, so
+    JS reads stay consistent even when the page side can't follow.
     """
     elements_by_id: dict[str, Element] = {}
     for node in walk(document):
@@ -669,17 +679,160 @@ def _build_mutation_handler(document: Document, bus: Bus | None):
             element_id = node.attr("id")
             if element_id:
                 elements_by_id[element_id] = node
+    fragment_id_counter = [0]
 
-    def handle(node_id: str, property_name: str, value: object) -> None:
+    def publish(node_id: str, property_name: str) -> None:
+        if bus is not None:
+            bus.publish(DomMutated(node_id=node_id, property=property_name))
+
+    def replace_with_text(element: Element, value: object) -> None:
+        text_id = NodeId(f"{element.id}.text")
+        text_node = Text(id=text_id, parent=element, data=_to_str(value))
+        element.children = [text_node]
+
+    def mint_fragment_id() -> NodeId:
+        n = fragment_id_counter[0]
+        fragment_id_counter[0] = n + 1
+        return NodeId(f"m{n}")
+
+    def replace_children_html(element: Element, html_fragment: str) -> None:
+        from neuzelaar.engines.html.html5lib_adapter import parse_html_fragment
+
+        element.children = parse_html_fragment(
+            html_fragment, parent=element, mint_id=mint_fragment_id
+        )
+        index_id_bearing_descendants(element)
+
+    def index_id_bearing_descendants(root: Element) -> None:
+        for node in walk(root):
+            if isinstance(node, Element):
+                element_id = node.attr("id")
+                if element_id:
+                    elements_by_id[element_id] = node
+
+    def forget_id_bearing_descendants(root: Element) -> None:
+        for node in walk(root):
+            if isinstance(node, Element):
+                element_id = node.attr("id")
+                if element_id:
+                    elements_by_id.pop(element_id, None)
+
+    def set_property(node_id: str, property_name: str, value: object) -> None:
         element = elements_by_id.get(node_id)
         if element is None:
             return
         if property_name == "textContent":
-            new_text = "" if value is None else str(value)
-            text_id = NodeId(f"{element.id}.text")
-            replacement = Text(id=text_id, parent=element, data=new_text)
-            element.children = [replacement]
-            if bus is not None:
-                bus.publish(DomMutated(node_id=element.id, property=property_name))
+            replace_with_text(element, value)
+            publish(node_id, property_name)
+            return
+        if property_name == "innerHTML":
+            replace_children_html(element, _to_str(value))
+            publish(node_id, property_name)
+            return
+        if property_name == "className":
+            element.attrs["class"] = _to_str(value)
+            publish(node_id, property_name)
+            return
+        # Unknown: leave the host-side mirror alone (already updated).
 
-    return handle
+    def get_attribute(node_id: str, name: str) -> str | None:
+        element = elements_by_id.get(node_id)
+        if element is None:
+            return None
+        return element.attr(name)
+
+    def set_attribute(node_id: str, name: str, value: str) -> None:
+        element = elements_by_id.get(node_id)
+        if element is None:
+            return
+        element.attrs[name.lower()] = value
+        publish(node_id, name.lower())
+
+    def remove_attribute(node_id: str, name: str) -> None:
+        element = elements_by_id.get(node_id)
+        if element is None:
+            return
+        element.attrs.pop(name.lower(), None)
+        publish(node_id, name.lower())
+
+    def set_style_property(node_id: str, name: str, value: object) -> None:
+        element = elements_by_id.get(node_id)
+        if element is None:
+            return
+        from neuzelaar.document.styles import parse_declarations
+
+        declarations = parse_declarations(element.attr("style") or "")
+        css_name = _css_property_name(name)
+        css_value = _to_str(value).strip()
+        if css_value:
+            declarations[css_name] = css_value
+        else:
+            declarations.pop(css_name, None)
+        element.attrs["style"] = _serialize_style(declarations)
+        publish(node_id, f"style.{css_name}")
+
+    def insert_adjacent_html(node_id: str, position: str, html_fragment: str) -> None:
+        element = elements_by_id.get(node_id)
+        if element is None:
+            return
+        from neuzelaar.engines.html.html5lib_adapter import parse_html_fragment
+
+        nodes = parse_html_fragment(
+            html_fragment, parent=element, mint_id=mint_fragment_id
+        )
+        normalized = position.strip().lower()
+        if normalized == "afterbegin":
+            element.children[:0] = nodes
+        elif normalized == "beforeend":
+            element.children.extend(nodes)
+        else:
+            return
+        index_id_bearing_descendants(element)
+        publish(node_id, f"insertAdjacentHTML.{normalized}")
+
+    def remove_node(node_id: str) -> None:
+        element = elements_by_id.get(node_id)
+        if element is None:
+            return
+        parent = element.parent
+        children = getattr(parent, "children", None)
+        if not isinstance(children, list):
+            return
+        try:
+            children.remove(element)
+        except ValueError:
+            return
+        forget_id_bearing_descendants(element)
+        element.parent = None
+        publish(node_id, "remove")
+
+    return DomBridge(
+        set_property=set_property,
+        get_attribute=get_attribute,
+        set_attribute=set_attribute,
+        remove_attribute=remove_attribute,
+        set_style_property=set_style_property,
+        insert_adjacent_html=insert_adjacent_html,
+        remove_node=remove_node,
+    )
+
+
+def _to_str(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _css_property_name(name: str) -> str:
+    parts: list[str] = []
+    for char in name:
+        if char.isupper():
+            parts.append("-")
+            parts.append(char.lower())
+        else:
+            parts.append(char)
+    return "".join(parts).strip().lower()
+
+
+def _serialize_style(declarations: dict[str, str]) -> str:
+    return "; ".join(f"{name}: {value}" for name, value in declarations.items())

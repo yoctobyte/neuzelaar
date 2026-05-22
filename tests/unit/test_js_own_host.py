@@ -175,7 +175,7 @@ def test_browser_host_document_stub_exposes_title_and_nodes() -> None:
     env = Environment()
     install_builtins(env)
     stubs = BrowserHostStubs()
-    node = HostObject(properties={"textContent": "hello"})
+    node = HostObject(properties={"textContent": "hello", "tagName": "H1", "className": "hero lead"})
     stubs.document.nodes_by_id["hero"] = node
     stubs.install(env)
 
@@ -186,6 +186,30 @@ def test_browser_host_document_stub_exposes_title_and_nodes() -> None:
 
     assert result == "hello"
     assert stubs.document.title == "Test Title"
+
+
+def test_browser_host_document_stub_supports_basic_selectors() -> None:
+    env = Environment()
+    install_builtins(env)
+    stubs = BrowserHostStubs()
+    stubs.document.nodes_by_id["hero"] = HostObject(
+        properties={"textContent": "hello", "tagName": "H1", "className": "hero lead"}
+    )
+    stubs.document.nodes_by_id["note"] = HostObject(
+        properties={"textContent": "note", "tagName": "P", "className": "lead"}
+    )
+    stubs.install(env)
+
+    result = evaluate_program(
+        "document.querySelector('#hero').textContent + '|' + "
+        "document.querySelector('.lead').textContent + '|' + "
+        "document.querySelectorAll('.lead').length + '|' + "
+        "document.getElementsByTagName('p')[0].textContent + '|' + "
+        "document.getElementsByClassName('lead').length;",
+        env,
+    )
+
+    assert result == "hello|hello|2|note|2"
 
 
 def test_browser_host_location_and_history_stubs_hold_meaningful_state() -> None:

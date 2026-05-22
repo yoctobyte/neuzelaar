@@ -29,6 +29,7 @@ def build_display_list(
     document,
     *,
     width: int = 800,
+    height: int = 600,
     zoom: float = 1.0,
     root_style: ComputedStyle | None = None,
     styles: dict | None = None,
@@ -37,9 +38,11 @@ def build_display_list(
     if zoom <= 0:
         zoom = 1.0
     logical_width = max(int(round(width / zoom)), 120)
+    logical_height = max(int(round(height / zoom)), 120)
     layout = layout_document(
         document,
         width=logical_width,
+        height=logical_height,
         styles=styles,
         images=images,
         root_style=root_style,

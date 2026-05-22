@@ -78,6 +78,7 @@ Implemented on the standalone `js_own` path:
   - single-threaded event-loop stepping
   - bounded `step(...)`
   - `run_until_idle()` helper
+  - structured ticked-engine event-loop snapshots
   - timer dispatch for `setTimeout(...)`
   - `clearTimeout(...)`
   - `setInterval(...)`
@@ -116,7 +117,8 @@ Related strategy docs:
 
 ### Event loop
 
-- debug snapshot/export API for event-loop state
+- expose the new ticked-engine event-loop snapshot in console/Tk
+  debug surfaces
 - clearer separation of:
   - queued
   - ready
@@ -152,10 +154,18 @@ boundary) is deferred until we measure a page that actually pays the
 cost — debouncing already coalesces bursts within ~50ms, which covers
 the common cases.
 
-Currently bridged: ``element.textContent`` writes on id-bearing
-elements. Not yet bridged: ``innerHTML``, ``setAttribute``, child
-insertion / removal, style mutations. Each of these can land
-incrementally without revisiting the cadence question.
+Currently bridged on id-bearing elements: ``textContent``,
+``innerHTML``, ``className``, ``getAttribute`` / ``setAttribute`` /
+``removeAttribute``, and basic ``element.style.foo`` inline-style
+writes. The host ``document`` can resolve id-bearing nodes through
+``getElementById``, simple ``querySelector`` / ``querySelectorAll``
+(``#id``, ``.class``, and tag selectors), ``getElementsByClassName``,
+and ``getElementsByTagName``. Child insertion is partially bridged via
+``insertAdjacentHTML("afterbegin" | "beforeend", html)`` and existing
+id-bearing nodes can be removed with ``element.remove()``. Not yet
+bridged: general sibling insertion and broader DOM query/event APIs.
+Each of these can land incrementally without revisiting the cadence
+question.
 
 ### Language surface still deferred
 

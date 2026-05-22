@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from itertools import count
+from typing import Callable
 from xml.etree import ElementTree
 
 import html5lib
 
-from neuzelaar.document.dom import Document, Element, Node, NodeId, Text, append_child, walk
+from neuzelaar.document.dom import Comment, Document, Element, Node, NodeId, Text, append_child, walk
 
 
 def parse_html(html: str, *, url: str) -> Document:
@@ -23,13 +24,78 @@ def parse_html(html: str, *, url: str) -> Document:
     return document
 
 
-def _convert_element(source: ElementTree.Element, parent: Document | Element, ids) -> Element:
-    tag = _strip_namespace(source.tag)
-    if not isinstance(tag, str):
-        tag = "unknown"
+def parse_html_fragment(
+    html: str,
+    *,
+    parent: Element | Document,
+    mint_id: Callable[[], NodeId],
+) -> list[Node]:
+    """Parse ``html`` as an HTML fragment and return Nodes parented to ``parent``.
+
+    ``mint_id`` is the host's id allocator — letting the caller decide
+    the prefix means mutation-time fragments don't have to share a
+    namespace with parse-time ids. Nodes' ``parent`` field is set but
+    they are NOT appended to ``parent.children`` — the caller decides
+    where they go (innerHTML replaces children, appendChild appends one).
+    """
+    parser = html5lib.HTMLParser(
+        tree=html5lib.getTreeBuilder("etree"),
+        namespaceHTMLElements=False,
+    )
+    parsed_root = parser.parseFragment(html)
+
+    def convert(source: ElementTree.Element, parent_node: Element | Document) -> Node:
+        tag = source.tag
+        if tag is ElementTree.Comment or (callable(tag) and getattr(tag, "__name__", None) == "Comment"):
+            new_comment = Comment(id=mint_id(), data=source.text or "")
+            new_comment.parent = parent_node
+            return new_comment
+
+        tag_str = _strip_namespace(tag)
+        if not isinstance(tag_str, str):
+            tag_str = "unknown"
+        attrs = {
+            (_strip_namespace(k) if isinstance(k, str) else k).lower(): v
+            for k, v in source.attrib.items()
+        }
+        new_element = Element(id=mint_id(), tag=tag_str.lower(), attrs=attrs)
+        new_element.parent = parent_node
+        if source.text:
+            new_element.children.append(
+                Text(id=mint_id(), parent=new_element, data=source.text)
+            )
+        for child in list(source):
+            child_node = convert(child, new_element)
+            new_element.children.append(child_node)
+            if child.tail:
+                new_element.children.append(
+                    Text(id=mint_id(), parent=new_element, data=child.tail)
+                )
+        return new_element
+
+    nodes: list[Node] = []
+    if parsed_root.text:
+        nodes.append(Text(id=mint_id(), parent=parent, data=parsed_root.text))
+    for child in list(parsed_root):
+        nodes.append(convert(child, parent))
+        if child.tail:
+            nodes.append(Text(id=mint_id(), parent=parent, data=child.tail))
+    return nodes
+
+
+def _convert_element(source: ElementTree.Element, parent: Document | Element, ids) -> Node:
+    tag = source.tag
+    if tag is ElementTree.Comment or (callable(tag) and getattr(tag, "__name__", None) == "Comment"):
+        comment = Comment(id=_node_id(ids), data=source.text or "")
+        append_child(parent, comment)
+        return comment
+
+    tag_str = _strip_namespace(tag)
+    if not isinstance(tag_str, str):
+        tag_str = "unknown"
     element = Element(
         id=_node_id(ids),
-        tag=tag.lower(),
+        tag=tag_str.lower(),
         attrs={_strip_namespace(key).lower(): value for key, value in source.attrib.items()},
     )
     append_child(parent, element)

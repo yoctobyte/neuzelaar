@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <title>setAttribute / innerHTML / className probe</title>
+  </head>
+  <body>
+    <h1 id="hero" class="initial">before</h1>
+    <div id="slot"><span>placeholder</span></div>
+    <script>
+      var hero = document.getElementById("hero");
+      hero.setAttribute("class", "primary");
+      hero.setAttribute("data-tag", "x");
+      hero.className = "primary big";
+      hero.style.color = "blue";
+      hero.style.backgroundColor = "#eeeeee";
+      document.getElementById("slot").innerHTML = "<p id='inner'>fresh</p>";
+      document.getElementById("slot").insertAdjacentHTML("beforeend", "<p id='tail'>tail</p>");
+      document.querySelector("#status").textContent = document.querySelector(".primary").tagName;
+      document.querySelectorAll(".primary").length;
+      document.getElementById("remove-me").remove();
+    </script>
+    <p id="status">pending</p>
+    <p id="remove-me">gone</p>
+  </body>
+</html>

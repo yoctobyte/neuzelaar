@@ -44,3 +44,29 @@
 ## Follow-Up Suggestions
 - **Tiled rendering**: For future milestones, render only the visible viewport region instead of the full document height.
 - **Memory monitoring**: Add a process-level memory watermark check before rasterization.
+
+---
+
+# Work Done by Gemini Flash - 2026-05-21
+
+## Summary
+- **Implemented `QuickJsTickedJavaScriptEngine`**: Exposed a host-ticked, ultra-high-performance QuickJS backend utilizing native QuickJS C bindings.
+  - Implemented standard browser API shims in pure ES6/JS: global `console` forwarding, virtual DOM mirror, location and history properties, and setTimeout/setInterval event queue management.
+  - Plugs directly into the central command/event bus and routes UI repaint triggers (`DomMutated`) for reactive rendering on script-driven page mutations.
+  - Built ES6 `Proxy`-based styles and class listeners so that DOM node attribute/class/style changes dynamically bridge back to the host page DOM.
+- **Enabled Swappable JS backend flag**:
+  - Added `--js-engine quickjs-ticked` to CLI and UI launchers (`neuzelaar/viewer.py`) to let the user select between `noop`, `own-ticked` (standalone pure-Python engine), and `quickjs-ticked` (ultra-fast QuickJS).
+- **Harkened test suite validation**:
+  - Added full test suite `tests/unit/test_js_quickjs_ticked_engine.py` (9 tests) verifying sync execution, async `setTimeout`, recurrent `setInterval`, global scopes, `reset_for_page`, event-loop snapshots, and DOM mutation bridge behavior under QuickJS.
+  - All 662 tests pass perfectly, and architectural guardrails remain fully intact.
+
+## Commands Run
+- `.venv/bin/pytest tests/unit/test_js_quickjs_ticked_engine.py`: **PASS** (9 passed)
+- `.venv/bin/pytest`: **PASS** (662 passed)
+- `tools/check_guardrails.sh`: **PASS**
+
+## Files Changed
+- `neuzelaar/engines/js/quickjs_engine.py` [MODIFIED] — Implemented ticked QuickJS engine wrapper
+- `neuzelaar/viewer.py` [MODIFIED] — Registered `quickjs-ticked` CLI option
+- `tests/unit/test_js_quickjs_ticked_engine.py` [NEW] — Tests for ticked QuickJS engine
+- `workdone-gemini-flash.md` [MODIFIED] — Updated work done log

@@ -57,6 +57,31 @@ class EventLoopStepResult:
     still_pending: bool
 
 
+@dataclass(frozen=True, slots=True)
+class PendingTimerSnapshot:
+    timer_id: int
+    reason: str
+    delay_ms: float
+    due_in_ms: float
+    repeat: bool
+    origin: str | None
+    url: str | None
+    task_id: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class EventLoopSnapshot:
+    has_pending_work: bool
+    has_ready_work: bool
+    microtask_count: int
+    timer_count: int
+    due_timer_count: int
+    future_timer_count: int
+    timers: tuple[PendingTimerSnapshot, ...]
+    scheduler_tasks: tuple[object, ...] = ()
+    scheduler_history: tuple[object, ...] = ()
+
+
 @dataclass(slots=True)
 class ScriptRuntimeState:
     config: ScriptRuntimeConfig
@@ -187,6 +212,37 @@ class ScriptRuntimeState:
         self._prune_cancelled_timers()
         now = time.monotonic()
         return any(timer.due_at <= now for timer in self.timers)
+
+    def snapshot(self) -> EventLoopSnapshot:
+        self._prune_cancelled_timers()
+        now = time.monotonic()
+        timers = tuple(
+            PendingTimerSnapshot(
+                timer_id=timer.timer_id,
+                reason=timer.reason,
+                delay_ms=timer.delay_ms,
+                due_in_ms=max((timer.due_at - now) * 1000.0, 0.0),
+                repeat=timer.repeat,
+                origin=timer.origin,
+                url=timer.url,
+                task_id=timer.task_id,
+            )
+            for timer in sorted(self.timers, key=lambda pending: pending.due_at)
+        )
+        due_count = sum(1 for timer in timers if timer.due_in_ms <= 0.0)
+        scheduler_tasks = self.scheduler.snapshots() if self.scheduler is not None else ()
+        scheduler_history = self.scheduler.history() if self.scheduler is not None else ()
+        return EventLoopSnapshot(
+            has_pending_work=bool(self.microtasks or timers),
+            has_ready_work=bool(self.microtasks or due_count),
+            microtask_count=len(self.microtasks),
+            timer_count=len(timers),
+            due_timer_count=due_count,
+            future_timer_count=len(timers) - due_count,
+            timers=timers,
+            scheduler_tasks=scheduler_tasks,
+            scheduler_history=scheduler_history,
+        )
 
     def _pop_next_ready_task(self) -> tuple[str, Callable[[], None], int | None, str] | None:
         if self.microtasks:
