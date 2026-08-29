@@ -76,6 +76,7 @@ flexible.
   state-based ones.
 - **Units**: `calc()`, viewport units (`vh` / `vw` / `vmin` /
   `vmax`), `min()` / `max()` / `clamp()` functions, `ch` / `ex`.
+  `em` / `rem` resolve during the cascade and are supported.
 - **RTL / writing modes** (`direction: rtl`, `writing-mode: vertical-*`).
   We only support LTR / horizontal-tb for now.
 - **Text**: `text-decoration`, `text-transform`, `word-break`,
@@ -143,16 +144,13 @@ flexible.
 
 1. Iframes (nested browsing contexts + `sandbox`)
 2. Tables (real table algorithm)
-3. UA stylesheet margins (`body`, `p`, headings, lists, `blockquote`)
-   — content currently sits flush against the viewport edge with no
-   vertical rhythm, the largest remaining fidelity gap on plain HTML
-4. Flex
-5. Grid
-6. Pseudo-classes / pseudo-elements
-7. Media queries + `@import`
-8. Transforms / animations
-9. Custom properties
-10. RTL / writing-modes
+3. Flex
+4. Grid
+5. Pseudo-classes / pseudo-elements
+6. Media queries + `@import`
+7. Transforms / animations
+8. Custom properties
+9. RTL / writing-modes
 
 Selector upgrades are **done**: child (`>`), adjacent-sibling (`+`),
 general-sibling (`~`), attribute selectors, `:first-child`,
