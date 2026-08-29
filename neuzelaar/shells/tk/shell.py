@@ -20,7 +20,7 @@ from neuzelaar.core.diagnostics import LoadDiagnostics
 from neuzelaar.core.page import PageLoadResult, PlannedSubresourceDecision
 from neuzelaar.core.policy.profile import PolicyProfile
 from neuzelaar.core.session import BrowserSession
-from neuzelaar.document.dom import Comment, Document, Element, Node, Text
+from neuzelaar.document.dom import Comment, Document, Element, Node, Text, walk
 from neuzelaar.render.display_builder import build_display_list
 from neuzelaar.render.display_list import DisplayList, Rect
 from neuzelaar.render.software import rasterize
@@ -254,6 +254,8 @@ class TkShell:
         status_label.pack(side=tk.BOTTOM, fill=tk.X)
 
         canvas_image = canvas.create_image(0, 0, anchor=tk.NW)
+        canvas_form_items: list[tuple[int, tk.Widget]] = []
+        form_values: dict[str, str] = {}
         # Wheel scroll bindings: <MouseWheel> fires on Windows/macOS,
         # Button-4 / Button-5 fire on Linux/X11. Bind both so the canvas
         # scrolls regardless of platform.
@@ -354,6 +356,7 @@ class TkShell:
                     canvas.yview_moveto(0)
                 rendered_y0[0] = 0
                 rendered_y1[0] = frame.height
+                render_form_widgets(display_list)
                 return
 
             # Viewport-clipped mode.
@@ -385,6 +388,80 @@ class TkShell:
                 canvas.yview_moveto(0)
             rendered_y0[0] = new_y0
             rendered_y1[0] = new_y1
+            render_form_widgets(display_list)
+
+        def element_index(result: PageLoadResult) -> dict[str, Element]:
+            if result.handler_result.kind != "document":
+                return {}
+            return {
+                str(node.id): node
+                for node in walk(result.handler_result.value)
+                if isinstance(node, Element)
+            }
+
+        def control_defaults(result: PageLoadResult) -> dict[str, str]:
+            values: dict[str, str] = {}
+            for form in result.forms:
+                for control in form.controls:
+                    if control.node_id is not None:
+                        values[str(control.node_id)] = control.value
+            return values
+
+        def control_value(node_id: str, result: PageLoadResult) -> str:
+            if node_id not in form_values:
+                form_values[node_id] = control_defaults(result).get(node_id, "")
+            return form_values[node_id]
+
+        def set_control_value(node_id: str, value: str) -> None:
+            form_values[node_id] = value
+
+        def render_form_widgets(display_list: DisplayList) -> None:
+            for item, widget in canvas_form_items:
+                canvas.delete(item)
+                widget.destroy()
+            canvas_form_items.clear()
+            result = last_result[0]
+            if result is None:
+                return
+            elements = element_index(result)
+            for region in display_list.hit_regions:
+                if region.kind not in {"form-control", "submit"}:
+                    continue
+                element = elements.get(region.node_id)
+                if element is None:
+                    continue
+                if region.kind == "submit":
+                    label = _control_label(element) or "Submit"
+                    widget = ttk.Button(
+                        canvas,
+                        text=label,
+                        command=lambda node_id=region.node_id: submit_control(node_id),
+                    )
+                elif element.tag.lower() == "select":
+                    options = _select_options(element)
+                    widget = ttk.Combobox(canvas, values=options, state="readonly")
+                    widget.set(control_value(region.node_id, result))
+                    widget.bind(
+                        "<<ComboboxSelected>>",
+                        lambda _event, node_id=region.node_id, w=widget: set_control_value(node_id, w.get()),
+                    )
+                else:
+                    widget = ttk.Entry(canvas)
+                    widget.insert(0, control_value(region.node_id, result))
+                    widget.bind(
+                        "<KeyRelease>",
+                        lambda _event, node_id=region.node_id, w=widget: set_control_value(node_id, w.get()),
+                    )
+                    widget.bind("<Return>", lambda _event, node_id=region.node_id: submit_control(node_id))
+                item = canvas.create_window(
+                    region.rect.x,
+                    region.rect.y,
+                    anchor=tk.NW,
+                    width=max(region.rect.width, 40),
+                    height=max(region.rect.height, 22),
+                    window=widget,
+                )
+                canvas_form_items.append((item, widget))
 
         def build_current_display_list(result: PageLoadResult) -> DisplayList:
             self.session.diagnostics.mark(f"build display list (width={current_width[0]}, zoom={self.settings.zoom})")
@@ -481,6 +558,7 @@ class TkShell:
 
         def present(result: PageLoadResult) -> None:
             last_result[0] = result
+            form_values.clear()
             if result.handler_result.kind == "document":
                 display_list = build_current_display_list(result)
                 paint_canvas(display_list, scroll_to_top=True)
@@ -621,6 +699,52 @@ class TkShell:
                 present(result)
             except Exception as exc:
                 show_error(exc)
+
+        def open_resolved_url(url: str) -> None:
+            begin_navigation()
+            try:
+                result, _future = self.session.open_url_async(url)
+                present(result)
+            except Exception as exc:
+                show_error(exc)
+
+        def submit_control(node_id: str) -> None:
+            result = last_result[0]
+            if result is None:
+                return
+            try:
+                form_index = self.session.form_index_for_control(node_id)
+                values = _form_values_for_submit(result, form_values)
+                submitted, _future = self.session.submit_form_async(form_index, values)
+                present(submitted)
+            except Exception as exc:
+                show_error(exc)
+
+        def hit_region_at(x: int, y: int):
+            display_list = last_display_list[0]
+            if display_list is None:
+                return None
+            for region in reversed(display_list.hit_regions):
+                rect = region.rect
+                if rect.x <= x < rect.x + rect.width and rect.y <= y < rect.y + rect.height:
+                    return region
+            return None
+
+        def on_canvas_click(event: tk.Event) -> None:
+            region = hit_region_at(int(canvas.canvasx(event.x)), int(canvas.canvasy(event.y)))
+            if region is None:
+                return
+            result = last_result[0]
+            if result is None:
+                return
+            if region.kind == "link":
+                link = next((link for link in result.links if str(link.node_id) == region.node_id), None)
+                if link is not None:
+                    open_resolved_url(link.resolved_url)
+            elif region.kind == "submit":
+                submit_control(region.node_id)
+
+        canvas.bind("<Button-1>", on_canvas_click)
 
         def go_back() -> None:
             try:
@@ -1214,6 +1338,49 @@ def _frame_to_photo(frame: Frame):
         raise TkShellError(f"Unsupported frame format: {frame.format}")
     image = Image.frombytes("RGBA", (frame.width, frame.height), bytes(frame.pixels))
     return ImageTk.PhotoImage(image)
+
+
+def _control_label(element: Element) -> str:
+    tag = element.tag.lower()
+    if tag == "button":
+        text = _element_text(element)
+        return text or element.attr("value") or "Submit"
+    if tag == "input":
+        input_type = (element.attr("type") or "text").lower()
+        if input_type in {"submit", "button", "reset"}:
+            return element.attr("value") or input_type.capitalize()
+    return element.attr("value") or ""
+
+
+def _select_options(element: Element) -> list[str]:
+    values: list[str] = []
+    for child in element.children:
+        if not isinstance(child, Element) or child.tag.lower() != "option":
+            continue
+        values.append(child.attr("value") or _element_text(child))
+    return values
+
+
+def _form_values_for_submit(result: PageLoadResult, overrides: dict[str, str]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for form in result.forms:
+        for control in form.controls:
+            if control.node_id is None:
+                continue
+            node_id = str(control.node_id)
+            if node_id in overrides:
+                values[control.name] = overrides[node_id]
+    return values
+
+
+def _element_text(element: Element) -> str:
+    def collect(node: Node) -> str:
+        if isinstance(node, Text):
+            return node.data
+        children = getattr(node, "children", None) or []
+        return "".join(collect(child) for child in children)
+
+    return " ".join(collect(element).split())
 
 
 def _looks_like_special_scheme(value: str) -> bool:

@@ -68,6 +68,35 @@ def test_right_float_constrains_following_text_from_the_right() -> None:
         assert placement.x < 320
 
 
+def test_negative_left_margin_float_can_pull_into_reserved_right_rail() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"))
+    main = Element(
+        id=NodeId("main"),
+        tag="div",
+        attrs={"style": "float: left; width: 100%"},
+    )
+    rail = Element(
+        id=NodeId("rail"),
+        tag="aside",
+        attrs={"style": "float: left; width: 320px; margin-left: -320px"},
+    )
+    append_child(document, body)
+    append_child(body, main)
+    append_child(body, rail)
+    append_child(main, Text(id=NodeId("maintext"), data="main"))
+    append_child(rail, Text(id=NodeId("railtext"), data="rail"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=800)
+
+    main_text = next(p for p in placements if isinstance(p, TextPlacement) and p.text == "main")
+    rail_text = next(p for p in placements if isinstance(p, TextPlacement) and p.text == "rail")
+    assert rail_text.y == main_text.y
+    assert rail_text.x >= 480
+
+
 def test_clear_advances_following_block_below_floats() -> None:
     document = Document(id=NodeId("doc"))
     body = Element(id=NodeId("body"), tag="body")

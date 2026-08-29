@@ -13,6 +13,7 @@ class FormControl:
     name: str
     value: str
     type: str = "text"
+    node_id: NodeId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,11 +59,11 @@ def _extract_controls(form: Element) -> list[FormControl]:
             input_type = (node.attr("type") or "text").lower()
             if input_type in {"submit", "button", "reset"}:
                 continue
-            controls.append(FormControl(name=name, value=node.attr("value") or "", type=input_type))
+            controls.append(FormControl(name=name, value=node.attr("value") or "", type=input_type, node_id=node.id))
         elif tag == "textarea":
-            controls.append(FormControl(name=name, value=_text_content(node), type="textarea"))
+            controls.append(FormControl(name=name, value=_text_content(node), type="textarea", node_id=node.id))
         elif tag == "select":
-            controls.append(FormControl(name=name, value=_selected_option_value(node), type="select"))
+            controls.append(FormControl(name=name, value=_selected_option_value(node), type="select", node_id=node.id))
     return controls
 
 

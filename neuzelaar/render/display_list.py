@@ -64,6 +64,13 @@ class DrawImage:
 
 
 @dataclass(frozen=True, slots=True)
+class HitRegion:
+    rect: Rect
+    kind: str
+    node_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class PushClip:
     rect: Rect
 
@@ -81,3 +88,4 @@ class DisplayList:
     width: int
     height: int
     ops: tuple[DisplayOp, ...]
+    hit_regions: tuple[HitRegion, ...] = ()

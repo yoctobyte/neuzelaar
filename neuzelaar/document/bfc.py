@@ -33,11 +33,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from neuzelaar.adapters.font_metrics import measure_text
 from neuzelaar.core.page import ImageAsset
+from neuzelaar.core.watchdog import check_resources
 from neuzelaar.document.box import Box, BoxGeometry, BoxKind, EdgeSizes
 from neuzelaar.document.dom import NodeId
 from neuzelaar.document.styles import ComputedStyle
-from neuzelaar.core.watchdog import check_resources
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,7 @@ class ImagePlacement:
     height: int
     label: str
     bitmap: ImageAsset | None
+    node_id: NodeId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +68,7 @@ class TextPlacement:
     text_decoration: str
     max_width: int
     text_align: str
+    node_id: NodeId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,6 +381,7 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
             y0=child_y,
             content_width=inner_width,
             parent_style=style,
+            interactive_node_id=box.node_id if box.tag == "a" else None,
         )
     else:
         previous_margin_bottom = 0  # for sibling margin collapse
@@ -492,6 +496,7 @@ def _shift_placements(items: list[Placement], start: int, end: int, dy: int) -> 
                 text_decoration=item.text_decoration,
                 max_width=item.max_width,
                 text_align=item.text_align,
+                node_id=item.node_id,
             )
         elif isinstance(item, ImagePlacement):
             items[i] = ImagePlacement(
@@ -501,6 +506,7 @@ def _shift_placements(items: list[Placement], start: int, end: int, dy: int) -> 
                 height=item.height,
                 label=item.label,
                 bitmap=item.bitmap,
+                node_id=item.node_id,
             )
         elif isinstance(item, BoxPlacement):
             items[i] = BoxPlacement(
@@ -710,7 +716,11 @@ def _place_float(
     # Float width: explicit, else the containing block's width minus
     # margins (CSS would shrink-to-fit; we approximate by using the
     # full available width as a ceiling).
-    explicit = _length_to_px(style.width.strip().lower()) if style.width.strip().lower() not in ("", "auto") else 0
+    explicit = (
+        _length_to_px(style.width.strip().lower(), percentage_base=containing_width)
+        if style.width.strip().lower() not in ("", "auto")
+        else 0
+    )
     if explicit > 0:
         content_width = explicit
     else:
@@ -808,58 +818,66 @@ class _InlineFragment:
     label: str = ""
     bitmap: ImageAsset | None = None
     leading_space: bool = False
+    node_id: NodeId | None = None
 
 
 def _flatten_inline(
     children: list[Box],
     style: ComputedStyle,
     state: LayoutState,
+    interactive_node_id: NodeId | None = None,
 ) -> list[_InlineFragment]:
     fragments: list[_InlineFragment] = []
     for child in children:
         if child.kind == BoxKind.TEXT:
-            fragments.extend(_text_fragments(child.text or "", child.style or style))
+            fragments.extend(
+                _text_fragments(
+                    child.text or "",
+                    child.style or style,
+                    node_id=interactive_node_id,
+                )
+            )
         elif child.kind == BoxKind.INLINE:
             # Recurse with the inline element's own computed style so
             # nested <strong><em>word</em></strong> picks up the inner
             # style for "word".
-            fragments.extend(_flatten_inline(child.children, child.style, state))
-        elif child.kind == BoxKind.REPLACED and child.tag == "img":
-            asset = state.images.get(child.node_id) if child.node_id is not None else None
-            attr_width = _attr_int(child.element.attr("width") if child.element is not None else None)
-            attr_height = _attr_int(child.element.attr("height") if child.element is not None else None)
-            if asset is not None:
-                intrinsic_w = asset.bitmap.width
-                intrinsic_h = asset.bitmap.height
-            else:
-                intrinsic_w, intrinsic_h = 240, 32
-            width = attr_width or intrinsic_w
-            height = attr_height or intrinsic_h
-            label = (
-                (child.element.attr("alt") if child.element is not None else None)
-                or (child.element.attr("src") if child.element is not None else None)
-                or "image"
+            next_interactive = child.node_id if child.tag == "a" else interactive_node_id
+            fragments.extend(
+                _flatten_inline(child.children, child.style, state, next_interactive)
             )
+        elif child.kind == BoxKind.REPLACED:
+            width, height, label, asset = _replaced_metrics(child, state)
             fragments.append(
                 _InlineFragment(
-                    kind="image",
+                    kind="image" if child.tag == "img" else "control",
                     width=width,
                     height=height,
                     label=label,
                     bitmap=asset,
                     style=style,
+                    node_id=child.node_id,
                 )
             )
     return fragments
 
 
-def _text_fragments(text: str, style: ComputedStyle) -> list[_InlineFragment]:
+def _text_fragments(
+    text: str,
+    style: ComputedStyle,
+    *,
+    node_id: NodeId | None = None,
+) -> list[_InlineFragment]:
     if not text:
         return []
     text = _apply_text_transform(text, style.text_transform)
     white_space = style.white_space
     if white_space in {"pre", "pre-wrap", "pre-line"}:
-        return _preserved_text_fragments(text, style, collapse_spaces=(white_space == "pre-line"))
+        return _preserved_text_fragments(
+            text,
+            style,
+            collapse_spaces=(white_space == "pre-line"),
+            node_id=node_id,
+        )
     words = text.split()
     fragments: list[_InlineFragment] = []
     for index, word in enumerate(words):
@@ -869,6 +887,7 @@ def _text_fragments(text: str, style: ComputedStyle) -> list[_InlineFragment]:
                 text=word,
                 style=style,
                 leading_space=index > 0,
+                node_id=node_id,
             )
         )
     return fragments
@@ -879,6 +898,7 @@ def _preserved_text_fragments(
     style: ComputedStyle,
     *,
     collapse_spaces: bool,
+    node_id: NodeId | None = None,
 ) -> list[_InlineFragment]:
     fragments: list[_InlineFragment] = []
     normalized = text
@@ -886,13 +906,18 @@ def _preserved_text_fragments(
         normalized = "\n".join(" ".join(line.split()) for line in normalized.split("\n"))
     parts = normalized.split("\n")
     for index, part in enumerate(parts):
-        fragments.extend(_preserved_line_fragments(part, style))
+        fragments.extend(_preserved_line_fragments(part, style, node_id=node_id))
         if index < len(parts) - 1:
-            fragments.append(_InlineFragment(kind="break", style=style))
+            fragments.append(_InlineFragment(kind="break", style=style, node_id=node_id))
     return fragments
 
 
-def _preserved_line_fragments(text: str, style: ComputedStyle) -> list[_InlineFragment]:
+def _preserved_line_fragments(
+    text: str,
+    style: ComputedStyle,
+    *,
+    node_id: NodeId | None = None,
+) -> list[_InlineFragment]:
     if text == "":
         return []
     fragments: list[_InlineFragment] = []
@@ -903,10 +928,10 @@ def _preserved_line_fragments(text: str, style: ComputedStyle) -> list[_InlineFr
         if is_space == token_is_space:
             token += char
             continue
-        fragments.append(_InlineFragment(kind="text", text=token, style=style))
+        fragments.append(_InlineFragment(kind="text", text=token, style=style, node_id=node_id))
         token = char
         token_is_space = is_space
-    fragments.append(_InlineFragment(kind="text", text=token, style=style))
+    fragments.append(_InlineFragment(kind="text", text=token, style=style, node_id=node_id))
     return fragments
 
 
@@ -918,12 +943,13 @@ def _layout_inline_context(
     y0: int,
     content_width: int,
     parent_style: ComputedStyle,
+    interactive_node_id: NodeId | None = None,
 ) -> int:
     """Lay out a sequence of inline-level children as a Block's
     Inline Formatting Context. Greedy word-wrap at content_width.
     Returns the y coordinate at the bottom of the last line box.
     """
-    fragments = _flatten_inline(list(children), parent_style, state)
+    fragments = _flatten_inline(list(children), parent_style, state, interactive_node_id)
     if not fragments:
         return y0
 
@@ -970,7 +996,7 @@ def _layout_inline_context(
         if line_items:
             last_x, last_fragment = line_items[-1]
             if last_fragment.kind == "text":
-                last_width = _measure_text(last_fragment.text, _font_size_px(last_fragment.style))
+                last_width = measure_text_width(last_fragment.text, last_fragment.style)
             else:
                 last_width = last_fragment.width
             line_width = max(last_x + last_width - line_x_start, 0)
@@ -1001,6 +1027,7 @@ def _layout_inline_context(
                         text_decoration=(fragment.style or parent_style).text_decoration,
                         max_width=content_width,
                         text_align=(fragment.style or parent_style).text_align,
+                        node_id=fragment.node_id,
                     )
                 )
             else:
@@ -1013,6 +1040,7 @@ def _layout_inline_context(
                         height=fragment.height,
                         label=fragment.label,
                         bitmap=fragment.bitmap,
+                        node_id=fragment.node_id,
                     )
                 )
         cursor_y += line_box_height
@@ -1030,11 +1058,11 @@ def _layout_inline_context(
             continue
         if fragment.kind == "text":
             fs = _font_size_px(fragment.style)
-            word_width = _measure_text(fragment.text, fs)
+            word_width = measure_text_width(fragment.text, fragment.style)
             white_space = (fragment.style or parent_style).white_space
             no_wrap = white_space in {"nowrap", "pre"}
             preserve_spaces = white_space in {"pre", "pre-wrap", "pre-line"}
-            space_width = 0 if preserve_spaces else (_measure_text(" ", fs) if line_items and fragment.leading_space else 0)
+            space_width = 0 if preserve_spaces else (measure_text_width(" ", fragment.style) if line_items and fragment.leading_space else 0)
             # Wrap if this word would overflow. Always place at least
             # one fragment on an empty line, even if oversized.
             if not no_wrap and cursor_x + space_width + word_width > line_x_start + line_max_width and line_items:
@@ -1059,16 +1087,47 @@ def _layout_inline_context(
     return cursor_y
 
 
-def _measure_text(text: str, font_size: int) -> int:
-    """Approximate the pixel width of text at the given font size.
-
-    Uses a coefficient calibrated for DejaVuSans at common sizes. The
-    rasterizer can still render crisply since it does real glyph
-    measurement; this is only used to decide where line boxes break.
-    """
+def measure_text_width(text: str, style: ComputedStyle | None) -> int:
+    """Return the same text advance used by the software rasterizer."""
     if not text:
         return 0
-    return int(round(len(text) * font_size * 0.55))
+    font_size = _font_size_px(style) if style is not None else 16
+    font_weight = style.font_weight if style is not None else "normal"
+    font_style = style.font_style if style is not None else "normal"
+    return measure_text(text, size=font_size, weight=font_weight, style=font_style)
+
+
+def _replaced_metrics(box: Box, state: LayoutState) -> tuple[int, int, str, ImageAsset | None]:
+    if box.tag == "img":
+        label = (box.element.attr("alt") if box.element is not None else None) or (
+            box.element.attr("src") if box.element is not None else None
+        ) or "image"
+        attr_width = _attr_int(box.element.attr("width") if box.element is not None else None)
+        attr_height = _attr_int(box.element.attr("height") if box.element is not None else None)
+        asset = state.images.get(box.node_id) if box.node_id is not None else None
+        if asset is not None:
+            intrinsic_w = asset.bitmap.width
+            intrinsic_h = asset.bitmap.height
+        else:
+            intrinsic_w, intrinsic_h = 240, 32
+        return attr_width or intrinsic_w, attr_height or intrinsic_h, label, asset
+
+    tag = box.tag or "control"
+    value = box.element.attr("value") if box.element is not None else None
+    if tag == "textarea":
+        width, height = 240, 72
+        label = value or "textarea"
+    elif tag == "select":
+        width, height = 180, 28
+        label = value or "select"
+    elif tag == "button":
+        width, height = 96, 30
+        label = _element_text(box) or value or "button"
+    else:
+        input_type = (box.element.attr("type") if box.element is not None else None) or "text"
+        width, height = (96, 30) if input_type in {"submit", "button", "reset"} else (180, 28)
+        label = value or input_type
+    return width, height, label, None
 
 
 def _place_inline_or_text(
@@ -1106,24 +1165,13 @@ def _place_inline_or_text(
                 text_decoration=style.text_decoration,
                 max_width=content_width,
                 text_align=style.text_align,
+                node_id=box.node_id,
             )
         )
         return y + _line_height_px(style, fallback_font_size=font_size)
 
-    if box.kind == BoxKind.REPLACED and box.tag == "img":
-        label = (box.element.attr("alt") if box.element is not None else None) or (
-            box.element.attr("src") if box.element is not None else None
-        ) or "image"
-        attr_width = _attr_int(box.element.attr("width") if box.element is not None else None)
-        attr_height = _attr_int(box.element.attr("height") if box.element is not None else None)
-        asset = state.images.get(box.node_id) if box.node_id is not None else None
-        if asset is not None:
-            intrinsic_w = asset.bitmap.width
-            intrinsic_h = asset.bitmap.height
-        else:
-            intrinsic_w, intrinsic_h = 240, 32
-        width = attr_width or intrinsic_w
-        height = attr_height or intrinsic_h
+    if box.kind == BoxKind.REPLACED:
+        width, height, label, asset = _replaced_metrics(box, state)
         state.items.append(
             ImagePlacement(
                 x=x + state.relative_offset_x,
@@ -1132,6 +1180,7 @@ def _place_inline_or_text(
                 height=height,
                 label=label,
                 bitmap=asset,
+                node_id=box.node_id,
             )
         )
         return y + height + 12
@@ -1282,20 +1331,22 @@ def _walk(box: Box):
 
 
 def _resolve_margin(style: ComputedStyle) -> EdgeSizes:
-    top, right, bottom, left = _expand_shorthand(style.margin)
+    top, right, bottom, left = _expand_shorthand(style.margin, allow_negative=True)
     return EdgeSizes(top=top, right=right, bottom=bottom, left=left)
 
 
 def _resolve_padding(style: ComputedStyle) -> EdgeSizes:
-    top, right, bottom, left = _expand_shorthand(style.padding)
+    top, right, bottom, left = _expand_shorthand(style.padding, allow_negative=False)
     return EdgeSizes(top=top, right=right, bottom=bottom, left=left)
 
 
-def _expand_shorthand(value: str) -> tuple[int, int, int, int]:
+def _expand_shorthand(value: str, *, allow_negative: bool) -> tuple[int, int, int, int]:
     tokens = value.strip().split()
     if not tokens:
         return (0, 0, 0, 0)
     nums = [_length_to_px(token) for token in tokens]
+    if not allow_negative:
+        nums = [max(num, 0) for num in nums]
     if len(nums) == 1:
         v = nums[0]
         return (v, v, v, v)
@@ -1366,7 +1417,7 @@ def _resolve_width(
     available = containing_width - margin.left - margin.right - border.left - border.right - padding.left - padding.right
     width_value = style.width.strip().lower()
     if width_value and width_value != "auto":
-        explicit = _length_to_px(width_value)
+        explicit = _length_to_px(width_value, percentage_base=containing_width)
         if explicit > 0:
             if style.box_sizing == "border-box":
                 explicit -= border.left + border.right + padding.left + padding.right
@@ -1409,14 +1460,20 @@ def _resolve_height(style: ComputedStyle, used_content_height: int) -> int:
     return used_content_height
 
 
-def _length_to_px(value: str) -> int:
+def _length_to_px(value: str, *, percentage_base: int | None = None) -> int:
     text = value.strip().lower()
     if not text or text == "auto":
         return 0
+    scale = 1.0
     if text.endswith("px"):
         text = text[:-2]
+    elif text.endswith("%"):
+        if percentage_base is None:
+            return 0
+        scale = percentage_base / 100
+        text = text[:-1]
     try:
-        return max(int(round(float(text))), 0)
+        return int(round(float(text) * scale))
     except ValueError:
         return 0
 
@@ -1429,7 +1486,7 @@ def _border_length_to_px(value: str) -> int:
         return 3
     if text == "thick":
         return 5
-    return _length_to_px(text)
+    return max(_length_to_px(text), 0)
 
 
 def _attr_int(value: str | None) -> int | None:
@@ -1439,6 +1496,20 @@ def _attr_int(value: str | None) -> int | None:
         return max(int(value), 1)
     except ValueError:
         return None
+
+
+def _element_text(box: Box) -> str:
+    if box.element is None:
+        return ""
+
+    def collect(node) -> str:
+        data = getattr(node, "data", None)
+        if isinstance(data, str):
+            return data
+        children = getattr(node, "children", None) or []
+        return "".join(collect(child) for child in children)
+
+    return " ".join(collect(box.element).split())
 
 
 def _font_size_px(style: ComputedStyle) -> int:

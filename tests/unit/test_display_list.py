@@ -94,3 +94,12 @@ def test_build_display_list_contains_list_markers() -> None:
     assert any(isinstance(op, DrawText) and op.text == "•" for op in display_list.ops)
     assert any(isinstance(op, DrawText) and op.text == "1." for op in display_list.ops)
     assert any(isinstance(op, DrawText) and op.text == "2." for op in display_list.ops)
+
+
+def test_build_display_list_exposes_link_and_form_hit_regions() -> None:
+    links = build_display_list(document_from_fixture("basic_links.html"))
+    form = build_display_list(document_from_fixture("basic_form.html"))
+
+    assert any(region.kind == "link" for region in links.hit_regions)
+    assert any(region.kind == "form-control" for region in form.hit_regions)
+    assert any(region.kind == "submit" for region in form.hit_regions)

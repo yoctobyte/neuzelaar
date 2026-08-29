@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
+from neuzelaar.document.bfc import measure_text_width
+from neuzelaar.document.dom import Element, walk
 from neuzelaar.document.layout import (
     LayoutBox,
     LayoutClipPop,
@@ -18,6 +22,7 @@ from neuzelaar.render.display_list import (
     DrawImage,
     DrawText,
     FillRect,
+    HitRegion,
     Placeholder,
     PopClip,
     PushClip,
@@ -53,10 +58,40 @@ def build_display_list(
 
     style = root_style or ComputedStyle()
     ops = [FillRect(Rect(0, 0, sx(layout.width), sx(layout.height)), _parse_color(style.background_color))]
+    hit_regions: list[HitRegion] = []
+    elements = {
+        node.id: node
+        for node in walk(document)
+        if isinstance(node, Element)
+    }
+
+    def interactive_kind(node_id) -> str | None:
+        node = elements.get(node_id)
+        if node is None:
+            return None
+        tag = node.tag.lower()
+        if tag == "a" and node.attr("href"):
+            return "link"
+        if tag in {"input", "textarea", "select", "button"}:
+            input_type = (node.attr("type") or "text").lower()
+            if tag == "button" or input_type in {"submit", "button"}:
+                return "submit"
+            return "form-control"
+        return None
+
     for item in layout.items:
         if isinstance(item, LayoutBox):
             ops.append(FillRect(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)), _parse_color(item.color)))
         elif isinstance(item, LayoutText):
+            kind = interactive_kind(item.node_id)
+            if kind is not None:
+                hit_regions.append(
+                    HitRegion(
+                        Rect(sx(item.x), sx(item.y), max(sx(_text_width(item)), 1), sx(item.font_size + 6)),
+                        kind,
+                        str(item.node_id),
+                    )
+                )
             ops.append(
                 DrawText(
                     sx(item.x),
@@ -72,6 +107,15 @@ def build_display_list(
                 )
             )
         elif isinstance(item, LayoutImage):
+            kind = interactive_kind(item.node_id)
+            if kind is not None:
+                hit_regions.append(
+                    HitRegion(
+                        Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)),
+                        kind,
+                        str(item.node_id),
+                    )
+                )
             if item.bitmap is not None:
                 ops.append(
                     DrawImage(
@@ -85,13 +129,25 @@ def build_display_list(
                         ),
                     )
                 )
+            elif kind is not None:
+                ops.append(Placeholder(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)), item.label))
             else:
                 ops.append(Placeholder(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)), f"image: {item.label}"))
         elif isinstance(item, LayoutClipPush):
             ops.append(PushClip(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height))))
         elif isinstance(item, LayoutClipPop):
             ops.append(PopClip())
-    return DisplayList(width=sx(layout.width), height=sx(layout.height), ops=tuple(ops))
+    return DisplayList(width=sx(layout.width), height=sx(layout.height), ops=tuple(ops), hit_regions=tuple(hit_regions))
+
+
+def _text_width(item: LayoutText) -> int:
+    style = replace(
+        ComputedStyle(),
+        font_size=f"{item.font_size}px",
+        font_weight=item.font_weight,
+        font_style=item.font_style,
+    )
+    return measure_text_width(item.text, style)
 
 
 def _parse_color(value: str) -> Color:

@@ -1,4 +1,4 @@
-from neuzelaar.document.bfc import TextPlacement, layout_block
+from neuzelaar.document.bfc import TextPlacement, layout_block, measure_text_width
 from neuzelaar.document.box import build_box_tree
 from neuzelaar.document.dom import Document, Element, NodeId, Text, append_child
 from neuzelaar.document.styles import ComputedStyle, compute_styles
@@ -21,6 +21,21 @@ def test_ifc_places_multiple_words_on_same_line() -> None:
     # x positions should increase left-to-right.
     xs = sorted(p.x for p in texts)
     assert xs == [p.x for p in sorted(texts, key=lambda p: p.x)]
+
+
+def test_ifc_uses_real_font_metrics_for_word_advances() -> None:
+    document = Document(id=NodeId("doc"))
+    p = Element(id=NodeId("p"), tag="p")
+    append_child(document, p)
+    append_child(p, Text(id=NodeId("t"), data="iii WWW"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=1000)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    assert [p.text for p in texts] == ["iii", "WWW"]
+    assert texts[1].x - texts[0].x == measure_text_width("iii ", styles[NodeId("p")])
 
 
 def test_ifc_wraps_words_when_exceeding_content_width() -> None:

@@ -49,6 +49,7 @@ class LayoutText:
     text_decoration: str = "none"
     max_width: int = 0
     text_align: str = "left"
+    node_id: NodeId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +60,7 @@ class LayoutImage:
     height: int
     label: str
     bitmap: ImageAsset | None
+    node_id: NodeId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +161,7 @@ def _to_layout_item(placement, *, dx: int, dy: int) -> LayoutItem:
             text_decoration=placement.text_decoration,
             max_width=placement.max_width,
             text_align=placement.text_align,
+            node_id=placement.node_id,
         )
     if isinstance(placement, ImagePlacement):
         return LayoutImage(
@@ -168,6 +171,7 @@ def _to_layout_item(placement, *, dx: int, dy: int) -> LayoutItem:
             height=placement.height,
             label=placement.label,
             bitmap=placement.bitmap,
+            node_id=placement.node_id,
         )
     if isinstance(placement, BoxPlacement):
         return LayoutBox(

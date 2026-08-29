@@ -174,11 +174,9 @@ def _build_from_node(
     if display == "none":
         return None
 
-    # Replaced elements — img for now. Treated as inline-level by
-    # default; an explicit `display: block` or `display: inline-block`
-    # in styles would change that but both still map to a REPLACED box
-    # since their layout is driven by intrinsic dimensions.
-    if tag == "img":
+    # Replaced elements. Images and native form controls have intrinsic
+    # UI of their own, so layout treats them as atomic inline-level boxes.
+    if tag in {"img", "input", "textarea", "select", "button"}:
         return Box(
             kind=BoxKind.REPLACED,
             style=style,

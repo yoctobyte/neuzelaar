@@ -6,6 +6,7 @@ from neuzelaar.core.session import BrowserSession, SessionError
 from neuzelaar.engines.js.interface import ScriptExecutionRequest
 from neuzelaar.engines.js.own_ticked_engine import OwnTickedJavaScriptEngine
 from neuzelaar.engines.js_own.host_scenarios import BrowserScenarioFixture
+from neuzelaar.document.dom import Element, walk
 
 
 def fixture_url(name: str) -> str:
@@ -74,6 +75,19 @@ def test_session_submits_get_form_with_overrides() -> None:
 
     assert result.resource.final_url.endswith("form_result.html?q=changed&note=hello&kind=b")
     assert "Form Result" in result.rendered_text
+    assert session.current is result
+
+
+def test_session_finds_form_for_submit_button_node() -> None:
+    session = BrowserSession()
+    result = session.open_url(fixture_url("basic_form.html"))
+    button = next(
+        node
+        for node in walk(result.handler_result.value)
+        if isinstance(node, Element) and node.tag.lower() == "button"
+    )
+
+    assert session.form_index_for_control(button.id) == 1
 
 
 def test_session_defaults_to_balanced_profile_and_can_switch() -> None:

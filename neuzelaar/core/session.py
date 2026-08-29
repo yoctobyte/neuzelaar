@@ -17,6 +17,7 @@ from neuzelaar.core.policy.permission_service import PermissionService
 from neuzelaar.core.policy.profile import PolicyProfile
 from neuzelaar.engines.js.interface import JavaScriptEngine
 from neuzelaar.shell_api.commands import DenyPermission, GrantPermission
+from neuzelaar.document.dom import Element, NodeId, walk
 
 
 @dataclass(slots=True)
@@ -121,12 +122,62 @@ class BrowserSession:
         data = {control.name: control.value for control in form.controls}
         if values:
             data.update(values)
-        return self.loader.load(
+        result = self.loader.load(
             form.resolved_action,
             method=form.method.upper(),
             form_data=data,
             reason=FetchReason.FORM_SUBMIT,
         )
+        self._record_history(result)
+        return result
+
+    def submit_form_async(
+        self,
+        index: int,
+        values: dict[str, str] | None = None,
+    ) -> tuple[PageLoadResult, Future[None]]:
+        current = self.current
+        if current is None:
+            raise SessionError("No current page")
+        try:
+            form = current.forms[index - 1]
+        except IndexError as exc:
+            raise SessionError(f"No form at index {index}") from exc
+        data = {control.name: control.value for control in form.controls}
+        if values:
+            data.update(values)
+        result, future = self.loader.load_async(
+            form.resolved_action,
+            method=form.method.upper(),
+            form_data=data,
+            reason=FetchReason.FORM_SUBMIT,
+        )
+        self._record_history(result)
+        return result, future
+
+    def form_index_for_control(self, node_id: NodeId | str) -> int:
+        current = self.current
+        if current is None:
+            raise SessionError("No current page")
+        wanted = str(node_id)
+        for form in current.forms:
+            if str(form.node_id) == wanted:
+                return form.index
+            for control in form.controls:
+                if control.node_id is not None and str(control.node_id) == wanted:
+                    return form.index
+        if current.handler_result.kind == "document":
+            for node in walk(current.handler_result.value):
+                if str(node.id) != wanted:
+                    continue
+                parent = node.parent
+                while parent is not None:
+                    if isinstance(parent, Element) and parent.tag.lower() == "form":
+                        for form in current.forms:
+                            if str(form.node_id) == str(parent.id):
+                                return form.index
+                    parent = parent.parent
+        raise SessionError(f"No form for control {node_id}")
 
     def back(self) -> PageLoadResult:
         if self.current_index <= 0:
