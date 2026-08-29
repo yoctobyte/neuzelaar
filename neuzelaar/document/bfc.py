@@ -368,10 +368,7 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     cursor_y = child_y
     bfc_left = child_x
     bfc_right = child_x + inner_width
-    if box.children and all(
-        child.is_inline_level and child.style.float == "none"
-        for child in box.children
-    ):
+    if _establishes_inline_context(box.children):
         # Pure inline formatting context: lay out all children as a
         # single run of line boxes with proper word wrapping.
         cursor_y = _layout_inline_context(
@@ -655,7 +652,7 @@ def _place_absolute(deferred: _DeferredAbsolute, state: LayoutState) -> None:
         child_x = box.geometry.x + border.left + padding.left
         child_y = box.geometry.y + border.top + padding.top
         cursor = child_y
-        if box.children and all(c.is_inline_level and c.style.float == "none" for c in box.children):
+        if _establishes_inline_context(box.children):
             cursor = _layout_inline_context(
                 box.children, state,
                 x0=child_x, y0=child_y, content_width=content_width, parent_style=style,
@@ -689,6 +686,24 @@ def _place_absolute(deferred: _DeferredAbsolute, state: LayoutState) -> None:
     finally:
         state.cb_stack.pop()
         state.floats = saved_floats
+
+
+def _establishes_inline_context(children: list[Box]) -> bool:
+    """True when every child can flow in one inline formatting context.
+
+    A TEXT box borrows its parent's computed style, so inside a floated
+    block its `float` reads as the parent's — but text can never float
+    itself. Testing it as if it could sent a float's own contents down
+    the unwrapped fallback path, where they ran straight out of the
+    float box and over the text beside it.
+    """
+    if not children:
+        return False
+    return all(
+        child.is_inline_level
+        and (child.kind == BoxKind.TEXT or child.style.float == "none")
+        for child in children
+    )
 
 
 def _place_float(
@@ -762,7 +777,7 @@ def _place_float(
         child_x = box.geometry.x + border.left + padding.left
         child_y = box.geometry.y + border.top + padding.top
         cursor = child_y
-        if box.children and all(c.is_inline_level and c.style.float == "none" for c in box.children):
+        if _establishes_inline_context(box.children):
             cursor = _layout_inline_context(
                 box.children, state,
                 x0=child_x, y0=child_y, content_width=content_width, parent_style=style,

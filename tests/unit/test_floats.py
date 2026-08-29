@@ -144,3 +144,30 @@ def test_containing_block_extends_to_contain_floats() -> None:
     # Body had no in-flow content, but the floated div is 200px tall;
     # the body should expand to contain it.
     assert total_height >= 200
+
+
+def test_float_contents_wrap_inside_the_float_box() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    aside = Element(
+        id=NodeId("aside"),
+        tag="div",
+        attrs={"style": "float: left; width: 120px"},
+    )
+    append_child(document, body)
+    append_child(body, aside)
+    append_child(
+        aside,
+        Text(id=NodeId("t"), data="a floated callout with enough words to wrap"),
+    )
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=800)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    # A text box borrows its parent's style, so its `float` reads as the
+    # float's own. That once pushed the contents onto the unwrapped
+    # fallback path and they ran straight out of the box.
+    assert len({p.y for p in texts}) > 1
+    assert all(p.x < 120 for p in texts)
