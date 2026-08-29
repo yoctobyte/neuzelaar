@@ -46,7 +46,7 @@ Expected:
 | Guardrails | Done | pytest invokes `tools/check_guardrails.sh`. |
 | M1 docs verification | Done | See `workdone-gemini-flash.md`. |
 | M2 minimal document browser | Done | Session/history/link listing/console commands/cookies/events implemented. |
-| M3 rendering foundation | In progress | Display list, software rasterizer, and a basic Tk viewer with split debug/browser panes, address bar, tabs stub, back/forward/reload are implemented; GUI smoke pending. |
+| M3 rendering foundation | Done | Display list, software rasterizer, and a Tk viewer with split debug/browser panes, address bar, tabs stub, back/forward/reload. GUI smoke automated in `tools/gui_smoke.py`, 13/13 green. |
 | M4a forms | Done | Form extraction, GET/POST submission, and fixture-server flow implemented. |
 | MVP code path | Done | Headless/console/Tk frame path, forms, cookies, policy, basic CSS, and tests implemented. |
 | P8 browser state hardening | Done | Persistent cookies, multi-tab model, and per-tab history isolation implemented. |
@@ -64,25 +64,22 @@ boundary in `docs/deferred_details.md`.
 
 Owner: Gemini Flash
 
-Status: Open
+Status: Done
 
 Files:
 
+- `tools/gui_smoke.py`
+- `docs/gui_smoke.md`
 - `neuzelaar/shells/tk/shell.py`
-- `docs/mvp_status.md`
-- `docs/projects.md`
-- `workdone-gemini-flash.md`
 
-Tasks:
+Result:
 
-- run the Tk shell on a machine with a working display
-- verify page visibility, scrolling, and no obvious overlap on simple fixtures
-- record exact results
-
-Acceptance:
-
-- a real display smoke report exists
-- MVP docs can say visual shell behavior was manually checked
+- `tools/gui_smoke.py` drives the Tk shell across 13 fixtures on Xvfb
+  and checks the window opens, paints, scrolls, and raises nothing.
+- 13/13 passed on 2026-08-29; see `docs/gui_smoke.md` for the run and
+  the three rendering bugs the screenshots exposed.
+- Remaining gaps (no golden images, clicks not scriptable) are recorded
+  in that doc rather than left implicit.
 
 ### P1: MVP Release Note
 
@@ -196,7 +193,7 @@ Acceptance:
 
 - P1 Headless Core: done
 - P2 Minimal Browser State: done
-- P3 Visual Foundation: MVP baseline done, GUI smoke pending
+- P3 Visual Foundation: done, GUI smoke automated (`tools/gui_smoke.py`)
 - P4 Traditional Web Workflows: MVP baseline done
 - P5 Tiny Styling Layer: MVP baseline done
 - P6 Active Content Boundary: MVP baseline done
@@ -258,7 +255,7 @@ MVP code path is complete enough for internal testing:
 - [x] console shell
 - [x] Tk visual frame path
 - [x] software rasterization
-- [ ] manual GUI smoke verification on a machine with a display
+- [x] GUI smoke verification (`tools/gui_smoke.py`, on Xvfb)
 
 ## Scripting Note
 

@@ -36,6 +36,18 @@ Run tests using the virtual environment's pytest:
 tools/check_guardrails.sh
 ```
 
+The Tk shell is not reachable from pytest. To check that a real window
+opens, paints, and scrolls, run the GUI smoke suite — it uses a virtual
+display, so no monitor is needed:
+
+```sh
+sudo apt-get install -y python3-tk xvfb xdotool
+.venv/bin/python tools/gui_smoke.py
+```
+
+Screenshots land in `artifacts/gui_smoke/`. See
+[docs/gui_smoke.md](docs/gui_smoke.md).
+
 Optional JavaScript backend packages:
 
 ```sh

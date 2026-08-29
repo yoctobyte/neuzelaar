@@ -74,10 +74,6 @@ flexible.
 - **Pseudo-classes / pseudo-elements** (`:hover`, `:focus`,
   `::before`, `::after`). Later; needs event loop integration for
   state-based ones.
-- **Advanced selectors**: child combinator `>`, adjacent-sibling
-  `+`, general-sibling `~`, attribute selectors (`[type="text"]`),
-  `:nth-child(n)`. Current selector support is tag / class / id +
-  descendant. Small follow-up slice.
 - **Units**: `calc()`, viewport units (`vh` / `vw` / `vmin` /
   `vmax`), `min()` / `max()` / `clamp()` functions, `ch` / `ex`.
 - **RTL / writing modes** (`direction: rtl`, `writing-mode: vertical-*`).
@@ -146,8 +142,10 @@ flexible.
 ## Post-sweep backlog (ordered roughly by expected value)
 
 1. Iframes (nested browsing contexts + `sandbox`)
-2. Selector upgrades (combinators, attribute selectors, `:nth-*`)
-3. Tables (real table algorithm)
+2. Tables (real table algorithm)
+3. UA stylesheet margins (`body`, `p`, headings, lists, `blockquote`)
+   — content currently sits flush against the viewport edge with no
+   vertical rhythm, the largest remaining fidelity gap on plain HTML
 4. Flex
 5. Grid
 6. Pseudo-classes / pseudo-elements
@@ -155,3 +153,7 @@ flexible.
 8. Transforms / animations
 9. Custom properties
 10. RTL / writing-modes
+
+Selector upgrades are **done**: child (`>`), adjacent-sibling (`+`),
+general-sibling (`~`), attribute selectors, `:first-child`,
+`:last-child`, `:nth-child(n)` and `:not()` all match today.
