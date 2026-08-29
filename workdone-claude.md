@@ -2,9 +2,10 @@
 
 ## Summary
 
-Landed the in-flight interactive-shell slice, then closed P0 by
-automating GUI smoke verification — and used it to find and fix four
-rendering bugs that unit tests could not see.
+Landed the in-flight interactive-shell slice, closed P0 by automating
+GUI smoke verification — and used it to find and fix six rendering bugs
+that unit tests could not see — then took the top post-sweep backlog
+item, iframes.
 
 The through-line: the Tk shell was the one subsystem no test reached, so
 defects that only show up as pixels had been accumulating. Three of the
@@ -31,6 +32,14 @@ about the code.
    contents did not wrap and painted over the text beside them.
 7. `05abb1c` — **tools: automate GUI smoke verification.**
 8. `da9dd7a` — **styles: resolve em/rem lengths, UA block margins.**
+9. `7fec761` — **core+layout: render iframes as nested browsing
+   contexts.** Backlog item #1. `FrameBudget` caps depth and count;
+   `content.iframes.enabled` is the first content toggle with an engine
+   behind it.
+10. `f568ffc` — **document/bfc: collapse a first child's top margin
+    through its parent.** Every page's first heading sat flush against
+    the top of the content area — the UA margins in (8) were only half
+    delivered without this.
 
 ## Files Changed
 
@@ -39,7 +48,11 @@ about the code.
 - `neuzelaar/document/styles.py` — `a[href]` UA rule, `em`/`rem`
   resolution, CSS 2.1 appendix D block margins
 - `neuzelaar/render/{software,display_list,display_builder}.py` —
-  removed per-op text alignment
+  removed per-op text alignment; placeholder label prefix moved to
+  layout
+- `neuzelaar/core/page.py` — `FrameBudget`, `FrameAsset`, nested frame
+  loading; `_prepare` is nesting-aware
+- `neuzelaar/shells/tk/shell.py` — iframe toggle wired to the loader
 - `tools/gui_smoke.py`, `docs/gui_smoke.md` — new
 - `TODO.md`, `docs/layout_plan.md`, `README.md` — status and stale
   claims
@@ -48,9 +61,9 @@ about the code.
 
 ## Tests Run
 
-- `.venv/bin/pytest -q`: 597 passed, 9 skipped
+- `.venv/bin/pytest -q`: 609 passed, 9 skipped
 - `tools/check_guardrails.sh`: pass
-- `.venv/bin/python tools/gui_smoke.py`: 13/13 scenarios pass
+- `.venv/bin/python tools/gui_smoke.py`: 14/14 scenarios pass
 
 Note for whoever sets up next: this box had no `.venv` and no
 `python3-tk`. `tools/setup.sh` builds the venv; the Tk shell and its
@@ -82,6 +95,17 @@ and (optionally) `xdotool` for `gui_smoke.py`.
 - **Computed values should be absolute lengths.** Layout can resolve a
   percentage because it knows the containing block; it has no font
   context. So `em`/`rem` resolve in the cascade, not in `bfc`.
+- **An iframe splits cleanly across the two layers.** `bfc` emits a
+  `FramePlacement` and stops at the frame's edge; `document.layout`
+  owns the recursion, because that is where `layout_document` lives.
+  No display-list changes were needed — clip push/pop already existed.
+- **Frame content loses its node ids on the way out.** They address the
+  nested document and the display builder resolves ids against the
+  top-level one, so letting them through would make a click inside a
+  frame navigate the parent page.
+- **Frame caps are security, not tuning.** `self_framing.html` in the
+  fixtures is a page that iframes itself; the depth cap is what stops
+  it. Do not raise these without thinking about it.
 
 ## Risks / Follow-Ups
 
@@ -100,6 +124,17 @@ and (optionally) `xdotool` for `gui_smoke.py`.
 - **`rem` uses the root element's computed font size**, which is the
   first element walked. That is right for normal documents; it would be
   wrong if a document ever had no root element style.
+- **Bottom margins still do not collapse through a parent.** Top
+  margins now do. The asymmetry only affects total document height, not
+  where anything is painted, but it should be closed.
+- **Replaced boxes do not paint borders.** `iframe { border: 1px solid }`
+  in the fixture has no effect, and the same is true for `img`. Worth a
+  small slice of its own.
+- **Interaction inside a frame does nothing.** Links and forms in a
+  nested context are inert by design until the frame gets its own hit
+  testing. `sandbox` is likewise unimplemented — when it lands it maps
+  onto the existing capability model rather than inventing a parallel
+  one.
 - **Lists skip the spec's 40px `padding-left`** because our marker
   gutter already indents them. If the marker gutter is ever replaced
   with real markers in padding, add the padding back in the same commit
