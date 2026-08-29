@@ -19,6 +19,10 @@ waits for the window to map, screenshots it, and checks:
 Screenshots land in the output directory so a human can eyeball them;
 the exit status is what CI would read.
 
+Each scenario runs against a throwaway `XDG_CONFIG_HOME` under the
+output directory, so the run reflects shipped defaults and leaves the
+real user config alone.
+
 Requires: Xvfb, Pillow. `xdotool` is optional and only used for the
 scroll check, which is skipped without it.
 
@@ -170,7 +174,12 @@ def run_scenario(
 ) -> Result:
     result = Result(name=name, fixture=fixture)
     log_path = out_dir / f"{name}.log"
-    env = dict(os.environ, DISPLAY=display)
+    # Point the viewer at a throwaway config root. A smoke run must not
+    # depend on — or write to — whatever the person at this machine has
+    # toggled in their own settings.
+    config_home = out_dir / "config"
+    config_home.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, DISPLAY=display, XDG_CONFIG_HOME=str(config_home))
     with log_path.open("w", encoding="utf-8") as log_file:
         process = subprocess.Popen(
             [sys.executable, "-m", "neuzelaar.viewer", fixture],

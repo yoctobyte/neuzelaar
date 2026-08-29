@@ -293,6 +293,32 @@ def _parse_z_index(value: str) -> int:
 
 
 
+def _collapsed_top_margin(box: Box) -> int:
+    """The top margin that actually applies to `box`.
+
+    CSS 2.1 8.3.1: a box's top margin collapses with its first in-flow
+    block child's when nothing separates them — no top border, no top
+    padding — and the collapsed margin applies *outside* the parent.
+    The recursion is what makes `body > h1` push the page down by the
+    heading's margin rather than the body's.
+
+    Anything that separates the two edges stops the collapse: a border,
+    padding, or inline content starting the block.
+    """
+    margin = _resolve_margin(box.style).top
+    if box.kind not in (BoxKind.BLOCK, BoxKind.ANONYMOUS_BLOCK):
+        return margin
+    if _resolve_padding(box.style).top or _resolve_border(box.style).top:
+        return margin
+    for child in box.children:
+        if child.style.float != "none" or child.style.position in ("absolute", "fixed"):
+            continue  # out of flow: does not collapse with its parent
+        if not child.is_block_level:
+            break  # an inline formatting context starts here
+        return max(margin, _collapsed_top_margin(child))
+    return margin
+
+
 def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_width: int) -> int:
     """Resolve geometry and emit placements for a block-level box.
     Returns the bottom margin edge y-coordinate."""
@@ -322,9 +348,11 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
     content_width = _resolve_width(style, containing_width, margin, padding, border)
     box.geometry.content_width = content_width
 
-    # Top-left of the border box.
+    # Top-left of the border box. The top margin is the collapsed one:
+    # a first child's margin escapes through its parent when no border
+    # or padding separates them.
     box.geometry.x = x + margin.left
-    box.geometry.y = y + margin.top
+    box.geometry.y = y + _collapsed_top_margin(box)
 
     # If overflow is non-visible, wrap the box's children in a clip
     # region. The clip rect's height isn't known yet — use a sentinel
@@ -430,9 +458,13 @@ def _place_block(box: Box, state: LayoutState, *, x: int, y: int, containing_wid
                 continue
 
             if child.is_block_level:
-                child_margin_top = _resolve_margin(child.style).top
+                child_margin_top = _collapsed_top_margin(child)
                 collapse = max(previous_margin_bottom, child_margin_top)
-                if cursor_y == child_y:
+                if cursor_y == child_y and not (padding.top or border.top):
+                    # First in-flow child with nothing between the two
+                    # top edges: its margin already escaped through us
+                    # via _collapsed_top_margin, so it must not also
+                    # open a gap inside.
                     collapse = 0
                 cursor_y = cursor_y - previous_margin_bottom + collapse - child_margin_top
                 # Narrow the in-flow block around active floats at this y.

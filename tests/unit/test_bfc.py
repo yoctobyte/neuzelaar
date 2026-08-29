@@ -269,3 +269,48 @@ def test_bfc_places_image_at_current_cursor() -> None:
     # The label is the box's own description, ready to draw as a
     # placeholder — layout knows the box kind, the renderer does not.
     assert image.label == "image: logo"
+
+
+def _first_child_margin_layout(parent_style: str, child_style: str) -> TextPlacement:
+    document = Document(id=NodeId("doc"))
+    parent = Element(id=NodeId("parent"), tag="div", attrs={"style": parent_style})
+    child = Element(id=NodeId("child"), tag="div", attrs={"style": child_style})
+    append_child(document, parent)
+    append_child(parent, child)
+    append_child(child, Text(id=NodeId("t"), data="hi"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=400)
+    return next(p for p in placements if isinstance(p, TextPlacement))
+
+
+def test_first_child_top_margin_collapses_through_its_parent() -> None:
+    # CSS 2.1 8.3.1: with nothing between the two top edges, the
+    # margins collapse and the result applies outside the parent. The
+    # page moves down by 40, not by 0 and not by 40 twice.
+    text = _first_child_margin_layout("margin: 0", "margin: 40px 0")
+
+    assert text.y == 40
+
+
+def test_collapsed_top_margin_is_the_larger_of_parent_and_child() -> None:
+    text = _first_child_margin_layout("margin: 30px 0 0 0", "margin: 10px 0")
+
+    assert text.y == 30
+
+
+def test_padding_stops_the_parent_first_child_margin_collapse() -> None:
+    # A top padding separates the edges, so the child's margin applies
+    # inside the parent and both distances count.
+    text = _first_child_margin_layout("margin: 0; padding: 10px 0 0 0", "margin: 40px 0")
+
+    assert text.y == 50
+
+
+def test_border_stops_the_parent_first_child_margin_collapse() -> None:
+    text = _first_child_margin_layout(
+        "margin: 0; border-top: 2px solid #000", "margin: 40px 0"
+    )
+
+    assert text.y == 42
