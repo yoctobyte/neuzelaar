@@ -38,8 +38,6 @@ class DrawText:
     font_weight: str = "normal"
     font_style: str = "normal"
     text_decoration: str = "none"
-    max_width: int = 0
-    align: str = "left"
 
 
 @dataclass(frozen=True, slots=True)

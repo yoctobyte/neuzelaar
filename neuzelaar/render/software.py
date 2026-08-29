@@ -116,9 +116,9 @@ def rasterize(display_list: DisplayList, *, viewport: Rect | None = None) -> Fra
             )
         elif isinstance(op, DrawText):
             font = _load_font(op.font_size, op.font_weight, op.font_style)
-            x = _aligned_text_x(op, font)
-            est_w = max(op.max_width or len(op.text) * op.font_size, op.font_size)
-            if fully_outside(x, op.y, est_w, op.font_size + 4):
+            x = op.x
+            width = max(int(round(font.getlength(op.text))), 1)
+            if fully_outside(x, op.y, width, op.font_size + 4):
                 continue
             draw.text(
                 (x + offset_x, op.y + offset_y),
@@ -168,17 +168,6 @@ def _rect_tuple_translated(rect, dx: int, dy: int) -> tuple[int, int, int, int]:
 
 def _color_tuple(color: Color) -> tuple[int, int, int, int]:
     return (color.r, color.g, color.b, color.a)
-
-
-def _aligned_text_x(op: DrawText, font) -> int:
-    if op.align == "left" or op.max_width <= 0:
-        return op.x
-    text_width = int(font.getlength(op.text))
-    if op.align == "center":
-        return op.x + max((op.max_width - text_width) // 2, 0)
-    if op.align == "right":
-        return op.x + max(op.max_width - text_width, 0)
-    return op.x
 
 
 def _draw_text_decoration(draw, op: DrawText, x: int, font, dy: int = 0) -> None:
