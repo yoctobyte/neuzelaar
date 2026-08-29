@@ -8,9 +8,10 @@ that unit tests could not see — then took the top post-sweep backlog
 item, iframes.
 
 The through-line: the Tk shell was the one subsystem no test reached, so
-defects that only show up as pixels had been accumulating. Three of the
-four bugs below were found by looking at screenshots, not by reasoning
-about the code.
+defects that only show up as pixels had been accumulating. Four of the
+six rendering bugs below were found by looking at screenshots, not by
+reasoning about the code — and the sixth, the missing margin collapse,
+was found while reading iframe layout output for something else.
 
 ## Commits
 
@@ -57,7 +58,9 @@ about the code.
 - `TODO.md`, `docs/layout_plan.md`, `README.md` — status and stale
   claims
 - tests: `test_ifc`, `test_floats`, `test_styles`, `test_positioning`,
-  `test_polish`, `test_js_test262`
+  `test_polish`, `test_bfc`, `test_js_test262`, and a new `test_iframes`
+- fixtures: `iframe_page`, `iframe_child`, `iframe_default_size`,
+  `self_framing`, `third_party_iframe`
 
 ## Tests Run
 
