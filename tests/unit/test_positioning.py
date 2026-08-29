@@ -4,42 +4,38 @@ from neuzelaar.document.dom import Document, Element, NodeId, Text, append_child
 from neuzelaar.document.styles import compute_styles
 
 
-def test_position_relative_shifts_box_and_descendants_visually() -> None:
+def _three_paragraph_layout(middle_style: str) -> dict[str, TextPlacement]:
     document = Document(id=NodeId("doc"))
     body = Element(id=NodeId("body"), tag="body")
     static_p = Element(id=NodeId("a"), tag="p")
-    rel_p = Element(
-        id=NodeId("b"),
-        tag="p",
-        attrs={"style": "position: relative; top: 25px; left: 40px"},
-    )
+    middle_p = Element(id=NodeId("b"), tag="p", attrs={"style": middle_style})
     after_p = Element(id=NodeId("c"), tag="p")
     append_child(document, body)
     append_child(body, static_p)
     append_child(static_p, Text(id=NodeId("ta"), data="static"))
-    append_child(body, rel_p)
-    append_child(rel_p, Text(id=NodeId("tb"), data="moved"))
+    append_child(body, middle_p)
+    append_child(middle_p, Text(id=NodeId("tb"), data="moved"))
     append_child(body, after_p)
     append_child(after_p, Text(id=NodeId("tc"), data="after"))
     styles = compute_styles(document)
 
     root = build_box_tree(document, styles)
     _, placements = layout_block(root, viewport_width=400)
+    return {
+        p.text: p for p in placements if isinstance(p, TextPlacement)
+    }
 
-    static = next(p for p in placements if isinstance(p, TextPlacement) and p.text == "static")
-    moved = next(p for p in placements if isinstance(p, TextPlacement) and p.text == "moved")
-    after = next(p for p in placements if isinstance(p, TextPlacement) and p.text == "after")
 
-    # The relative paragraph's text shifts by 40px right and 25px down
-    # relative to where it would have been in normal flow.
-    expected_normal_y = static.y + (after.y - static.y - 25)  # ~ middle of static and after
-    assert moved.x >= 40
-    assert moved.y > static.y + 24
-    # `after` is unaffected by the relative box: it sits in the
-    # original normal-flow position right below `moved`'s reserved
-    # space (which is ~ one line height below static).
-    assert after.y > static.y
-    assert after.y < moved.y  # after is at moved's static-position, which is < moved's shifted y
+def test_position_relative_shifts_box_and_descendants_visually() -> None:
+    flow = _three_paragraph_layout("")
+    shifted = _three_paragraph_layout("position: relative; top: 25px; left: 40px")
+
+    # The relative paragraph's text moves by exactly the declared offset.
+    assert shifted["moved"].x == flow["moved"].x + 40
+    assert shifted["moved"].y == flow["moved"].y + 25
+    # Its siblings do not move: a relative box keeps its space in flow.
+    assert shifted["static"] == flow["static"]
+    assert shifted["after"] == flow["after"]
 
 
 def test_position_absolute_uses_relative_ancestor_as_containing_block() -> None:

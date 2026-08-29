@@ -91,5 +91,7 @@ def test_absolute_right_offset_pins_box_to_right_edge_of_cb() -> None:
     _, placements = layout_block(root, viewport_width=600)
 
     pinned_text = next(p for p in placements if isinstance(p, TextPlacement) and p.text == "pinned")
-    # CB width 300, box width 50, right 20 -> x = 0 (CB left) + 300 - 20 - 50 = 230.
-    assert pinned_text.x == 230
+    # The UA sheet gives body an 8px margin, so the containing block's
+    # left edge is at 8. CB width 300, box width 50, right 20 ->
+    # x = 8 + 300 - 20 - 50 = 238.
+    assert pinned_text.x == 238

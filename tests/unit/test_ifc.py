@@ -106,8 +106,10 @@ def test_ifc_aligns_smaller_font_to_bottom_of_taller_line() -> None:
 
 def test_ifc_empty_block_has_zero_height_contribution() -> None:
     document = Document(id=NodeId("doc"))
-    body = Element(id=NodeId("body"), tag="body")
-    empty = Element(id=NodeId("e"), tag="p")
+    body = Element(id=NodeId("body"), tag="body", attrs={"style": "margin: 0"})
+    # Margins zeroed so this measures the empty block's own
+    # contribution, not the UA sheet's body and paragraph spacing.
+    empty = Element(id=NodeId("e"), tag="p", attrs={"style": "margin: 0"})
     append_child(document, body)
     append_child(body, empty)
     styles = compute_styles(document)

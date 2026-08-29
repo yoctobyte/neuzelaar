@@ -633,3 +633,43 @@ def test_compute_styles_keeps_text_decoration() -> None:
     styles = compute_styles(document, parse_stylesheet("a { text-decoration: underline }"))
 
     assert styles[NodeId("link")].text_decoration == "underline"
+
+
+def test_em_and_rem_lengths_resolve_to_pixels() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    box = Element(
+        id=NodeId("box"),
+        tag="div",
+        attrs={"style": "font-size: 20px; margin: 1em 2px 0.5rem; width: 3em"},
+    )
+    append_child(document, body)
+    append_child(body, box)
+
+    styles = compute_styles(document)
+
+    # em resolves against the element's own font size, rem against the
+    # root's 16px. Layout has no font context, so a font-relative
+    # length that survives the cascade silently becomes zero.
+    assert styles[NodeId("box")].margin == "20px 2px 8px"
+    assert styles[NodeId("box")].width == "60px"
+
+
+def test_ua_stylesheet_gives_blocks_their_default_margins() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    heading = Element(id=NodeId("h"), tag="h1")
+    paragraph = Element(id=NodeId("p"), tag="p")
+    quote = Element(id=NodeId("q"), tag="blockquote")
+    append_child(document, body)
+    append_child(body, heading)
+    append_child(body, paragraph)
+    append_child(body, quote)
+
+    styles = compute_styles(document)
+
+    assert styles[NodeId("body")].margin == "8px"
+    # h1 is 2em == 32px, so its 0.67em margin is ~21px.
+    assert styles[NodeId("h")].margin == "21.44px 0"
+    assert styles[NodeId("p")].margin == "16px 0"
+    assert styles[NodeId("q")].margin == "16px 40px"

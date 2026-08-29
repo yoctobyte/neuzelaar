@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -127,12 +128,22 @@ DEFAULT_DISPLAY = "block"
 # author rules with equal specificity win via the stable document-order
 # tiebreak.
 UA_STYLESHEET: tuple[StyleRule, ...] = (
-    StyleRule("h1", {"font-size": "2em", "font-weight": "bold"}),
-    StyleRule("h2", {"font-size": "1.5em", "font-weight": "bold"}),
-    StyleRule("h3", {"font-size": "1.17em", "font-weight": "bold"}),
-    StyleRule("h4", {"font-size": "1em", "font-weight": "bold"}),
-    StyleRule("h5", {"font-size": "0.83em", "font-weight": "bold"}),
-    StyleRule("h6", {"font-size": "0.67em", "font-weight": "bold"}),
+    # Block margins from the HTML rendering suggestions in CSS 2.1
+    # appendix D. Without them every page renders as one flush wall of
+    # text against the viewport edge.
+    StyleRule("body", {"margin": "8px"}),
+    StyleRule("h1", {"font-size": "2em", "font-weight": "bold", "margin": "0.67em 0"}),
+    StyleRule("h2", {"font-size": "1.5em", "font-weight": "bold", "margin": "0.83em 0"}),
+    StyleRule("h3", {"font-size": "1.17em", "font-weight": "bold", "margin": "1em 0"}),
+    StyleRule("h4", {"font-size": "1em", "font-weight": "bold", "margin": "1.33em 0"}),
+    StyleRule("h5", {"font-size": "0.83em", "font-weight": "bold", "margin": "1.67em 0"}),
+    StyleRule("h6", {"font-size": "0.67em", "font-weight": "bold", "margin": "2.33em 0"}),
+    StyleRule("p, ul, ol, dl, pre, blockquote, figure", {"margin": "1em 0"}),
+    # blockquote and figure also take 40px side margins in that sheet;
+    # lists take 40px of padding-left, which is where a real UA puts
+    # the marker. Ours draws markers in a gutter of its own (see
+    # marker_gutter in bfc), so that padding would indent them twice.
+    StyleRule("blockquote, figure", {"margin": "1em 40px"}),
     StyleRule("b, strong", {"font-weight": "bold"}),
     # Inline flow defaults: these elements participate in the parent's
     # inline formatting context rather than starting a new block line.
@@ -147,6 +158,40 @@ UA_STYLESHEET: tuple[StyleRule, ...] = (
     # and deliberately so — exposing it is a well-known history leak.
     StyleRule("a[href]", {"color": "#0000ee", "text-decoration": "underline"}),
 )
+
+
+# A number immediately followed by `em` or `rem`, anywhere in a value —
+# including inside a shorthand like `margin: 1em 0` or `border: .5em
+# solid red`.
+_FONT_RELATIVE_LENGTH = re.compile(r"(-?\d*\.?\d+)(rem|em)\b", re.IGNORECASE)
+
+
+def _absolutize_font_relative_lengths(
+    declarations: dict[str, str],
+    *,
+    font_px: int,
+    root_px: int,
+) -> dict[str, str]:
+    """Rewrite `em` / `rem` lengths in a declaration block to pixels.
+
+    Computed values should be absolute lengths. Layout can resolve a
+    percentage — it knows the containing block — but it has no font
+    context, so a font-relative length that reaches it silently becomes
+    zero. `font-size` is skipped: the caller has already resolved it,
+    and its `em` is relative to the *parent*, not to itself.
+    """
+
+    def to_px(match: re.Match[str]) -> str:
+        base = root_px if match.group(2).lower() == "rem" else font_px
+        return f"{float(match.group(1)) * base:g}px"
+
+    converted: dict[str, str] = {}
+    for name, value in declarations.items():
+        if name == "font-size" or "em" not in value.lower():
+            converted[name] = value
+            continue
+        converted[name] = _FONT_RELATIVE_LENGTH.sub(to_px, value)
+    return converted
 
 
 def compute_styles(document: Document, rules: tuple[StyleRule, ...] = ()) -> dict[NodeId, ComputedStyle]:
@@ -175,6 +220,9 @@ def compute_styles(document: Document, rules: tuple[StyleRule, ...] = ()) -> dic
         declarations["font-size"] = f"{resolved_px}px"
         if root_px is None:
             root_px = resolved_px
+        declarations = _absolutize_font_relative_lengths(
+            declarations, font_px=resolved_px, root_px=root_px
+        )
         styles[node.id] = _style_from_declarations(declarations, parent_style)
     return styles
 
