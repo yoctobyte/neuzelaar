@@ -31,7 +31,7 @@ commits per docs/layout_plan.md.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from neuzelaar.adapters.font_metrics import measure_text
 from neuzelaar.core.page import ImageAsset
@@ -810,7 +810,7 @@ class _InlineFragment:
     can still apply per-inline color / weight / size.
     """
 
-    kind: str  # "text", "image", or "break"
+    kind: str  # "text", "image", "control", "space", or "break"
     text: str = ""
     style: ComputedStyle | None = None
     width: int = 0
@@ -879,17 +879,24 @@ def _text_fragments(
             node_id=node_id,
         )
     words = text.split()
+    if not words:
+        # A whitespace-only run between inline siblings. It carries no
+        # word of its own but still separates the fragments around it.
+        return [_InlineFragment(kind="space", style=style, node_id=node_id)]
     fragments: list[_InlineFragment] = []
+    starts_with_space = text[:1].isspace()
     for index, word in enumerate(words):
         fragments.append(
             _InlineFragment(
                 kind="text",
                 text=word,
                 style=style,
-                leading_space=index > 0,
+                leading_space=index > 0 or starts_with_space,
                 node_id=node_id,
             )
         )
+    if text[-1:].isspace():
+        fragments.append(_InlineFragment(kind="space", style=style, node_id=node_id))
     return fragments
 
 
@@ -935,6 +942,35 @@ def _preserved_line_fragments(
     return fragments
 
 
+def _collapse_inline_spaces(fragments: list[_InlineFragment]) -> list[_InlineFragment]:
+    """Fold whitespace-only fragments into a leading space on whatever
+    follows them.
+
+    Whitespace collapsing is a property of the inline formatting
+    context, not of a single text node: the space between `</a>` and
+    `<a>` lives in a text node of its own, and the space at the end of
+    one node merges with the space at the start of the next. Folding
+    happens after the whole context is flattened so nesting depth does
+    not matter. Whitespace at either end of the context is dropped.
+    """
+    collapsed: list[_InlineFragment] = []
+    pending_space = False
+    for fragment in fragments:
+        if fragment.kind == "space":
+            pending_space = True
+            continue
+        if fragment.kind == "break":
+            pending_space = False
+            collapsed.append(fragment)
+            continue
+        if pending_space:
+            pending_space = False
+            if collapsed and not fragment.leading_space:
+                fragment = replace(fragment, leading_space=True)
+        collapsed.append(fragment)
+    return collapsed
+
+
 def _layout_inline_context(
     children: list[Box],
     state: LayoutState,
@@ -949,7 +985,9 @@ def _layout_inline_context(
     Inline Formatting Context. Greedy word-wrap at content_width.
     Returns the y coordinate at the bottom of the last line box.
     """
-    fragments = _flatten_inline(list(children), parent_style, state, interactive_node_id)
+    fragments = _collapse_inline_spaces(
+        _flatten_inline(list(children), parent_style, state, interactive_node_id)
+    )
     if not fragments:
         return y0
 
@@ -1077,9 +1115,16 @@ def _layout_inline_context(
                 line_max_height,
                 _line_height_px(fragment.style or parent_style, fallback_font_size=fs),
             )
-        else:  # image
-            if cursor_x + fragment.width > line_x_start + line_max_width and line_items:
+        else:  # atomic inline: image or form control
+            space_width = (
+                measure_text_width(" ", fragment.style or parent_style)
+                if line_items and fragment.leading_space
+                else 0
+            )
+            if cursor_x + space_width + fragment.width > line_x_start + line_max_width and line_items:
                 flush_line()
+                space_width = 0
+            cursor_x += space_width
             line_items.append((cursor_x, fragment))
             cursor_x += fragment.width
             line_max_height = max(line_max_height, fragment.height)
@@ -1149,8 +1194,8 @@ def _place_inline_or_text(
         state.budget_exceeded = True
         return y
     if box.kind == BoxKind.TEXT:
-        text = _apply_text_transform(box.text or "", style.text_transform)
-        if not text.strip():
+        text = _apply_text_transform(box.text or "", style.text_transform).strip()
+        if not text:
             return y
         font_size = _font_size_px(style)
         state.items.append(

@@ -8,8 +8,10 @@ time; filled in by layout algorithms), and its children.
 
 Key rules implemented here:
 
-- Text nodes become TEXT boxes; runs of pure whitespace between
-  block-level siblings are dropped (simple whitespace handling).
+- Text nodes become TEXT boxes. Collapsible whitespace collapses to a
+  single space that is kept, so `</a> <a>` still separates the two
+  links; runs of pure whitespace between block-level siblings are
+  dropped when anonymous blocks are formed.
 - `<img>` becomes a REPLACED box, inline-replaced by default.
 - Elements with `display: none` and their subtrees are excluded.
 - When a block container has a mix of block-level and inline-level
@@ -24,6 +26,7 @@ substrate they all attach to.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -35,6 +38,10 @@ from neuzelaar.document.styles import ComputedStyle
 SKIPPED_TAGS: frozenset[str] = frozenset(
     {"head", "title", "script", "style", "meta", "link", "base"}
 )
+
+
+# Whitespace that collapses under the default `white-space: normal`.
+_COLLAPSIBLE_WHITESPACE = re.compile(r"[ \t\r\n\f]+")
 
 
 # Display values that behave as block-level boxes in normal flow.
@@ -156,10 +163,12 @@ def _build_from_node(
         if parent_style.white_space in {"pre", "pre-wrap", "pre-line"}:
             normalized = text.replace("\r\n", "\n").replace("\r", "\n")
             return Box(kind=BoxKind.TEXT, style=parent_style, text=normalized)
-        stripped = text.strip()
-        if not stripped:
-            return None
-        normalised = " ".join(text.split())
+        # CSS 2.1 16.6: a run of collapsible whitespace collapses to a
+        # single space. Keep that space instead of stripping it — it is
+        # what separates adjacent inline boxes. Whitespace-only runs
+        # between block-level siblings are discarded by
+        # `_wrap_anonymous_blocks`, which is where that rule belongs.
+        normalised = _COLLAPSIBLE_WHITESPACE.sub(" ", text)
         return Box(kind=BoxKind.TEXT, style=parent_style, text=normalised)
 
     if not isinstance(node, Element):

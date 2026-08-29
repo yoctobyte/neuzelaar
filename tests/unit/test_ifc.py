@@ -264,3 +264,65 @@ def test_ifc_text_align_right_offsets_whole_line() -> None:
     texts = [p for p in placements if isinstance(p, TextPlacement)]
     assert texts
     assert min(p.x for p in texts) > 0
+
+
+def test_ifc_keeps_the_space_between_adjacent_inline_elements() -> None:
+    document = Document(id=NodeId("doc"))
+    p = Element(id=NodeId("p"), tag="p")
+    first = Element(id=NodeId("a1"), tag="a")
+    second = Element(id=NodeId("a2"), tag="a")
+    append_child(document, p)
+    append_child(p, first)
+    append_child(first, Text(id=NodeId("t1"), data="one"))
+    append_child(p, Text(id=NodeId("ws"), data="\n    "))
+    append_child(p, second)
+    append_child(second, Text(id=NodeId("t2"), data="two"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=1000)
+
+    texts = sorted(
+        (p for p in placements if isinstance(p, TextPlacement)),
+        key=lambda p: p.x,
+    )
+    assert [p.text for p in texts] == ["one", "two"]
+    assert texts[0].y == texts[1].y
+    gap = texts[1].x - texts[0].x
+    assert gap == measure_text_width("one ", styles[NodeId("a1")])
+
+
+def test_ifc_drops_whitespace_at_the_edges_of_a_line() -> None:
+    document = Document(id=NodeId("doc"))
+    p = Element(id=NodeId("p"), tag="p")
+    append_child(document, p)
+    append_child(p, Text(id=NodeId("t"), data="\n   word\n   "))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=1000)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    assert [p.text for p in texts] == ["word"]
+    assert texts[0].x == 0
+
+
+def test_whitespace_between_block_siblings_produces_no_placement() -> None:
+    document = Document(id=NodeId("doc"))
+    body = Element(id=NodeId("body"), tag="body")
+    first = Element(id=NodeId("d1"), tag="div")
+    second = Element(id=NodeId("d2"), tag="div")
+    append_child(document, body)
+    append_child(body, first)
+    append_child(first, Text(id=NodeId("t1"), data="one"))
+    append_child(body, Text(id=NodeId("ws"), data="\n  "))
+    append_child(body, second)
+    append_child(second, Text(id=NodeId("t2"), data="two"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=1000)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    assert [p.text for p in texts] == ["one", "two"]
+    assert texts[0].y < texts[1].y
