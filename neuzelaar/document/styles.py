@@ -142,6 +142,10 @@ UA_STYLESHEET: tuple[StyleRule, ...] = (
         {"display": "inline"},
     ),
     StyleRule("i, em, cite, dfn, var", {"font-style": "italic"}),
+    # Only anchors with an href are links; a bare `<a name=...>` is not
+    # and should not be painted as one. There is no visited-link state,
+    # and deliberately so — exposing it is a well-known history leak.
+    StyleRule("a[href]", {"color": "#0000ee", "text-decoration": "underline"}),
 )
 
 

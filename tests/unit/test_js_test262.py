@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from neuzelaar.engines.js.interface import JavaScriptEngine, ScriptExecutionRequest, ScriptExecutionResult, ScriptExecutionStatus
 from neuzelaar.engines.js.test262 import build_program, load_case, run_case, run_cases
 
@@ -18,8 +20,20 @@ class SyntaxErrorEngine(JavaScriptEngine):
         return ScriptExecutionResult(status=ScriptExecutionStatus.ERROR, reason="SyntaxError: bad input")
 
 
+TEST262_ROOT = Path(".cache/test262")
+
+# The tc39/test262 corpus is a large external checkout that the repo
+# deliberately does not vendor (see docs/js_test_strategy.md). Without
+# it these tests have nothing to read, so skip rather than fail — a
+# fresh clone should still go green.
+pytestmark = pytest.mark.skipif(
+    not TEST262_ROOT.is_dir(),
+    reason="test262 corpus not checked out at .cache/test262",
+)
+
+
 def case_path(relative: str) -> Path:
-    return Path(".cache/test262") / relative
+    return TEST262_ROOT / relative
 
 
 def test_load_case_parses_flags_and_negative_expectation() -> None:
