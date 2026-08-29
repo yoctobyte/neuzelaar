@@ -39,6 +39,7 @@ def build_display_list(
     root_style: ComputedStyle | None = None,
     styles: dict | None = None,
     images: dict | None = None,
+    frames: dict | None = None,
 ) -> DisplayList:
     if zoom <= 0:
         zoom = 1.0
@@ -51,6 +52,7 @@ def build_display_list(
         styles=styles,
         images=images,
         root_style=root_style,
+        frames=frames,
     )
 
     def sx(value: int | float) -> int:
@@ -130,7 +132,10 @@ def build_display_list(
             elif kind is not None:
                 ops.append(Placeholder(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)), item.label))
             else:
-                ops.append(Placeholder(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)), f"image: {item.label}"))
+                # The label is already the box's own description —
+                # "image: logo.png", "iframe: child.html". Layout knows
+                # what kind of box it is; the builder does not.
+                ops.append(Placeholder(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height)), item.label))
         elif isinstance(item, LayoutClipPush):
             ops.append(PushClip(Rect(sx(item.x), sx(item.y), sx(item.width), sx(item.height))))
         elif isinstance(item, LayoutClipPop):

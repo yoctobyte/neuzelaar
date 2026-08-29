@@ -16,13 +16,14 @@ is rendered at the top for headless / debug utility.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from neuzelaar.core.page import ImageAsset
+from neuzelaar.core.page import FrameAsset, ImageAsset
 from neuzelaar.document.bfc import (
     BoxPlacement,
     ClipPopPlacement,
     ClipPushPlacement,
+    FramePlacement,
     ImagePlacement,
     TextPlacement,
     finalize_backgrounds,
@@ -103,18 +104,28 @@ def layout_document(
     styles: dict[NodeId, ComputedStyle] | None = None,
     images: dict[NodeId, ImageAsset] | None = None,
     root_style: ComputedStyle | None = None,
+    frames: dict[NodeId, FrameAsset] | None = None,
+    chrome: bool = True,
 ) -> LayoutResult:
+    """Lay a document out into `width` x `height`.
+
+    `chrome` is on for a top-level page: a 16px outer frame and the
+    document `<title>` rendered above the content, both debug
+    affordances rather than CSS. A nested browsing context gets neither
+    — inside an iframe, the author's box is the whole viewport.
+    """
     base_style = root_style or ComputedStyle()
-    viewport_width = max(width - OUTER_MARGIN * 2, 120)
-    viewport_height = max(height - OUTER_MARGIN * 2, 120)
+    outer_margin = OUTER_MARGIN if chrome else 0
+    viewport_width = max(width - outer_margin * 2, 120)
+    viewport_height = max(height - outer_margin * 2, 120)
 
     items: list[LayoutItem] = []
-    cursor_y = OUTER_MARGIN
-    if document.title:
+    cursor_y = outer_margin
+    if chrome and document.title:
         title_font_size = max(_font_size_px(base_style), 24)
         items.append(
             LayoutText(
-                x=OUTER_MARGIN,
+                x=outer_margin,
                 y=cursor_y,
                 text=document.title,
                 color=base_style.color,
@@ -139,13 +150,98 @@ def layout_document(
         )
         placements = finalize_backgrounds(root_box, placements)
         for placement in placements:
-            items.append(_to_layout_item(placement, dx=OUTER_MARGIN, dy=cursor_y))
+            if isinstance(placement, FramePlacement):
+                items.extend(
+                    _layout_frame(
+                        placement,
+                        frames or {},
+                        dx=outer_margin,
+                        dy=cursor_y,
+                    )
+                )
+                continue
+            items.append(_to_layout_item(placement, dx=outer_margin, dy=cursor_y))
         content_height = bfc_height
 
-    total_height = max(cursor_y + content_height + OUTER_MARGIN, 64)
+    total_height = max(cursor_y + content_height + outer_margin, 64 if chrome else 0)
     # Preserve emission order so clip push / pop pairs stay paired and
     # background-before-content order from BFC is honoured.
     return LayoutResult(width=width, height=total_height, items=tuple(items))
+
+
+def _layout_frame(
+    placement: FramePlacement,
+    frames: dict[NodeId, FrameAsset],
+    *,
+    dx: int,
+    dy: int,
+) -> list[LayoutItem]:
+    """Lay a nested browsing context into the box its iframe reserved.
+
+    The nested document is laid out at the frame's own size and its
+    items are translated into the parent's coordinate space, wrapped in
+    a clip so nothing escapes the frame box. This is where iframe
+    recursion lives — `bfc` stops at the frame's edge.
+
+    Node ids are stripped on the way out. They address nodes in the
+    nested document, and the display builder resolves ids against the
+    top-level one; letting them through would make a click inside a
+    frame navigate the parent page, which is exactly the confused-deputy
+    bug that nested contexts exist to prevent. Interaction inside a
+    frame is its own slice.
+    """
+    x = placement.x + dx
+    y = placement.y + dy
+    asset = frames.get(placement.node_id) if placement.node_id is not None else None
+    if asset is None or asset.result.handler_result.kind != "document":
+        # Not loaded: blocked by policy, over budget, or not a document.
+        return [
+            LayoutImage(
+                x=x,
+                y=y,
+                width=placement.width,
+                height=placement.height,
+                label=f"iframe: {placement.label}",
+                bitmap=None,
+            )
+        ]
+
+    nested = asset.result
+    inner = layout_document(
+        nested.handler_result.value,
+        width=placement.width,
+        height=placement.height,
+        styles=nested.styles,
+        images=nested.images,
+        root_style=nested.root_style,
+        frames=nested.frames,
+        chrome=False,
+    )
+    items: list[LayoutItem] = [
+        LayoutClipPush(x=x, y=y, width=placement.width, height=placement.height),
+        # The nested page's canvas. A top-level page gets this from the
+        # display builder's opening fill; a frame has to paint its own.
+        LayoutBox(
+            x=x,
+            y=y,
+            width=placement.width,
+            height=placement.height,
+            color=nested.root_style.background_color,
+        ),
+    ]
+    items.extend(_translate_item(item, dx=x, dy=y) for item in inner.items)
+    items.append(LayoutClipPop())
+    return items
+
+
+def _translate_item(item: LayoutItem, *, dx: int, dy: int) -> LayoutItem:
+    if isinstance(item, LayoutText):
+        return replace(item, x=item.x + dx, y=item.y + dy, node_id=None)
+    if isinstance(item, LayoutImage):
+        return replace(item, x=item.x + dx, y=item.y + dy, node_id=None)
+    if isinstance(item, (LayoutBox, LayoutClipPush)):
+        return replace(item, x=item.x + dx, y=item.y + dy)
+    return item
 
 
 def _to_layout_item(placement, *, dx: int, dy: int) -> LayoutItem:

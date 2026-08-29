@@ -48,12 +48,12 @@ deliberate limit — see below.
 
 ## Run of 2026-08-29
 
-13/13 scenarios passed on Xvfb at 1920x1200x24, Python 3.14, Tk 8.6.
+14/14 scenarios passed on Xvfb at 1920x1200x24, Python 3.14, Tk 8.6.
 
 Fixtures covered: `example`, `basic_links`, `basic_lists`,
 `basic_images`, `basic_form`, `styled_page`, `inline_flow`,
 `float_layout`, `positioning`, `overflow`, `nested_blocks`,
-`text_alignment`, `third_party_script`.
+`text_alignment`, `iframe_page`, `third_party_script`.
 
 Verified by eye from the screenshots:
 
@@ -66,6 +66,10 @@ Verified by eye from the screenshots:
 - Floated callouts contain their own text, and body text flows around
   them and clears below them.
 - `text-align: center | right` place lines correctly.
+- An iframe renders its nested document with that document's own
+  styles and background, clipped to the frame box, with parent text
+  flowing before and after it. Turning the Iframes toggle off reloads
+  the page with the frame as a placeholder.
 - List markers, image placeholders, and the blocked-subresource counter
   all render.
 

@@ -183,9 +183,10 @@ def _build_from_node(
     if display == "none":
         return None
 
-    # Replaced elements. Images and native form controls have intrinsic
-    # UI of their own, so layout treats them as atomic inline-level boxes.
-    if tag in {"img", "input", "textarea", "select", "button"}:
+    # Replaced elements. Images, native form controls and iframes have
+    # content of their own that layout does not descend into, so they
+    # are atomic inline-level boxes sized from the outside.
+    if tag in {"img", "input", "textarea", "select", "button", "iframe"}:
         return Box(
             kind=BoxKind.REPLACED,
             style=style,

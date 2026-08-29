@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Iframe Demo</title>
+  <style>
+    body { font-size: 16px; }
+    iframe { border: 1px solid #99a; }
+    .wide { width: 420px; height: 160px; }
+  </style>
+</head>
+<body>
+  <h1>Nested browsing contexts</h1>
+  <p>The frame below is a separate document with its own origin and styles.</p>
+  <iframe class="wide" src="iframe_child.html"></iframe>
+  <p>Text after the frame continues in the parent document.</p>
+</body>
+</html>

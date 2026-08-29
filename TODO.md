@@ -50,7 +50,8 @@ Expected:
 | M4a forms | Done | Form extraction, GET/POST submission, and fixture-server flow implemented. |
 | MVP code path | Done | Headless/console/Tk frame path, forms, cookies, policy, basic CSS, and tests implemented. |
 | P8 browser state hardening | Done | Persistent cookies, multi-tab model, and per-tab history isolation implemented. |
-| P9 styling and compatibility | In progress | Same-origin stylesheet fetch, descendant selectors, local image rendering, basic margin/padding/font-size layout, passive asset budgets, and shared subresource gating are in; broader CSS/layout still open. |
+| P9 styling and compatibility | In progress | Full selector set (combinators, attribute, `:nth-child`, `:not`), UA block margins, `em`/`rem` resolution, same-origin stylesheet fetch, local image rendering, passive asset budgets, and shared subresource gating are in; tables/flex/grid still open. |
+| Iframes | In progress | Nested browsing contexts load, lay out and render clipped, with `FrameBudget` depth/count caps and a working `content.iframes.enabled` toggle. Interaction inside a frame and `sandbox` are open. |
 | P10 active content | In progress | Script tags become explicit execution requests; permission checks now flow through `PermissionService` and command-bus grants, with console diagnostics, shell-facing grant/deny flow, reload verification, and remembered grants in place; real JS execution remains disabled. |
 | JS backend plumbing | In progress | Swappable JS backend factory, session/browser injection points, and a narrow Test262 subset runner are in; execution remains opt-in and browser-default is still `noop`. |
 | JS own interpreter | In progress | Standalone `js_own` now includes promises, async functions, scheduler/event-loop stepping, and timer dispatch; browser wiring stays deferred. |
@@ -74,9 +75,9 @@ Files:
 
 Result:
 
-- `tools/gui_smoke.py` drives the Tk shell across 13 fixtures on Xvfb
+- `tools/gui_smoke.py` drives the Tk shell across 14 fixtures on Xvfb
   and checks the window opens, paints, scrolls, and raises nothing.
-- 13/13 passed on 2026-08-29; see `docs/gui_smoke.md` for the run and
+- 14/14 passed on 2026-08-29; see `docs/gui_smoke.md` for the run and
   the three rendering bugs the screenshots exposed.
 - Remaining gaps (no golden images, clicks not scriptable) are recorded
   in that doc rather than left implicit.

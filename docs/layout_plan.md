@@ -57,16 +57,6 @@ flexible.
   building the box tree: table tags should already map to a `table`
   display kind so we can plug the real algorithm in without another
   restructure.
-- **Iframes** (`<iframe>`, nested browsing contexts). HTML5 has
-  `<iframe>` only; `<frame>` / `<frameset>` / `<noframes>` were
-  removed from HTML5 and we deliberately never support them. An
-  iframe is a replaced inline-block box hosting a nested
-  `PageLoadResult` — recursion, with its own origin / cookies /
-  capabilities. `FetchReason.IFRAME` already exists and Strict
-  already blocks cross-origin iframes, so iframe blocking is
-  already a usable ad-blocker toggle today. The `sandbox`
-  attribute will map onto the existing capability model when the
-  slice lands.
 - **Flex** (`display: flex`). Separate formatting algorithm.
 - **Grid** (`display: grid`). Separate formatting algorithm.
 - **Transforms / animations** (`transform`, `@keyframes`, CSS
@@ -142,15 +132,22 @@ flexible.
 
 ## Post-sweep backlog (ordered roughly by expected value)
 
-1. Iframes (nested browsing contexts + `sandbox`)
-2. Tables (real table algorithm)
-3. Flex
-4. Grid
-5. Pseudo-classes / pseudo-elements
-6. Media queries + `@import`
-7. Transforms / animations
-8. Custom properties
-9. RTL / writing-modes
+1. Tables (real table algorithm)
+2. Flex
+3. Grid
+4. Pseudo-classes / pseudo-elements
+5. Media queries + `@import`
+6. Transforms / animations
+7. Custom properties
+8. RTL / writing-modes
+9. Iframe interaction: links, forms and scrolling inside a nested
+   context (loading and rendering landed; `sandbox` is still open)
+
+Iframes render today: an `<iframe>` is a replaced box hosting a nested
+`PageLoadResult`, laid out at the frame's own size and clipped to it,
+with depth and count caps in `FrameBudget`. `<frame>` / `<frameset>` /
+`<noframes>` were removed from HTML5 and we deliberately never support
+them.
 
 Selector upgrades are **done**: child (`>`), adjacent-sibling (`+`),
 general-sibling (`~`), attribute selectors, `:first-child`,

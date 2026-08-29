@@ -8,7 +8,7 @@ import sys
 import traceback
 import tkinter as tk
 import tkinter.font as tkfont
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import signal
 from tkinter import ttk
@@ -53,6 +53,7 @@ class TkShell:
             root_style=result.root_style,
             styles=result.styles,
             images=result.images,
+            frames=result.frames,
         )
         return rasterize(display_list)
 
@@ -491,6 +492,7 @@ class TkShell:
                 root_style=current_root_style,
                 styles=styles,
                 images=result.images,
+                frames=result.frames,
             )
             self.session.diagnostics.mark(f"display list built ({display_list.width}x{display_list.height})")
             return display_list
@@ -855,6 +857,17 @@ class TkShell:
             btn.pack(side=tk.LEFT, padx=4, pady=4)
             config.subscribe(key, lambda value: var.set(bool(value)))
             return btn
+
+        # `content.iframes.enabled` is the one content toggle with a
+        # backing engine so far: it turns off nested browsing contexts
+        # at the loader, before any fetch. The other three are still UI
+        # only — see docs/settings_ui.md.
+        def apply_iframe_setting(value: object) -> None:
+            loader = self.session.loader
+            loader.frame_budget = replace(loader.frame_budget, enabled=bool(value))
+
+        apply_iframe_setting(config.get("content.iframes.enabled"))
+        config.subscribe("content.iframes.enabled", apply_iframe_setting)
 
         ttk.Label(action_bar, text="Allow:").pack(side=tk.LEFT, padx=(8, 4), pady=4)
         make_toggle("JavaScript", "content.javascript.enabled")

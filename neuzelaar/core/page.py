@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlencode
 
 from neuzelaar.core.bus import Bus
@@ -81,6 +81,44 @@ class PassiveResourceBudget:
 
 
 @dataclass(frozen=True, slots=True)
+class FrameBudget:
+    """Limits on nested browsing contexts.
+
+    A page that iframes itself recurses forever without a depth cap,
+    and a page carrying hundreds of frames exhausts the fetch path —
+    both are cheap denial-of-service vectors, so these caps are not
+    optional decoration. `enabled` backs the `content.iframes.enabled`
+    setting: with it off, no nested context is fetched at all and every
+    iframe renders as a placeholder.
+    """
+
+    enabled: bool = True
+    max_depth: int = 4
+    max_frames: int = 8
+
+
+@dataclass(frozen=True, slots=True)
+class FrameAsset:
+    """A loaded nested browsing context, hanging off its iframe node."""
+
+    url: str
+    result: "PageLoadResult"
+
+
+@dataclass(slots=True)
+class _FrameCounter:
+    """Frames left to load across a whole page tree, not per level."""
+
+    remaining: int
+
+    def take(self) -> bool:
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        return True
+
+
+@dataclass(frozen=True, slots=True)
 class _PreparedPage:
     resource: Resource
     mime_decision: MimeDecision
@@ -112,6 +150,7 @@ class PageLoadResult:
     planned_subresources: tuple[PlannedSubresourceDecision, ...]
     images: dict[NodeId, ImageAsset]
     scripts: dict[NodeId, ScriptExecutionRecord]
+    frames: dict[NodeId, FrameAsset] = field(default_factory=dict)
 
 
 class PageLoader:
@@ -123,6 +162,7 @@ class PageLoader:
         cookie_jar: SessionCookieJar | None = None,
         bus: Bus | None = None,
         passive_budget: PassiveResourceBudget | None = None,
+        frame_budget: FrameBudget | None = None,
         js_engine: JavaScriptEngine | None = None,
         permission_store: PermissionStore | None = None,
         permission_service: PermissionService | None = None,
@@ -133,6 +173,7 @@ class PageLoader:
         self.cookie_jar = cookie_jar
         self.bus = bus
         self.passive_budget = passive_budget or PassiveResourceBudget()
+        self.frame_budget = frame_budget or FrameBudget()
         self.js_engine = js_engine or NoopJavaScriptEngine()
         self.permission_service = permission_service or PermissionService(
             store=permission_store or PermissionStore(),
@@ -163,9 +204,12 @@ class PageLoader:
         self.diagnostics.mark(f"fetched images ({len(images)})")
         scripts = self._plan_scripts(prepared.resource, prepared.handler_result)
         self.diagnostics.mark(f"planned scripts ({len(scripts)})")
+        frames = self._load_frames(
+            prepared, depth=0, counter=_FrameCounter(self.frame_budget.max_frames)
+        )
         self._publish(PageLoadFinished(prepared.resource.final_url, prepared.resource.status))
         self.diagnostics.mark("page load finished")
-        return self._build_result(prepared, images=images, scripts=scripts)
+        return self._build_result(prepared, images=images, scripts=scripts, frames=frames)
 
     def load_async(
         self,
@@ -188,7 +232,13 @@ class PageLoader:
         scripts = self._plan_scripts(prepared.resource, prepared.handler_result)
         self.diagnostics.mark(f"planned scripts ({len(scripts)})")
         images: dict[NodeId, ImageAsset] = {}
-        result = self._build_result(prepared, images=images, scripts=scripts)
+        # Frames load synchronously: a nested context is a document, not
+        # a bitmap, and the layout above it cannot be sized without it.
+        # Streaming them is a later refinement.
+        frames = self._load_frames(
+            prepared, depth=0, counter=_FrameCounter(self.frame_budget.max_frames)
+        )
+        result = self._build_result(prepared, images=images, scripts=scripts, frames=frames)
         future = self._stream_images(
             prepared.handler_result, prepared.plan, prepared.gates, images
         )
@@ -210,6 +260,7 @@ class PageLoader:
         method: str,
         form_data: dict[str, str] | None,
         reason: FetchReason,
+        nested: bool = False,
     ) -> "_PreparedPage | None":
         check_resources()
         url_record = parse_url(url)
@@ -237,16 +288,21 @@ class PageLoader:
             origin=url_record.origin,
             context_origin=url_record.origin,
         )
-        self._publish(PageLoadStarted(url_record.normalized))
-        self.diagnostics.start(f"open {url_record.normalized}")
+        # A nested browsing context is not a navigation: it must not
+        # reset the page timer or tell the shell a new page started.
+        if not nested:
+            self._publish(PageLoadStarted(url_record.normalized))
+            self.diagnostics.start(f"open {url_record.normalized}")
         try:
             resource = self.fetch_client.fetch(top_level_request)
         except Exception as exc:
-            self._publish(PageFailed(url_record.normalized, str(exc)))
+            if not nested:
+                self._publish(PageFailed(url_record.normalized, str(exc)))
             raise
         cache_note = " (from cache)" if resource.cache.from_cache else ""
+        label = "frame" if nested else "top-level"
         self.diagnostics.mark(
-            f"fetched top-level ({len(resource.body)} bytes, status {resource.status}){cache_note}"
+            f"fetched {label} ({len(resource.body)} bytes, status {resource.status}){cache_note}"
         )
         if self.cookie_jar is not None:
             self.cookie_jar.store_from_resource(resource)
@@ -285,6 +341,7 @@ class PageLoader:
         *,
         images: dict[NodeId, ImageAsset],
         scripts: dict[NodeId, ScriptExecutionRecord],
+        frames: dict[NodeId, FrameAsset] | None = None,
     ) -> PageLoadResult:
         return PageLoadResult(
             resource=prepared.resource,
@@ -300,7 +357,85 @@ class PageLoader:
             planned_subresources=prepared.planned_subresources,
             images=images,
             scripts=scripts,
+            frames=frames if frames is not None else {},
         )
+
+    def _load_frames(
+        self,
+        prepared: "_PreparedPage",
+        *,
+        depth: int,
+        counter: _FrameCounter,
+    ) -> dict[NodeId, FrameAsset]:
+        """Load every allowed `<iframe>` as a nested browsing context.
+
+        Each frame is a full page load of its own — its own origin,
+        policy evaluation, styles and subresources. What it is *not* is
+        a navigation: the depth and count caps in `FrameBudget` bound
+        the recursion, and a frame that fails to load is reported as a
+        blocked resource rather than failing its parent.
+        """
+        if prepared.handler_result.kind != "document":
+            return {}
+        planned_frames = [
+            planned for planned in prepared.plan if planned.reason == FetchReason.IFRAME
+        ]
+        if not planned_frames:
+            return {}
+        if not self.frame_budget.enabled:
+            for planned in planned_frames:
+                self._publish(
+                    ResourceBlocked(prepared.gates[planned].normalized_url, "iframes are turned off")
+                )
+            return {}
+        if depth >= self.frame_budget.max_depth:
+            for planned in planned_frames:
+                self._publish(
+                    ResourceBlocked(
+                        prepared.gates[planned].normalized_url, "iframe nesting limit reached"
+                    )
+                )
+            return {}
+
+        frames: dict[NodeId, FrameAsset] = {}
+        for planned in planned_frames:
+            gate = prepared.gates[planned]
+            if not gate.allowed:
+                continue
+            if not counter.take():
+                self._publish(ResourceBlocked(gate.normalized_url, "iframe count budget exceeded"))
+                continue
+            try:
+                nested = self._load_frame(gate.request.url, depth=depth + 1, counter=counter)
+            except Exception as exc:
+                self._publish(ResourceBlocked(gate.normalized_url, f"iframe load failed: {exc}"))
+                continue
+            frames[planned.node_id] = FrameAsset(url=nested.resource.final_url, result=nested)
+        self.diagnostics.mark(f"loaded frames ({len(frames)})")
+        return frames
+
+    def _load_frame(
+        self,
+        url: str,
+        *,
+        depth: int,
+        counter: _FrameCounter,
+    ) -> PageLoadResult:
+        prepared = self._prepare(
+            url,
+            method="GET",
+            form_data=None,
+            reason=FetchReason.IFRAME,
+            nested=True,
+        )
+        if prepared is None:
+            raise FetchError("aborted", "frame preparation aborted", url=url)
+        images = self._fetch_images(
+            prepared.resource, prepared.handler_result, prepared.plan, prepared.gates
+        )
+        scripts = self._plan_scripts(prepared.resource, prepared.handler_result)
+        frames = self._load_frames(prepared, depth=depth, counter=counter)
+        return self._build_result(prepared, images=images, scripts=scripts, frames=frames)
 
     def _render(self, handler_result: HandlerResult) -> str:
         if handler_result.kind == "document":

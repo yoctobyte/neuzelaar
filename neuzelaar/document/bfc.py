@@ -100,8 +100,31 @@ class ClipPopPlacement:
     """End the most recently pushed clipping region."""
 
 
+@dataclass(frozen=True, slots=True)
+class FramePlacement:
+    """The box an `<iframe>` reserves for a nested browsing context.
+
+    Layout stops at the edge: the frame's own document is laid out by
+    `document.layout`, which owns the recursion. This placement only
+    says how much room the nested context gets and which iframe node it
+    belongs to.
+    """
+
+    x: int
+    y: int
+    width: int
+    height: int
+    label: str
+    node_id: NodeId | None = None
+
+
 Placement = (
-    TextPlacement | ImagePlacement | BoxPlacement | ClipPushPlacement | ClipPopPlacement
+    TextPlacement
+    | ImagePlacement
+    | FramePlacement
+    | BoxPlacement
+    | ClipPushPlacement
+    | ClipPopPlacement
 )
 
 
@@ -505,6 +528,15 @@ def _shift_placements(items: list[Placement], start: int, end: int, dy: int) -> 
                 bitmap=item.bitmap,
                 node_id=item.node_id,
             )
+        elif isinstance(item, FramePlacement):
+            items[i] = FramePlacement(
+                x=item.x,
+                y=item.y + dy,
+                width=item.width,
+                height=item.height,
+                label=item.label,
+                node_id=item.node_id,
+            )
         elif isinstance(item, BoxPlacement):
             items[i] = BoxPlacement(
                 x=item.x,
@@ -876,7 +908,7 @@ def _flatten_inline(
             width, height, label, asset = _replaced_metrics(child, state)
             fragments.append(
                 _InlineFragment(
-                    kind="image" if child.tag == "img" else "control",
+                    kind=_replaced_fragment_kind(child.tag),
                     width=width,
                     height=height,
                     label=label,
@@ -887,6 +919,14 @@ def _flatten_inline(
                 )
             )
     return fragments
+
+
+def _replaced_fragment_kind(tag: str | None) -> str:
+    if tag == "img":
+        return "image"
+    if tag == "iframe":
+        return "frame"
+    return "control"
 
 
 def _text_fragments(
@@ -1146,6 +1186,18 @@ def _layout_inline_context(
                         node_id=fragment.node_id,
                     )
                 )
+            elif fragment.kind == "frame":
+                offset = max(line_box_height - fragment.height, 0)
+                state.items.append(
+                    FramePlacement(
+                        x=x + line_offset + state.relative_offset_x,
+                        y=cursor_y + offset + state.relative_offset_y,
+                        width=fragment.width,
+                        height=fragment.height,
+                        label=fragment.label,
+                        node_id=fragment.node_id,
+                    )
+                )
             else:
                 offset = max(line_box_height - fragment.height, 0)
                 state.items.append(
@@ -1221,10 +1273,27 @@ def measure_text_width(text: str, style: ComputedStyle | None) -> int:
 
 
 def _replaced_metrics(box: Box, state: LayoutState) -> tuple[int, int, str, ImageAsset | None]:
+    if box.tag == "iframe":
+        # HTML's default iframe size. CSS wins over the presentational
+        # width/height attributes, which win over the default.
+        src = box.element.attr("src") if box.element is not None else None
+        width = (
+            _explicit_length(box.style.width)
+            or _attr_int(box.element.attr("width") if box.element is not None else None)
+            or 300
+        )
+        height = (
+            _explicit_length(box.style.height)
+            or _attr_int(box.element.attr("height") if box.element is not None else None)
+            or 150
+        )
+        return width, height, src or "iframe", None
+
     if box.tag == "img":
-        label = (box.element.attr("alt") if box.element is not None else None) or (
+        described = (box.element.attr("alt") if box.element is not None else None) or (
             box.element.attr("src") if box.element is not None else None
         ) or "image"
+        label = f"image: {described}"
         attr_width = _attr_int(box.element.attr("width") if box.element is not None else None)
         attr_height = _attr_int(box.element.attr("height") if box.element is not None else None)
         asset = state.images.get(box.node_id) if box.node_id is not None else None
@@ -1295,6 +1364,18 @@ def _place_inline_or_text(
 
     if box.kind == BoxKind.REPLACED:
         width, height, label, asset = _replaced_metrics(box, state)
+        if box.tag == "iframe":
+            state.items.append(
+                FramePlacement(
+                    x=x + state.relative_offset_x,
+                    y=y + state.relative_offset_y,
+                    width=width,
+                    height=height,
+                    label=label,
+                    node_id=box.node_id,
+                )
+            )
+            return y + height + 12
         state.items.append(
             ImagePlacement(
                 x=x + state.relative_offset_x,
@@ -1609,6 +1690,13 @@ def _border_length_to_px(value: str) -> int:
         return 3
     if text == "thick":
         return 5
+    return max(_length_to_px(text), 0)
+
+
+def _explicit_length(value: str) -> int:
+    text = value.strip().lower()
+    if not text or text == "auto":
+        return 0
     return max(_length_to_px(text), 0)
 
 

@@ -54,6 +54,7 @@ SCENARIOS: tuple[tuple[str, str], ...] = (
     ("overflow", "tests/fixtures/sites/overflow.html"),
     ("nested-blocks", "tests/fixtures/sites/nested_blocks.html"),
     ("text-align", "tests/fixtures/sites/text_alignment.html"),
+    ("iframes", "tests/fixtures/sites/iframe_page.html"),
     ("blocked-script", "tests/fixtures/sites/third_party_script.html"),
 )
 

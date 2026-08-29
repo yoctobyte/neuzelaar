@@ -266,4 +266,6 @@ def test_bfc_places_image_at_current_cursor() -> None:
     image = next(p for p in placements if isinstance(p, ImagePlacement))
     assert image.width == 30
     assert image.height == 18
-    assert image.label == "logo"
+    # The label is the box's own description, ready to draw as a
+    # placeholder — layout knows the box kind, the renderer does not.
+    assert image.label == "image: logo"
