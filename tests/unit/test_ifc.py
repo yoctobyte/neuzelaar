@@ -326,3 +326,25 @@ def test_whitespace_between_block_siblings_produces_no_placement() -> None:
     texts = [p for p in placements if isinstance(p, TextPlacement)]
     assert [p.text for p in texts] == ["one", "two"]
     assert texts[0].y < texts[1].y
+
+
+def test_ifc_emits_one_run_per_inline_box_per_line() -> None:
+    document = Document(id=NodeId("doc"))
+    p = Element(id=NodeId("p"), tag="p")
+    link = Element(id=NodeId("a1"), tag="a", attrs={"href": "next.html"})
+    append_child(document, p)
+    append_child(p, Text(id=NodeId("lead"), data="see"))
+    append_child(p, link)
+    append_child(link, Text(id=NodeId("t1"), data="the next page"))
+    styles = compute_styles(document)
+
+    root = build_box_tree(document, styles)
+    _, placements = layout_block(root, viewport_width=1000)
+
+    texts = [p for p in placements if isinstance(p, TextPlacement)]
+    # "see" is anonymous block text and stays on its own; the anchor's
+    # three words become one run so its underline and hit region span
+    # the spaces between them.
+    assert [p.text for p in texts] == ["see", "the next page"]
+    assert texts[1].node_id == NodeId("a1")
+    assert texts[1].text_decoration == "underline"

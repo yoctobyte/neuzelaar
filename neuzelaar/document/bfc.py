@@ -819,6 +819,10 @@ class _InlineFragment:
     bitmap: ImageAsset | None = None
     leading_space: bool = False
     node_id: NodeId | None = None
+    # The innermost inline box this fragment came from, used to join a
+    # box's fragments back into one run per line. Distinct from
+    # `node_id`, which points at the nearest interactive ancestor.
+    inline_id: NodeId | None = None
 
 
 def _flatten_inline(
@@ -826,6 +830,7 @@ def _flatten_inline(
     style: ComputedStyle,
     state: LayoutState,
     interactive_node_id: NodeId | None = None,
+    inline_node_id: NodeId | None = None,
 ) -> list[_InlineFragment]:
     fragments: list[_InlineFragment] = []
     for child in children:
@@ -835,6 +840,7 @@ def _flatten_inline(
                     child.text or "",
                     child.style or style,
                     node_id=interactive_node_id,
+                    inline_id=inline_node_id,
                 )
             )
         elif child.kind == BoxKind.INLINE:
@@ -843,7 +849,13 @@ def _flatten_inline(
             # style for "word".
             next_interactive = child.node_id if child.tag == "a" else interactive_node_id
             fragments.extend(
-                _flatten_inline(child.children, child.style, state, next_interactive)
+                _flatten_inline(
+                    child.children,
+                    child.style,
+                    state,
+                    next_interactive,
+                    child.node_id,
+                )
             )
         elif child.kind == BoxKind.REPLACED:
             width, height, label, asset = _replaced_metrics(child, state)
@@ -856,6 +868,7 @@ def _flatten_inline(
                     bitmap=asset,
                     style=style,
                     node_id=child.node_id,
+                    inline_id=child.node_id,
                 )
             )
     return fragments
@@ -866,6 +879,7 @@ def _text_fragments(
     style: ComputedStyle,
     *,
     node_id: NodeId | None = None,
+    inline_id: NodeId | None = None,
 ) -> list[_InlineFragment]:
     if not text:
         return []
@@ -877,12 +891,13 @@ def _text_fragments(
             style,
             collapse_spaces=(white_space == "pre-line"),
             node_id=node_id,
+            inline_id=inline_id,
         )
     words = text.split()
     if not words:
         # A whitespace-only run between inline siblings. It carries no
         # word of its own but still separates the fragments around it.
-        return [_InlineFragment(kind="space", style=style, node_id=node_id)]
+        return [_InlineFragment(kind="space", style=style, node_id=node_id, inline_id=inline_id)]
     fragments: list[_InlineFragment] = []
     starts_with_space = text[:1].isspace()
     for index, word in enumerate(words):
@@ -893,10 +908,13 @@ def _text_fragments(
                 style=style,
                 leading_space=index > 0 or starts_with_space,
                 node_id=node_id,
+                inline_id=inline_id,
             )
         )
     if text[-1:].isspace():
-        fragments.append(_InlineFragment(kind="space", style=style, node_id=node_id))
+        fragments.append(
+            _InlineFragment(kind="space", style=style, node_id=node_id, inline_id=inline_id)
+        )
     return fragments
 
 
@@ -906,6 +924,7 @@ def _preserved_text_fragments(
     *,
     collapse_spaces: bool,
     node_id: NodeId | None = None,
+    inline_id: NodeId | None = None,
 ) -> list[_InlineFragment]:
     fragments: list[_InlineFragment] = []
     normalized = text
@@ -913,9 +932,13 @@ def _preserved_text_fragments(
         normalized = "\n".join(" ".join(line.split()) for line in normalized.split("\n"))
     parts = normalized.split("\n")
     for index, part in enumerate(parts):
-        fragments.extend(_preserved_line_fragments(part, style, node_id=node_id))
+        fragments.extend(
+            _preserved_line_fragments(part, style, node_id=node_id, inline_id=inline_id)
+        )
         if index < len(parts) - 1:
-            fragments.append(_InlineFragment(kind="break", style=style, node_id=node_id))
+            fragments.append(
+                _InlineFragment(kind="break", style=style, node_id=node_id, inline_id=inline_id)
+            )
     return fragments
 
 
@@ -924,6 +947,7 @@ def _preserved_line_fragments(
     style: ComputedStyle,
     *,
     node_id: NodeId | None = None,
+    inline_id: NodeId | None = None,
 ) -> list[_InlineFragment]:
     if text == "":
         return []
@@ -935,11 +959,44 @@ def _preserved_line_fragments(
         if is_space == token_is_space:
             token += char
             continue
-        fragments.append(_InlineFragment(kind="text", text=token, style=style, node_id=node_id))
+        fragments.append(
+            _InlineFragment(kind="text", text=token, style=style, node_id=node_id, inline_id=inline_id)
+        )
         token = char
         token_is_space = is_space
-    fragments.append(_InlineFragment(kind="text", text=token, style=style, node_id=node_id))
+    fragments.append(
+        _InlineFragment(kind="text", text=token, style=style, node_id=node_id, inline_id=inline_id)
+    )
     return fragments
+
+
+def _merge_inline_runs(
+    line_items: list[tuple[int, _InlineFragment]],
+) -> list[tuple[int, _InlineFragment]]:
+    """Join a single inline box's consecutive words into one run.
+
+    An inline box paints its text decoration, and owns its hit region,
+    across its whole extent on a line — spaces included. One placement
+    per word would break a link's underline at every space and leave
+    those gaps unclickable.
+
+    Text that sits directly in a block has no inline box of its own
+    (`inline_id is None`) and stays word-per-placement; there is no
+    decoration or hit region spanning it to preserve.
+    """
+    merged: list[tuple[int, _InlineFragment]] = []
+    for x, fragment in line_items:
+        if merged and fragment.kind == "text" and fragment.leading_space:
+            previous_x, previous = merged[-1]
+            if (
+                previous.kind == "text"
+                and previous.inline_id is not None
+                and previous.inline_id == fragment.inline_id
+            ):
+                merged[-1] = (previous_x, replace(previous, text=f"{previous.text} {fragment.text}"))
+                continue
+        merged.append((x, fragment))
+    return merged
 
 
 def _collapse_inline_spaces(fragments: list[_InlineFragment]) -> list[_InlineFragment]:
@@ -980,13 +1037,16 @@ def _layout_inline_context(
     content_width: int,
     parent_style: ComputedStyle,
     interactive_node_id: NodeId | None = None,
+    inline_node_id: NodeId | None = None,
 ) -> int:
     """Lay out a sequence of inline-level children as a Block's
     Inline Formatting Context. Greedy word-wrap at content_width.
     Returns the y coordinate at the bottom of the last line box.
     """
     fragments = _collapse_inline_spaces(
-        _flatten_inline(list(children), parent_style, state, interactive_node_id)
+        _flatten_inline(
+            list(children), parent_style, state, interactive_node_id, inline_node_id
+        )
     )
     if not fragments:
         return y0
@@ -1038,6 +1098,9 @@ def _layout_inline_context(
             else:
                 last_width = last_fragment.width
             line_width = max(last_x + last_width - line_x_start, 0)
+        # Merge after line_width is known: wrapping was decided on
+        # per-word advances, so the run width must be too.
+        line_items = _merge_inline_runs(line_items)
         line_offset = 0
         if parent_style.text_align == "center":
             line_offset = max((line_max_width - line_width) // 2, 0)
